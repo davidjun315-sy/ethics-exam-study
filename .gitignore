@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# pdf.js worker (postinstall 로 자동 복사)
+/public/pdfjs/
+
+# env 예시는 commit 허용
+!.env.example

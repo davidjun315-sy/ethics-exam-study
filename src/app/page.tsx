@@ -1,69 +1,120 @@
-import Image from "next/image";
+import Link from "next/link";
+import { DataError, load } from "@/components/DataError";
+import { QuestionCard } from "@/components/QuestionCard";
+import { Empty, SectionTitle, StatCard } from "@/components/ui";
+import { getDashboard } from "@/lib/data/queries";
+import { examShortLabel, formatDate } from "@/lib/format";
 
-export default function Home() {
+export default async function Home() {
+  const { data, error } = await load(getDashboard);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-8">
+      <section className="rounded-xl border border-line bg-surface px-6 py-8">
+        <h1 className="text-3xl font-bold tracking-tight text-ink">윤리 임용고시 기출 분석</h1>
+        <p className="mt-2 text-muted">기출을 사상가, 개념, 원전 단위로 연결해서 공부하세요.</p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Link href="/exams" className="btn-primary">기출문제 보기</Link>
+          <Link href="/philosophers" className="btn">사상가별</Link>
+          <Link href="/concepts" className="btn">개념별</Link>
+          <Link href="/sources" className="btn">원전별</Link>
+          <Link href="/philosophers/compare" className="btn">사상가 비교</Link>
+          <Link href="/trends" className="btn">출제 경향</Link>
+          <Link href="/my" className="btn">내 학습 기록</Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </section>
+
+      {error || !data ? (
+        <DataError error={error} />
+      ) : (
+        <>
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <StatCard label="등록된 시험" value={data.examCount} href="/exams" />
+            <StatCard label="전체 기출 문항" value={data.questionCount} href="/exams" />
+            <StatCard label="등록된 사상가" value={data.philosopherCount} href="/philosophers" />
+            <StatCard label="등록된 원전" value={data.sourceCount} href="/sources" />
+          </section>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <section className="lg:col-span-2">
+              <SectionTitle right={<Link href="/exams" className="text-sm text-navy">전체 보기</Link>}>최근 분석 문제</SectionTitle>
+              {data.recentQuestions.length === 0 ? (
+                <Empty>아직 분석된 문항이 없습니다. 관리자 페이지에서 PDF 를 업로드하고 AI 분석을 실행하세요.</Empty>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {data.recentQuestions.map((q) => (
+                    <QuestionCard key={q.id} q={q} hideAnswer />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
+              <SectionTitle>최근 등록된 시험</SectionTitle>
+              {data.recentExams.length === 0 ? (
+                <Empty>등록된 시험이 없습니다.</Empty>
+              ) : (
+                <ul className="card divide-y divide-line">
+                  {data.recentExams.map((e) => (
+                    <li key={e.id}>
+                      <Link href={`/exams/${e.id}`} className="flex items-center justify-between px-4 py-2.5 hover:bg-surface-2">
+                        <span className="font-medium">{examShortLabel(e)}</span>
+                        <span className="text-xs text-faint">{formatDate(e.created_at)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section>
+              <SectionTitle right={<Link href="/trends" className="text-sm text-navy">출제분석</Link>}>자주 출제된 사상가</SectionTitle>
+              {data.topPhilosophers.length === 0 ? (
+                <Empty>데이터가 쌓이면 표시됩니다.</Empty>
+              ) : (
+                <ul className="card divide-y divide-line">
+                  {data.topPhilosophers.map((p, i) => (
+                    <li key={p.id}>
+                      <Link href={`/philosophers/${p.id}`} className="flex items-center gap-3 px-4 py-2 hover:bg-surface-2">
+                        <span className="w-5 text-right text-sm text-faint">{i + 1}</span>
+                        <span className="flex-1 font-medium">{p.name}</span>
+                        <span className="text-sm text-muted">{p.count}회 · 최근 {p.lastYear}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section>
+              <SectionTitle>
+                최근 5년 주요 출제 개념
+                {data.recentYears.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-faint">
+                    ({Math.min(...data.recentYears)}~{Math.max(...data.recentYears)})
+                  </span>
+                )}
+              </SectionTitle>
+              {data.recentConcepts.length === 0 ? (
+                <Empty>데이터가 쌓이면 표시됩니다.</Empty>
+              ) : (
+                <div className="card flex flex-wrap gap-2 p-4">
+                  {data.recentConcepts.map((c) => (
+                    <Link
+                      key={c.id}
+                      href={`/concepts/${c.id}`}
+                      className="rounded-md border border-line px-2.5 py-1 text-sm hover:border-navy hover:text-navy"
+                    >
+                      {c.name} <span className="text-xs text-faint">{c.count}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </>
+      )}
     </div>
   );
 }
