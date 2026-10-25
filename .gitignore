@@ -45,3 +45,6 @@ next-env.d.ts
 
 # env 예시는 commit 허용
 !.env.example
+
+# 배포용 압축 파일
+*.zip
