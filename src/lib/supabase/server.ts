@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { serverEnv } from "@/lib/env";
+import { missingSupabaseEnv, serverEnv } from "@/lib/env";
 
 export class ConfigError extends Error {}
 
@@ -14,7 +14,7 @@ export function getReadClient(): SupabaseClient {
   const key = serverEnv.supabaseAnonKey();
   if (!url || !key) {
     throw new ConfigError(
-      "Supabase 환경변수(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)가 설정되지 않았습니다.",
+      `Supabase 환경변수가 서버에 설정되지 않았습니다: ${missingSupabaseEnv("read").join(", ")}`,
     );
   }
   readClient = createClient(url, key, { auth: { persistSession: false } });
@@ -28,7 +28,7 @@ export function getAdminClient(): SupabaseClient {
   const key = serverEnv.supabaseServiceRoleKey();
   if (!url || !key) {
     throw new ConfigError(
-      "Supabase 환경변수(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)가 설정되지 않았습니다.",
+      `Supabase 환경변수가 서버에 설정되지 않았습니다: ${missingSupabaseEnv("admin").join(", ")}`,
     );
   }
   adminClient = createClient(url, key, { auth: { persistSession: false } });
