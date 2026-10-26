@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { api, extractRegionsTextDetailed, recropQuestion } from "@/lib/admin-client";
+import { api, extractRegionsTextDetailed, recropQuestion, type RegionTextResult } from "@/lib/admin-client";
 import type { QuestionDetail } from "@/lib/data/queries";
 import { examShortLabel } from "@/lib/format";
 import type { AnalysisStatus, ExamPage, PhilosopherRole, Region, VerificationStatus } from "@/lib/types";
@@ -58,14 +58,22 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
   const [regions, setRegions] = useState<Region[]>(q.regions);
   // 영역을 바꾸면 원문 텍스트도 PDF 텍스트 레이어에서 다시 뽑는다. (텍스트 보기 / AI 분석에 쓰임)
   const [syncText, setSyncText] = useState(true);
-  const regionTextDetailed = async (rs: Region[]) =>
-    exam.pdf_url && rs.length ? extractRegionsTextDetailed(exam.pdf_url, rs) : { text: "", imageRatio: 0 };
+  // OCR 처럼 오래 걸리는 작업의 진행 상황 (버튼 아래 표시)
+  const [progress, setProgress] = useState<string | null>(null);
+  const regionTextDetailed = async (rs: Region[], ocr: "auto" | "always" | "never" = "auto"): Promise<RegionTextResult> =>
+    exam.pdf_url && rs.length
+      ? extractRegionsTextDetailed(exam.pdf_url, rs, { ocr, onProgress: setProgress })
+      : { text: "", imageRatio: 0, method: "text" };
   const regionText = async (rs: Region[]) => (await regionTextDetailed(rs)).text;
-  // 박스 제시문 등이 그림으로 들어 있으면 PDF 에서 글자를 뽑을 수 없다는 안내
-  const imageNote = (ratio: number) =>
-    ratio >= 0.15
-      ? ` ⚠ 이 영역의 약 ${Math.round(ratio * 100)}%는 PDF 안에 그림(이미지)으로 들어 있어 그 안의 글자는 뽑을 수 없습니다. 셀프 분석이나 AI 분석을 하면 AI 가 이미지에서 읽은 전체 원문으로 텍스트를 자동으로 채웁니다.`
-      : "";
+  // 박스 제시문 등이 그림으로 들어 있을 때의 안내
+  const extractNote = (r: RegionTextResult) =>
+    r.method === "ocr"
+      ? ` 이 영역의 약 ${Math.round(r.imageRatio * 100)}%가 PDF 안에 그림(이미지)으로 들어 있어 OCR 로 읽었습니다. ㉠·㉡ 같은 기호나 일부 글자가 틀릴 수 있으니 확인 후 고쳐 주세요.`
+      : r.imageRatio >= 0.15
+        ? ` 이 영역에 그림이 있지만 텍스트 레이어로 충분히 읽혀서 OCR 은 쓰지 않았습니다. 빠진 글이 있으면 'OCR 로 다시 읽기'를 누르세요.`
+        : "";
+  const progressLine = (label: string) =>
+    busy === label && progress ? <p className="mt-1 text-xs text-muted">{progress}</p> : null;
 
   // ---- 분석 ----
   const x = a?.details ?? {};
@@ -133,6 +141,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
+      setProgress(null);
     }
   }
 
@@ -251,22 +260,35 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               disabled={Boolean(busy) || !exam.pdf_url || regions.length === 0}
               onClick={() =>
                 run("extract", async () => {
-                  const { text: t, imageRatio } = await regionTextDetailed(regions);
-                  if (!t) {
-                    throw new Error(
-                      imageRatio >= 0.15
-                        ? `영역 안의 글이 모두 그림(이미지)으로 들어 있어 PDF 에서 글자를 뽑을 수 없습니다.${imageNote(imageRatio)}`
-                        : "영역 안에서 텍스트를 찾지 못했습니다. 스캔 PDF 이거나 영역 좌표가 글자를 벗어났을 수 있습니다.",
-                    );
-                  }
-                  await api(`/api/admin/questions/${q.id}`, "PATCH", { question: { question_text: t } });
-                  setInfo((cur) => ({ ...cur, question_text: t }));
-                  return `현재 영역 기준으로 텍스트를 다시 뽑아 저장했습니다. (${t.length}자)${imageNote(imageRatio)}`;
+                  const r = await regionTextDetailed(regions, "auto");
+                  if (!r.text) throw new Error("영역 안에서 글자를 찾지 못했습니다. 영역 좌표가 문항을 벗어나지 않았는지 확인하세요.");
+                  await api(`/api/admin/questions/${q.id}`, "PATCH", { question: { question_text: r.text } });
+                  setInfo((cur) => ({ ...cur, question_text: r.text }));
+                  return `현재 영역 기준으로 텍스트를 다시 뽑아 저장했습니다. (${r.text.length}자)${extractNote(r)}`;
                 })
               }
             >
               {busy === "extract" ? "추출 중…" : "현재 영역 기준으로 텍스트 다시 추출 + 저장"}
             </button>
+            <button
+              className="btn ml-1 mt-1 text-xs"
+              disabled={Boolean(busy) || !exam.pdf_url || regions.length === 0}
+              title="텍스트 레이어 대신 문항 이미지를 OCR 로 읽습니다"
+              onClick={() =>
+                run("ocr", async () => {
+                  const r = await regionTextDetailed(regions, "always");
+                  if (!r.text) throw new Error("OCR 로도 글자를 읽지 못했습니다.");
+                  await api(`/api/admin/questions/${q.id}`, "PATCH", { question: { question_text: r.text } });
+                  setInfo((cur) => ({ ...cur, question_text: r.text }));
+                  return `OCR 로 읽어 저장했습니다. (${r.text.length}자) ㉠·㉡ 같은 기호나 일부 글자가 틀릴 수 있으니 확인 후 고쳐 주세요.`;
+                })
+              }
+            >
+              {busy === "ocr" ? "OCR 중…" : "OCR 로 다시 읽기"}
+            </button>
+            {progressLine("extract")}
+            {progressLine("ocr")}
+            {inlineStatus("ocr")}
             {!exam.pdf_url && <p className="mt-1 text-xs text-faint">원본 PDF 가 없어 텍스트를 추출할 수 없습니다.</p>}
             {inlineStatus("extract")}
           </div>
@@ -338,7 +360,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               run("recrop", async () => {
                 const [url, extracted] = await Promise.all([
                   recropQuestion(exam.id, q.question_number, regions, pageImages),
-                  syncText ? regionTextDetailed(regions) : Promise.resolve({ text: "", imageRatio: 0 }),
+                  syncText ? regionTextDetailed(regions) : Promise.resolve<RegionTextResult>({ text: "", imageRatio: 0, method: "text" }),
                 ]);
                 const text = extracted.text;
                 await api(`/api/admin/questions/${q.id}`, "PATCH", {
@@ -357,12 +379,13 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
                     ? " 원문 텍스트도 새 영역 기준으로 바꿨습니다."
                     : " (영역 안에서 텍스트를 찾지 못해 기존 텍스트는 그대로 두었습니다.)";
                 const aiMsg = text && a && a.status !== "pending" ? " 문항 내용이 바뀌었다면 AI 분석을 다시 실행하세요." : "";
-                return `영역을 저장하고 문항 이미지를 다시 만들었습니다.${textMsg}${aiMsg}${imageNote(extracted.imageRatio)}`;
+                return `영역을 저장하고 문항 이미지를 다시 만들었습니다.${textMsg}${aiMsg}${text ? extractNote(extracted) : ""}`;
               })
             }
           >
             {busy === "recrop" ? "저장 중…" : "영역 저장 + 문항 이미지 다시 만들기"}
           </button>
+          {progressLine("recrop")}
           {inlineStatus("recrop")}
           <label className="mt-2 flex items-center gap-2 text-xs text-muted">
             <input type="checkbox" checked={syncText} onChange={(e) => setSyncText(e.target.checked)} />
@@ -435,6 +458,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               >
                 {busy === "split" ? "나누는 중…" : "나누기"}
               </button>
+              {progressLine("split")}
               {inlineStatus("split")}
             </div>
           </details>

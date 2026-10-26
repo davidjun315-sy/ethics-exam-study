@@ -170,13 +170,28 @@ export interface RegionTextResult {
   text: string;
   /** 영역 중 이미지(그림으로 들어간 글)가 차지하는 최대 비율 0~1 */
   imageRatio: number;
+  /** 최종 텍스트를 어디서 얻었는지 */
+  method: "text" | "ocr";
 }
+
+export interface ExtractOptions {
+  /** auto: 그림이 많거나 글자가 거의 없을 때만 OCR / always: 항상 OCR / never: 텍스트 레이어만 */
+  ocr?: "auto" | "always" | "never";
+  onProgress?: (message: string) => void;
+}
+
+const OCR_SCALE = 3; // 약 216 dpi. OCR 정확도를 위해 화면용보다 크게 렌더링한다.
 
 export async function extractRegionsText(pdfUrl: string, regions: Region[]): Promise<string> {
-  return (await extractRegionsTextDetailed(pdfUrl, regions)).text;
+  return (await extractRegionsTextDetailed(pdfUrl, regions, { ocr: "never" })).text;
 }
 
-export async function extractRegionsTextDetailed(pdfUrl: string, regions: Region[]): Promise<RegionTextResult> {
+export async function extractRegionsTextDetailed(
+  pdfUrl: string,
+  regions: Region[],
+  options: ExtractOptions = {},
+): Promise<RegionTextResult> {
+  const mode = options.ocr ?? "auto";
   let doc;
   try {
     // URL 을 pdf.js 에 바로 넘기면 일부 환경에서 range 요청이 실패하므로 먼저 통째로 받아온다.
@@ -188,9 +203,14 @@ export async function extractRegionsTextDetailed(pdfUrl: string, regions: Region
   }
   const cache = new Map<number, PageText>();
   const imageCache = new Map<number, Box[]>();
-  const parts: string[] = [];
+  // 읽기 순서대로 합치기 위한 조각: 텍스트 레이어의 줄 + 그림 부분의 OCR 결과
+  type Piece = { region: number; y: number; text: string };
+  const pieces: Piece[] = [];
+  const ocrTargets: { region: number; page: number; box: Box }[] = [];
   let imageRatio = 0;
-  for (const r of regions) {
+
+  for (let ri = 0; ri < regions.length; ri++) {
+    const r = regions[ri];
     if (r.page < 1 || r.page > doc.numPages) continue;
     if (!cache.has(r.page)) {
       const page = await doc.getPage(r.page);
@@ -199,16 +219,63 @@ export async function extractRegionsTextDetailed(pdfUrl: string, regions: Region
     if (!imageCache.has(r.page)) imageCache.set(r.page, await findImageBoxes(doc, r.page).catch(() => []));
     imageRatio = Math.max(imageRatio, imageCoverage(r, imageCache.get(r.page)!));
     const pt = cache.get(r.page)!;
+    // 글자 폭 정보가 부정확한 폰트도 있어서, 가로는 "시작점", 세로는 "중심"이 영역 안에 있으면 포함한다.
     const inside = pt.items.filter((it) => {
-      const cx = (it.x + it.w / 2) / pt.width;
+      const sx = (it.x + Math.min(it.w, it.h) / 2) / pt.width;
       const cy = (it.y + it.h / 2) / pt.height;
-      return cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1;
+      return sx >= r.x0 && sx <= r.x1 && cy >= r.y0 && cy <= r.y1;
     });
-    const text = groupLines(inside)
-      .map((l) => l.text)
-      .join("\n")
-      .trim();
-    if (text) parts.push(text);
+    const lines = groupLines(inside).map((l) => ({ ...l, y: l.top / pt.height, cx: (l.x0 + l.x1) / 2 / pt.width }));
+    for (const l of lines) if (l.text.trim()) pieces.push({ region: ri, y: l.y, text: l.text.trim() });
+
+    // 영역 안의 그림 중, 위에 텍스트 레이어 글자가 거의 없는 것만 OCR 대상 (글자가 그림 위에 따로 있으면 중복되므로 제외)
+    for (const img of imageCache.get(r.page)!) {
+      const box = { x0: Math.max(r.x0, img.x0), y0: Math.max(r.y0, img.y0), x1: Math.min(r.x1, img.x1), y1: Math.min(r.y1, img.y1) };
+      if (box.x1 - box.x0 < 0.03 || box.y1 - box.y0 < 0.015) continue;
+      const covered = lines.filter((l) => l.y >= box.y0 && l.y <= box.y1 && l.cx >= box.x0 && l.cx <= box.x1);
+      if (covered.reduce((n, l) => n + l.text.length, 0) > 20) continue;
+      ocrTargets.push({ region: ri, page: r.page, box });
+    }
   }
-  return { text: parts.join("\n"), imageRatio };
+  const order = (a: Piece, b: Piece) => a.region - b.region || a.y - b.y;
+  const layerText = [...pieces].sort(order).map((p) => p.text).join("\n");
+  const scanned = layerText.replace(/\s/g, "").length < 10;
+
+  if (mode === "never" || (mode === "auto" && !scanned && ocrTargets.length === 0)) {
+    return { text: layerText, imageRatio, method: "text" };
+  }
+
+  options.onProgress?.("OCR 준비 중… (처음 한 번은 한국어 모델을 내려받느라 10~30초 걸릴 수 있습니다)");
+  const { ocrCanvas } = await import("@/lib/pdf/ocr");
+  const rendered = new Map<number, HTMLCanvasElement>();
+  const pageCanvas = async (p: number) => {
+    if (!rendered.has(p)) rendered.set(p, await renderPageToCanvas(doc, p, OCR_SCALE));
+    return rendered.get(p)!;
+  };
+  const report = (label: string) => (ratio: number, status: string) => {
+    if (status.includes("recogniz")) options.onProgress?.(`${label} ${Math.round(ratio * 100)}%`);
+  };
+
+  try {
+    // 항상 OCR 또는 스캔 페이지: 영역 전체를 OCR
+    if (mode === "always" || scanned) {
+      const canvas = await cropRegions(regions, pageCanvas);
+      const ocrText = await ocrCanvas(canvas, report("OCR 로 글자 읽는 중…"));
+      return ocrText ? { text: ocrText, imageRatio, method: "ocr" } : { text: layerText, imageRatio, method: "text" };
+    }
+    // 자동: 텍스트는 텍스트 레이어 그대로 (기호까지 정확), 그림 부분만 OCR 해서 제자리에 끼워 넣는다.
+    let used = false;
+    for (let i = 0; i < ocrTargets.length; i++) {
+      const t = ocrTargets[i];
+      const canvas = await cropRegions([{ page: t.page, ...t.box }], pageCanvas);
+      const text = await ocrCanvas(canvas, report(`그림 속 글자 OCR (${i + 1}/${ocrTargets.length})…`));
+      if (text) {
+        pieces.push({ region: t.region, y: t.box.y0, text });
+        used = true;
+      }
+    }
+    return { text: [...pieces].sort(order).map((p) => p.text).join("\n"), imageRatio, method: used ? "ocr" : "text" };
+  } finally {
+    rendered.clear();
+  }
 }

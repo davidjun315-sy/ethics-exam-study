@@ -48,3 +48,4 @@ next-env.d.ts
 
 # 배포용 압축 파일
 *.zip
+/public/tesseract/

@@ -359,6 +359,7 @@ git push -u origin main
 | AI 가 이미지를 못 읽음 | 버킷이 public 이 아님 → Storage 에서 public 으로 변경 |
 | 문항 이미지가 안 바뀜 | 브라우저 캐시. 새로고침(Ctrl+Shift+R) |
 | 문항 번호를 못 찾음 / 이상하게 나뉨 | 번호 형식이 특이한 PDF. 관리자 화면에서 합치기/나누기/직접 추가. `npm run test:segment -- 파일.pdf` 로 결과 확인 |
+| 박스·말풍선 제시문 글이 텍스트에 빠짐 | 그 부분이 PDF 안에 **그림**으로 들어 있는 경우입니다. 문항 수정 화면의 `현재 영역 기준으로 텍스트 다시 추출`이 그림 부분만 자동으로 OCR(브라우저, 무료)해서 채웁니다. 전체를 OCR 로 읽으려면 `OCR 로 다시 읽기`. ㉠·○ 같은 기호는 OCR 이 틀릴 수 있으니 확인하세요 |
 | 스캔 PDF | 텍스트가 없으므로 페이지 단위로 임시 문항이 생깁니다. 문항을 나눈 뒤 AI 분석 → AI 가 이미지에서 원문을 읽어 채웁니다 |
 | `npm install` 후 PDF 미리보기 오류 (worker) | `node scripts/copy-pdf-worker.mjs` 를 직접 실행해 `public/pdfjs/` 생성 |
 | Vercel 빌드 실패 | 로컬에서 `npm run build` 가 되는지 먼저 확인. Node 버전 20 이상인지 확인 |
