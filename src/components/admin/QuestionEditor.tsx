@@ -106,7 +106,15 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
   // ---- 나누기 ----
   const [split, setSplit] = useState({ regionIndex: 0, yPct: 50, newLabel: `${q.question_number}-2`, newNumber: String(q.question_number), newSub: "2", textA: q.question_text ?? "", textB: "", asChild: false });
 
+  // 결과 메시지를 버튼 바로 옆에도 보여주기 위해 마지막 작업을 기억한다.
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  const inlineStatus = (label: string) =>
+    lastAction === label && busy !== label && (msg || error) ? (
+      <p className={`mt-1 rounded px-2 py-1 text-xs ${error ? "bg-danger-soft text-danger" : "bg-ok-soft text-ok"}`}>{error ?? msg}</p>
+    ) : null;
+
   async function run(label: string, fn: () => Promise<string | void>) {
+    setLastAction(label);
     setBusy(label);
     setError(null);
     setMsg(null);
@@ -237,14 +245,17 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               onClick={() =>
                 run("extract", async () => {
                   const t = await regionText(regions);
-                  if (!t) throw new Error("영역 안에서 텍스트를 찾지 못했습니다. (스캔 PDF 이거나 영역이 비어 있음)");
+                  if (!t) throw new Error("영역 안에서 텍스트를 찾지 못했습니다. 스캔 PDF 이거나 영역 좌표가 글자를 벗어났을 수 있습니다.");
+                  await api(`/api/admin/questions/${q.id}`, "PATCH", { question: { question_text: t } });
                   setInfo((cur) => ({ ...cur, question_text: t }));
-                  return "현재 영역 기준으로 텍스트를 다시 뽑았습니다. 확인 후 '문항 정보 저장'을 누르세요.";
+                  return `현재 영역 기준으로 텍스트를 다시 뽑아 저장했습니다. (${t.length}자) 공부 화면의 '텍스트 보기'에도 반영됩니다.`;
                 })
               }
             >
-              현재 영역 기준으로 텍스트 다시 추출
+              {busy === "extract" ? "추출 중…" : "현재 영역 기준으로 텍스트 다시 추출 + 저장"}
             </button>
+            {!exam.pdf_url && <p className="mt-1 text-xs text-faint">원본 PDF 가 없어 텍스트를 추출할 수 없습니다.</p>}
+            {inlineStatus("extract")}
           </div>
           <button
             className="btn-primary mt-2"
@@ -269,6 +280,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           >
             문항 정보 저장
           </button>
+          {inlineStatus("info")}
         </Section>
 
         <Section title="문항 이미지 / 영역">
@@ -335,8 +347,9 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               })
             }
           >
-            영역 저장 + 문항 이미지 다시 만들기
+            {busy === "recrop" ? "저장 중…" : "영역 저장 + 문항 이미지 다시 만들기"}
           </button>
+          {inlineStatus("recrop")}
           <label className="mt-2 flex items-center gap-2 text-xs text-muted">
             <input type="checkbox" checked={syncText} onChange={(e) => setSyncText(e.target.checked)} />
             원문 텍스트도 영역 기준으로 다시 추출 (직접 고친 텍스트를 지키려면 끄세요)
@@ -406,8 +419,9 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
                   })
                 }
               >
-                나누기
+                {busy === "split" ? "나누는 중…" : "나누기"}
               </button>
+              {inlineStatus("split")}
             </div>
           </details>
         </Section>

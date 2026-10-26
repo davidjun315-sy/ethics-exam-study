@@ -167,7 +167,15 @@ export async function recropQuestion(
  * 텍스트 레이어가 없는 스캔 페이지는 빈 문자열을 돌려준다.
  */
 export async function extractRegionsText(pdfUrl: string, regions: Region[]): Promise<string> {
-  const doc = await openPdf(pdfUrl);
+  let doc;
+  try {
+    // URL 을 pdf.js 에 바로 넘기면 일부 환경에서 range 요청이 실패하므로 먼저 통째로 받아온다.
+    const res = await fetch(pdfUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    doc = await openPdf(await res.arrayBuffer());
+  } catch (e) {
+    throw new Error(`원본 PDF 를 불러오지 못했습니다 (${e instanceof Error ? e.message : String(e)}). Supabase Storage 의 exam-pdfs 버킷이 public 인지 확인하세요.`);
+  }
   const cache = new Map<number, PageText>();
   const parts: string[] = [];
   for (const r of regions) {
