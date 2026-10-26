@@ -36,7 +36,7 @@ export async function buildManualPrompt(questionId: string): Promise<{ prompt: s
 }
 
 /** 채팅 AI 가 돌려준 JSON 을 검증해 API 분석과 똑같이 저장한다. */
-export async function importManualAnalysis(questionId: string, pasted: string, source: string): Promise<void> {
+export async function importManualAnalysis(questionId: string, pasted: string, source: string): Promise<{ textUpdated: boolean }> {
   const raw = extractJson(pasted);
   const normalized = normalize(jsonSchema() as Parameters<typeof normalize>[0], raw);
   const parsed = FullAnalysisSchema.safeParse(normalized);
@@ -48,5 +48,5 @@ export async function importManualAnalysis(questionId: string, pasted: string, s
     throw new Error(`분석 양식이 맞지 않습니다. ${issues}`);
   }
   const { question } = await loadQuestion(questionId);
-  await saveFullAnalysisForManual(question, parsed.data, source);
+  return saveFullAnalysisForManual(question, parsed.data, source);
 }

@@ -6,7 +6,7 @@
  * 결과만 서버 API 로 보낸다. (서버리스 환경에서 canvas 의존성을 피하고 비용을 줄이기 위함)
  */
 import { getBrowserClient } from "@/lib/supabase/browser";
-import { canvasToBlob, cropRegions, loadImage, openPdf, renderPageToCanvas, type ImageSource } from "@/lib/pdf/browser";
+import { canvasToBlob, cropRegions, findImageBoxes, imageCoverage, loadImage, openPdf, renderPageToCanvas, type Box, type ImageSource } from "@/lib/pdf/browser";
 import { extractPageText, type PdfPageLike } from "@/lib/pdf/extract";
 import { groupLines, segmentQuestions, type PageText, type SegmentationResult } from "@/lib/pdf/segment";
 import type { Region } from "@/lib/types";
@@ -166,7 +166,17 @@ export async function recropQuestion(
  * PDF 텍스트 레이어에서 영역 안에 있는 글자만 다시 뽑는다. (영역 수정 / 나누기 후 원문 텍스트 갱신)
  * 텍스트 레이어가 없는 스캔 페이지는 빈 문자열을 돌려준다.
  */
+export interface RegionTextResult {
+  text: string;
+  /** 영역 중 이미지(그림으로 들어간 글)가 차지하는 최대 비율 0~1 */
+  imageRatio: number;
+}
+
 export async function extractRegionsText(pdfUrl: string, regions: Region[]): Promise<string> {
+  return (await extractRegionsTextDetailed(pdfUrl, regions)).text;
+}
+
+export async function extractRegionsTextDetailed(pdfUrl: string, regions: Region[]): Promise<RegionTextResult> {
   let doc;
   try {
     // URL 을 pdf.js 에 바로 넘기면 일부 환경에서 range 요청이 실패하므로 먼저 통째로 받아온다.
@@ -177,13 +187,17 @@ export async function extractRegionsText(pdfUrl: string, regions: Region[]): Pro
     throw new Error(`원본 PDF 를 불러오지 못했습니다 (${e instanceof Error ? e.message : String(e)}). Supabase Storage 의 exam-pdfs 버킷이 public 인지 확인하세요.`);
   }
   const cache = new Map<number, PageText>();
+  const imageCache = new Map<number, Box[]>();
   const parts: string[] = [];
+  let imageRatio = 0;
   for (const r of regions) {
     if (r.page < 1 || r.page > doc.numPages) continue;
     if (!cache.has(r.page)) {
       const page = await doc.getPage(r.page);
       cache.set(r.page, await extractPageText(page as unknown as PdfPageLike));
     }
+    if (!imageCache.has(r.page)) imageCache.set(r.page, await findImageBoxes(doc, r.page).catch(() => []));
+    imageRatio = Math.max(imageRatio, imageCoverage(r, imageCache.get(r.page)!));
     const pt = cache.get(r.page)!;
     const inside = pt.items.filter((it) => {
       const cx = (it.x + it.w / 2) / pt.width;
@@ -196,5 +210,5 @@ export async function extractRegionsText(pdfUrl: string, regions: Region[]): Pro
       .trim();
     if (text) parts.push(text);
   }
-  return parts.join("\n");
+  return { text: parts.join("\n"), imageRatio };
 }

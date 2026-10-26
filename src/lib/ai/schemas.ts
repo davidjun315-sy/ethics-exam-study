@@ -63,7 +63,9 @@ export const FullAnalysisSchema = z.object({
   transcribedText: z
     .string()
     .nullable()
-    .describe("제공된 텍스트가 비어 있거나 깨진 경우 이미지에서 읽은 문항 원문. 텍스트가 정상이면 null"),
+    .describe(
+      "이미지 기준 문항 원문 전체. 제공된 텍스트가 비었거나, 박스·표·말풍선 안 제시문처럼 이미지에는 있는데 텍스트에 빠진 부분이 있으면 이미지를 읽어 문항 전체 원문(발문, 제시문, (가)(나), ㉠㉡, <작성 방법> 포함)을 적을 것. 제공된 텍스트가 이미 완전하면 null",
+    ),
   area: z.string().describe("출제 영역 (예: 동양윤리, 한국윤리, 서양윤리, 사회사상, 도덕교육론)"),
   school: z.string().nullable(),
   era: z.string().nullable(),

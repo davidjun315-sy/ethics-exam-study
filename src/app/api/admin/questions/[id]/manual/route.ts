@@ -29,8 +29,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions
   const { data, error } = await parseBody(req, Body);
   if (error) return error;
   try {
-    await importManualAnalysis(id, data.text, data.source?.trim() || "채팅 AI");
-    return NextResponse.json({ ok: true });
+    const r = await importManualAnalysis(id, data.text, data.source?.trim() || "채팅 AI");
+    return NextResponse.json({ ok: true, textUpdated: r.textUpdated });
   } catch (e) {
     return jsonError(e, 400);
   }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { api, extractRegionsText, recropQuestion } from "@/lib/admin-client";
+import { api, extractRegionsTextDetailed, recropQuestion } from "@/lib/admin-client";
 import type { QuestionDetail } from "@/lib/data/queries";
 import { examShortLabel } from "@/lib/format";
 import type { AnalysisStatus, ExamPage, PhilosopherRole, Region, VerificationStatus } from "@/lib/types";
@@ -58,7 +58,14 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
   const [regions, setRegions] = useState<Region[]>(q.regions);
   // 영역을 바꾸면 원문 텍스트도 PDF 텍스트 레이어에서 다시 뽑는다. (텍스트 보기 / AI 분석에 쓰임)
   const [syncText, setSyncText] = useState(true);
-  const regionText = async (rs: Region[]) => (exam.pdf_url && rs.length ? extractRegionsText(exam.pdf_url, rs) : "");
+  const regionTextDetailed = async (rs: Region[]) =>
+    exam.pdf_url && rs.length ? extractRegionsTextDetailed(exam.pdf_url, rs) : { text: "", imageRatio: 0 };
+  const regionText = async (rs: Region[]) => (await regionTextDetailed(rs)).text;
+  // 박스 제시문 등이 그림으로 들어 있으면 PDF 에서 글자를 뽑을 수 없다는 안내
+  const imageNote = (ratio: number) =>
+    ratio >= 0.15
+      ? ` ⚠ 이 영역의 약 ${Math.round(ratio * 100)}%는 PDF 안에 그림(이미지)으로 들어 있어 그 안의 글자는 뽑을 수 없습니다. 셀프 분석이나 AI 분석을 하면 AI 가 이미지에서 읽은 전체 원문으로 텍스트를 자동으로 채웁니다.`
+      : "";
 
   // ---- 분석 ----
   const x = a?.details ?? {};
@@ -244,11 +251,17 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
               disabled={Boolean(busy) || !exam.pdf_url || regions.length === 0}
               onClick={() =>
                 run("extract", async () => {
-                  const t = await regionText(regions);
-                  if (!t) throw new Error("영역 안에서 텍스트를 찾지 못했습니다. 스캔 PDF 이거나 영역 좌표가 글자를 벗어났을 수 있습니다.");
+                  const { text: t, imageRatio } = await regionTextDetailed(regions);
+                  if (!t) {
+                    throw new Error(
+                      imageRatio >= 0.15
+                        ? `영역 안의 글이 모두 그림(이미지)으로 들어 있어 PDF 에서 글자를 뽑을 수 없습니다.${imageNote(imageRatio)}`
+                        : "영역 안에서 텍스트를 찾지 못했습니다. 스캔 PDF 이거나 영역 좌표가 글자를 벗어났을 수 있습니다.",
+                    );
+                  }
                   await api(`/api/admin/questions/${q.id}`, "PATCH", { question: { question_text: t } });
                   setInfo((cur) => ({ ...cur, question_text: t }));
-                  return `현재 영역 기준으로 텍스트를 다시 뽑아 저장했습니다. (${t.length}자) 공부 화면의 '텍스트 보기'에도 반영됩니다.`;
+                  return `현재 영역 기준으로 텍스트를 다시 뽑아 저장했습니다. (${t.length}자)${imageNote(imageRatio)}`;
                 })
               }
             >
@@ -323,10 +336,11 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
             disabled={Boolean(busy) || regions.length === 0}
             onClick={() =>
               run("recrop", async () => {
-                const [url, text] = await Promise.all([
+                const [url, extracted] = await Promise.all([
                   recropQuestion(exam.id, q.question_number, regions, pageImages),
-                  syncText ? regionText(regions) : Promise.resolve(""),
+                  syncText ? regionTextDetailed(regions) : Promise.resolve({ text: "", imageRatio: 0 }),
                 ]);
+                const text = extracted.text;
                 await api(`/api/admin/questions/${q.id}`, "PATCH", {
                   question: {
                     regions,
@@ -343,7 +357,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
                     ? " 원문 텍스트도 새 영역 기준으로 바꿨습니다."
                     : " (영역 안에서 텍스트를 찾지 못해 기존 텍스트는 그대로 두었습니다.)";
                 const aiMsg = text && a && a.status !== "pending" ? " 문항 내용이 바뀌었다면 AI 분석을 다시 실행하세요." : "";
-                return `영역을 저장하고 문항 이미지를 다시 만들었습니다.${textMsg}${aiMsg}`;
+                return `영역을 저장하고 문항 이미지를 다시 만들었습니다.${textMsg}${aiMsg}${imageNote(extracted.imageRatio)}`;
               })
             }
           >

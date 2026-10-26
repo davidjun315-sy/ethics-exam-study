@@ -122,3 +122,82 @@ export async function sha256Hex(buf: ArrayBuffer): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+/** 0~1 정규화 좌표의 사각형 */
+export interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * 페이지에 그려진 이미지들의 위치를 찾는다. (박스 제시문이 그림으로 들어간 PDF 감지용)
+ * pdf.js operator list 를 따라가며 변환 행렬(CTM)을 추적한다.
+ */
+export async function findImageBoxes(doc: PdfDocument, pageNumber: number): Promise<Box[]> {
+  const pdfjs = await loadPdfJs();
+  const OPS = pdfjs.OPS;
+  const page = await doc.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const ops = await page.getOperatorList();
+  const mul = (a: number[], b: number[]) => [
+    a[0] * b[0] + a[2] * b[1],
+    a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3],
+    a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4],
+    a[1] * b[4] + a[3] * b[5] + a[5],
+  ];
+  const imageOps = new Set<number>([
+    OPS.paintImageXObject,
+    OPS.paintInlineImageXObject,
+    OPS.paintImageMaskXObject,
+    OPS.paintImageXObjectRepeat,
+    OPS.paintInlineImageXObjectGroup,
+  ]);
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack: number[][] = [];
+  const boxes: Box[] = [];
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const fn = ops.fnArray[i];
+    const args = ops.argsArray[i] as unknown[];
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = mul(ctm, args as number[]);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(ctm);
+      const m = args?.[0] as number[] | null;
+      if (Array.isArray(m) && m.length === 6) ctm = mul(ctm, m);
+    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (imageOps.has(fn)) {
+      // 이미지는 단위 정사각형(0,0)-(1,1)에 그려진다.
+      const m = mul(viewport.transform, ctm);
+      const pts = [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ].map(([x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]);
+      const xs = pts.map((p) => p[0] / viewport.width);
+      const ys = pts.map((p) => p[1] / viewport.height);
+      const box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+      // 아주 작은 아이콘 / 선은 무시
+      if ((box.x1 - box.x0) * (box.y1 - box.y0) > 0.002) boxes.push(box);
+    }
+  }
+  return boxes;
+}
+
+/** 영역 중 이미지가 덮고 있는 비율 (겹치는 이미지는 단순 합산 후 1 로 자름) */
+export function imageCoverage(region: Box, images: Box[]): number {
+  const area = (region.x1 - region.x0) * (region.y1 - region.y0);
+  if (area <= 0) return 0;
+  let covered = 0;
+  for (const b of images) {
+    const w = Math.min(region.x1, b.x1) - Math.max(region.x0, b.x0);
+    const h = Math.min(region.y1, b.y1) - Math.max(region.y0, b.y0);
+    if (w > 0 && h > 0) covered += w * h;
+  }
+  return Math.min(1, covered / area);
+}

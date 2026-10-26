@@ -126,6 +126,8 @@ function isHeaderOrFooter(item: TextItem, page: PageText, lineText: string): boo
   const rel = item.y / page.height;
   const relBottom = (item.y + item.h) / page.height;
   if (rel < 0.03 || relBottom > 0.975) return true;
+  // "1. 다음은 도덕 교사와…" 처럼 문항 번호로 시작하는 줄은 머리말 단어가 있어도 문항이다.
+  if (QUESTION_START.test(lineText)) return false;
   if (rel < 0.1 && HEADER_PATTERN.test(lineText)) return true;
   if (relBottom > 0.92 && HEADER_PATTERN.test(lineText)) return true;
   return false;
@@ -193,13 +195,16 @@ export function buildColumnBlocks(pages: PageText[]): { blocks: ColumnBlock[]; l
         ]
       : [{ x0: 0, x1: page.width, items: content }];
 
+    // 문항 이미지는 단 전체 폭으로 자른다. (텍스트보다 넓은 그림·박스 제시문이 잘리지 않도록)
+    // 좌우 여백은 페이지 왼쪽 여백과 같다고 보고 대칭으로 잡는다.
+    const margin = Math.max(0, Math.min(...content.map((i) => i.x)) - 6);
     for (const col of columns) {
       const lines = groupLines(col.items);
       if (lines.length === 0) continue;
       blocks.push({
         pageNumber: page.pageNumber,
-        x0: Math.max(col.x0, Math.min(...lines.map((l) => l.x0)) - 6),
-        x1: Math.min(col.x1, Math.max(...lines.map((l) => l.x1)) + 6),
+        x0: Math.max(col.x0 === 0 ? margin : col.x0 + 2, 0),
+        x1: Math.min(col.x1 === page.width ? page.width - margin : col.x1 - 2, page.width),
         lines,
       });
     }

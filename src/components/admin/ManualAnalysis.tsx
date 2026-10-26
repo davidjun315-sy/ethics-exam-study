@@ -40,9 +40,9 @@ export function ManualAnalysis({
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/admin/questions/${questionId}/manual`, "POST", { text, source });
+      const r = await api<{ textUpdated: boolean }>(`/api/admin/questions/${questionId}/manual`, "POST", { text, source });
       setText("");
-      onSaved(`${source} 분석 결과를 저장했습니다.`);
+      onSaved(`${source} 분석 결과를 저장했습니다.${r.textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트도 채웠습니다." : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -56,7 +56,9 @@ export function ManualAnalysis({
         <li>
           <b className="text-ink">분석 프롬프트 복사</b>를 누르고, 쓰고 있는 Claude · ChatGPT · Gemini 채팅창에 붙여넣습니다.
         </li>
-        <li>정확도를 높이려면 문항 이미지도 함께 첨부하세요. (아래 버튼으로 이미지를 열어 저장 / 복사)</li>
+        <li>
+          <b className="text-ink">문항 이미지도 꼭 첨부하세요.</b> 박스·말풍선 제시문이 PDF 에 그림으로 들어 있는 경우, AI 가 이미지에서 원문을 읽어 문항 텍스트까지 채워 줍니다. (아래 버튼으로 이미지를 열어 저장 / 복사)
+        </li>
         <li>AI 가 준 답(```json … ```)을 통째로 복사해 아래 칸에 붙여넣고 저장합니다.</li>
       </ol>
       <div className="flex flex-wrap gap-2">

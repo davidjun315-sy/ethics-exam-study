@@ -228,7 +228,11 @@ async function saveFullAnalysis(
   await replaceSources(db, question.id, d.sources);
 
   const qPatch: Record<string, unknown> = {};
-  if (!question.question_text?.trim() && d.transcribedText) qPatch.question_text = d.transcribedText;
+  // AI 가 이미지에서 읽은 원문이 기존 텍스트보다 확실히 길면(그림으로 들어간 제시문이 빠져 있던 경우) 교체한다.
+  const existing = question.question_text?.trim() ?? "";
+  const transcribed = d.transcribedText?.trim() ?? "";
+  const textUpdated = transcribed.length > 0 && (existing.length === 0 || transcribed.length >= existing.length * 1.3);
+  if (textUpdated) qPatch.question_text = transcribed;
   if (!question.question_type && d.questionType) qPatch.question_type = d.questionType;
   if (Object.keys(qPatch).length) await db.from("questions").update(qPatch).eq("id", question.id);
 
@@ -242,6 +246,7 @@ async function saveFullAnalysis(
     output_tokens: meta.usage.outputTokens,
     raw_output: d,
   });
+  return { textUpdated };
 }
 
 /**
@@ -269,8 +274,11 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
   try {
     if (scope === "full") {
       const res = await provider.analyzeQuestion(input);
-      await saveFullAnalysis(db, question, res.data, { provider: res.provider, model: res.model, usage: res.usage });
-      return { status: "analyzed", message: "분석이 완료되었습니다." };
+      const { textUpdated } = await saveFullAnalysis(db, question, res.data, { provider: res.provider, model: res.model, usage: res.usage });
+      return {
+        status: "analyzed",
+        message: `분석이 완료되었습니다.${textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트를 채웠습니다." : ""}`,
+      };
     }
 
     // ---- 부분 재분석 ----
@@ -415,7 +423,7 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
 
 /** 채팅 AI 결과 붙여넣기 저장 (lib/data/manual.ts 에서 사용) */
 export async function saveFullAnalysisForManual(question: Question, d: FullAnalysis, source: string) {
-  await saveFullAnalysis(getAdminClient(), question, d, {
+  return saveFullAnalysis(getAdminClient(), question, d, {
     provider: "manual",
     model: source,
     usage: { inputTokens: null, outputTokens: null },
