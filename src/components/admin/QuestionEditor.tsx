@@ -8,6 +8,7 @@ import type { QuestionDetail } from "@/lib/data/queries";
 import { examShortLabel } from "@/lib/format";
 import type { AnalysisStatus, ExamPage, PhilosopherRole, Region, VerificationStatus } from "@/lib/types";
 import { StatusBadge } from "@/components/ui";
+import { ManualAnalysis } from "./ManualAnalysis";
 
 type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation";
 
@@ -173,6 +174,18 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
         <p className="mt-2 text-xs text-muted">
           부분 재분석은 해당 항목만 다시 요청하므로 비용이 적게 듭니다. 관리자가 직접 수정한 사상가·개념·원전 연결은 재분석해도 유지됩니다.
         </p>
+      </Section>
+
+      <Section title="셀프 분석 — 채팅 AI 결과 붙여넣기 (API 비용 없음)">
+        <ManualAnalysis
+          questionId={q.id}
+          imageUrl={q.question_image_url}
+          onSaved={(m) => {
+            setMsg(`${m} 새 결과를 입력 칸에 보려면 새로고침하세요.`);
+            setError(null);
+            router.refresh();
+          }}
+        />
       </Section>
 
       <div className="grid gap-5 xl:grid-cols-2">

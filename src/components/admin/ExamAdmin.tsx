@@ -274,9 +274,14 @@ export function ExamAdmin({
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {!q.analysis || q.analysis.status === "pending" || q.analysis.status === "error" ? (
-                        <button className="btn-primary !px-2 !py-1 text-xs" disabled={Boolean(busy)} onClick={() => run("a", () => analyze(q, "full", false))}>
-                          AI 분석
-                        </button>
+                        <>
+                          <button className="btn-primary !px-2 !py-1 text-xs" disabled={Boolean(busy)} onClick={() => run("a", () => analyze(q, "full", false))}>
+                            AI 분석
+                          </button>
+                          <Link href={`/admin/questions/${q.id}`} className="btn !px-2 !py-1 text-xs" title="채팅 AI 결과 붙여넣기">
+                            셀프 분석
+                          </Link>
+                        </>
                       ) : (
                         <select
                           className="input !w-auto !py-1 text-xs"

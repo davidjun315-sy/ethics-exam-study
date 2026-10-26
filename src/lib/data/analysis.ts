@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAIProvider, type QuestionInput } from "@/lib/ai/provider";
 import {
   clamp01,
+  type FullAnalysis,
   type ConceptFindingSchema,
   type PhilosopherFindingSchema,
   type SourceFindingSchema,
@@ -162,6 +163,87 @@ async function logRun(
   await db.from("analysis_runs").insert(row);
 }
 
+/** 전체 분석 결과를 저장한다. (AI API 분석 / 채팅 AI 붙여넣기 공용) */
+async function saveFullAnalysis(
+  db: SupabaseClient,
+  question: Question,
+  d: FullAnalysis,
+  meta: { provider: string; model: string; usage: { inputTokens: number | null; outputTokens: number | null } },
+) {
+  const c = d.confidence;
+  const { status, reasons } = decideStatus({
+    needsReview: d.needsReview,
+    sourceConfidence: clamp01(c.source),
+    overallConfidence: clamp01(c.overall),
+    reasons: d.reviewReasons,
+  });
+  const details: AnalysisDetails = {
+    keyClues: d.keyClues,
+    passageAnalysis: d.passageAnalysis,
+    solvingProcess: d.solvingProcess,
+    answerBasis: d.answerBasis,
+    subAnswers: d.subAnswers,
+    modelAnswer: d.modelAnswer,
+    scoringPoints: d.scoringPoints,
+    recommendedExpressions: d.recommendedExpressions,
+    deductionRisks: d.deductionRisks,
+    confusablePhilosophers: d.confusablePhilosophers,
+    confusableConcepts: d.confusableConcepts,
+    mistakeReasons: d.mistakeReasons,
+    relatedThinkers: d.relatedThinkers,
+  };
+  const { error } = await db.from("question_analysis").upsert(
+    {
+      question_id: question.id,
+      area: d.area,
+      school: d.school,
+      era: d.era,
+      question_type: d.questionType,
+      difficulty: d.difficulty,
+      answer: d.answer,
+      answer_explanation: d.explanation,
+      question_intent: d.questionIntent,
+      required_keywords: d.requiredKeywords,
+      common_mistakes: d.commonMistakes,
+      details,
+      philosopher_confidence: clamp01(c.philosopher),
+      answer_confidence: clamp01(c.answer),
+      source_confidence: clamp01(c.source),
+      concept_confidence: clamp01(c.concept),
+      overall_confidence: clamp01(c.overall),
+      status,
+      review_reasons: reasons,
+      ai_original: d,
+      edited_fields: [],
+      edited_at: null,
+      provider: meta.provider,
+      model: meta.model,
+    },
+    { onConflict: "question_id" },
+  );
+  if (error) throw new Error(error.message);
+
+  const ids = await replacePhilosophers(db, question.id, d.philosophers);
+  await replaceConcepts(db, question.id, d.concepts, ids);
+  await replaceSources(db, question.id, d.sources);
+
+  const qPatch: Record<string, unknown> = {};
+  if (!question.question_text?.trim() && d.transcribedText) qPatch.question_text = d.transcribedText;
+  if (!question.question_type && d.questionType) qPatch.question_type = d.questionType;
+  if (Object.keys(qPatch).length) await db.from("questions").update(qPatch).eq("id", question.id);
+
+  await logRun(db, {
+    question_id: question.id,
+    scope: "full",
+    provider: meta.provider,
+    model: meta.model,
+    status: "success",
+    input_tokens: meta.usage.inputTokens,
+    output_tokens: meta.usage.outputTokens,
+    raw_output: d,
+  });
+}
+
 /**
  * 문항 AI 분석 실행.
  * - 이미 분석된 문항은 force 없이는 다시 분석하지 않는다. (비용 절감)
@@ -187,79 +269,7 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
   try {
     if (scope === "full") {
       const res = await provider.analyzeQuestion(input);
-      const d = res.data;
-      const c = d.confidence;
-      const { status, reasons } = decideStatus({
-        needsReview: d.needsReview,
-        sourceConfidence: clamp01(c.source),
-        overallConfidence: clamp01(c.overall),
-        reasons: d.reviewReasons,
-      });
-      const details: AnalysisDetails = {
-        keyClues: d.keyClues,
-        passageAnalysis: d.passageAnalysis,
-        solvingProcess: d.solvingProcess,
-        answerBasis: d.answerBasis,
-        subAnswers: d.subAnswers,
-        modelAnswer: d.modelAnswer,
-        scoringPoints: d.scoringPoints,
-        recommendedExpressions: d.recommendedExpressions,
-        deductionRisks: d.deductionRisks,
-        confusablePhilosophers: d.confusablePhilosophers,
-        confusableConcepts: d.confusableConcepts,
-        mistakeReasons: d.mistakeReasons,
-        relatedThinkers: d.relatedThinkers,
-      };
-      const { error } = await db.from("question_analysis").upsert(
-        {
-          question_id: questionId,
-          area: d.area,
-          school: d.school,
-          era: d.era,
-          question_type: d.questionType,
-          difficulty: d.difficulty,
-          answer: d.answer,
-          answer_explanation: d.explanation,
-          question_intent: d.questionIntent,
-          required_keywords: d.requiredKeywords,
-          common_mistakes: d.commonMistakes,
-          details,
-          philosopher_confidence: clamp01(c.philosopher),
-          answer_confidence: clamp01(c.answer),
-          source_confidence: clamp01(c.source),
-          concept_confidence: clamp01(c.concept),
-          overall_confidence: clamp01(c.overall),
-          status,
-          review_reasons: reasons,
-          ai_original: d,
-          edited_fields: [],
-          edited_at: null,
-          provider: res.provider,
-          model: res.model,
-        },
-        { onConflict: "question_id" },
-      );
-      if (error) throw new Error(error.message);
-
-      const ids = await replacePhilosophers(db, questionId, d.philosophers);
-      await replaceConcepts(db, questionId, d.concepts, ids);
-      await replaceSources(db, questionId, d.sources);
-
-      const qPatch: Record<string, unknown> = {};
-      if (!question.question_text?.trim() && d.transcribedText) qPatch.question_text = d.transcribedText;
-      if (!question.question_type && d.questionType) qPatch.question_type = d.questionType;
-      if (Object.keys(qPatch).length) await db.from("questions").update(qPatch).eq("id", questionId);
-
-      await logRun(db, {
-        question_id: questionId,
-        scope,
-        provider: res.provider,
-        model: res.model,
-        status: "success",
-        input_tokens: res.usage.inputTokens,
-        output_tokens: res.usage.outputTokens,
-        raw_output: d,
-      });
+      await saveFullAnalysis(db, question, res.data, { provider: res.provider, model: res.model, usage: res.usage });
       return { status: "analyzed", message: "분석이 완료되었습니다." };
     }
 
@@ -401,4 +411,13 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
     }
     throw err;
   }
+}
+
+/** 채팅 AI 결과 붙여넣기 저장 (lib/data/manual.ts 에서 사용) */
+export async function saveFullAnalysisForManual(question: Question, d: FullAnalysis, source: string) {
+  await saveFullAnalysis(getAdminClient(), question, d, {
+    provider: "manual",
+    model: source,
+    usage: { inputTokens: null, outputTokens: null },
+  });
 }
