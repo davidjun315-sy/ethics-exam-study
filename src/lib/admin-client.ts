@@ -8,7 +8,7 @@
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { canvasToBlob, cropRegions, loadImage, openPdf, renderPageToCanvas, type ImageSource } from "@/lib/pdf/browser";
 import { extractPageText, type PdfPageLike } from "@/lib/pdf/extract";
-import { segmentQuestions, type PageText, type SegmentationResult } from "@/lib/pdf/segment";
+import { groupLines, segmentQuestions, type PageText, type SegmentationResult } from "@/lib/pdf/segment";
 import type { Region } from "@/lib/types";
 
 export async function api<T = unknown>(url: string, method: string, body?: unknown): Promise<T> {
@@ -160,4 +160,33 @@ export async function recropQuestion(
   const path = `${examId}/questions/q${questionNumber}-${Date.now().toString(36)}.jpg`;
   const urls = await uploadImages([{ path, blob: await canvasToBlob(canvas, "image/jpeg", 0.9) }]);
   return urls.get(path)!;
+}
+
+/**
+ * PDF 텍스트 레이어에서 영역 안에 있는 글자만 다시 뽑는다. (영역 수정 / 나누기 후 원문 텍스트 갱신)
+ * 텍스트 레이어가 없는 스캔 페이지는 빈 문자열을 돌려준다.
+ */
+export async function extractRegionsText(pdfUrl: string, regions: Region[]): Promise<string> {
+  const doc = await openPdf(pdfUrl);
+  const cache = new Map<number, PageText>();
+  const parts: string[] = [];
+  for (const r of regions) {
+    if (r.page < 1 || r.page > doc.numPages) continue;
+    if (!cache.has(r.page)) {
+      const page = await doc.getPage(r.page);
+      cache.set(r.page, await extractPageText(page as unknown as PdfPageLike));
+    }
+    const pt = cache.get(r.page)!;
+    const inside = pt.items.filter((it) => {
+      const cx = (it.x + it.w / 2) / pt.width;
+      const cy = (it.y + it.h / 2) / pt.height;
+      return cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1;
+    });
+    const text = groupLines(inside)
+      .map((l) => l.text)
+      .join("\n")
+      .trim();
+    if (text) parts.push(text);
+  }
+  return parts.join("\n");
 }

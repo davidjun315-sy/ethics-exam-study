@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { api, recropQuestion } from "@/lib/admin-client";
+import { api, extractRegionsText, recropQuestion } from "@/lib/admin-client";
 import type { QuestionDetail } from "@/lib/data/queries";
 import { examShortLabel } from "@/lib/format";
 import type { AnalysisStatus, ExamPage, PhilosopherRole, Region, VerificationStatus } from "@/lib/types";
@@ -56,6 +56,9 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
     question_text: q.question_text ?? "",
   });
   const [regions, setRegions] = useState<Region[]>(q.regions);
+  // 영역을 바꾸면 원문 텍스트도 PDF 텍스트 레이어에서 다시 뽑는다. (텍스트 보기 / AI 분석에 쓰임)
+  const [syncText, setSyncText] = useState(true);
+  const regionText = async (rs: Region[]) => (exam.pdf_url && rs.length ? extractRegionsText(exam.pdf_url, rs) : "");
 
   // ---- 분석 ----
   const x = a?.details ?? {};
@@ -228,6 +231,20 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           <div className="mt-2">
             <label className="label">원문 텍스트</label>
             <textarea className="input min-h-60 font-mono text-[13px]" value={info.question_text} onChange={(e) => setInfo({ ...info, question_text: e.target.value })} />
+            <button
+              className="btn mt-1 text-xs"
+              disabled={Boolean(busy) || !exam.pdf_url || regions.length === 0}
+              onClick={() =>
+                run("extract", async () => {
+                  const t = await regionText(regions);
+                  if (!t) throw new Error("영역 안에서 텍스트를 찾지 못했습니다. (스캔 PDF 이거나 영역이 비어 있음)");
+                  setInfo((cur) => ({ ...cur, question_text: t }));
+                  return "현재 영역 기준으로 텍스트를 다시 뽑았습니다. 확인 후 '문항 정보 저장'을 누르세요.";
+                })
+              }
+            >
+              현재 영역 기준으로 텍스트 다시 추출
+            </button>
           </div>
           <button
             className="btn-primary mt-2"
@@ -294,21 +311,36 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
             disabled={Boolean(busy) || regions.length === 0}
             onClick={() =>
               run("recrop", async () => {
-                const url = await recropQuestion(exam.id, q.question_number, regions, pageImages);
+                const [url, text] = await Promise.all([
+                  recropQuestion(exam.id, q.question_number, regions, pageImages),
+                  syncText ? regionText(regions) : Promise.resolve(""),
+                ]);
                 await api(`/api/admin/questions/${q.id}`, "PATCH", {
                   question: {
                     regions,
                     question_image_url: url,
                     page_start: Math.min(...regions.map((r) => r.page)),
                     page_end: Math.max(...regions.map((r) => r.page)),
+                    ...(text ? { question_text: text } : {}),
                   },
                 });
-                return "영역을 저장하고 문항 이미지를 다시 만들었습니다.";
+                if (text) setInfo((cur) => ({ ...cur, question_text: text }));
+                const textMsg = !syncText
+                  ? ""
+                  : text
+                    ? " 원문 텍스트도 새 영역 기준으로 바꿨습니다."
+                    : " (영역 안에서 텍스트를 찾지 못해 기존 텍스트는 그대로 두었습니다.)";
+                const aiMsg = text && a && a.status !== "pending" ? " 문항 내용이 바뀌었다면 AI 분석을 다시 실행하세요." : "";
+                return `영역을 저장하고 문항 이미지를 다시 만들었습니다.${textMsg}${aiMsg}`;
               })
             }
           >
             영역 저장 + 문항 이미지 다시 만들기
           </button>
+          <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+            <input type="checkbox" checked={syncText} onChange={(e) => setSyncText(e.target.checked)} />
+            원문 텍스트도 영역 기준으로 다시 추출 (직접 고친 텍스트를 지키려면 끄세요)
+          </label>
 
           <details className="mt-4 rounded border border-line p-3">
             <summary className="cursor-pointer text-sm font-semibold">문항 나누기</summary>
@@ -339,18 +371,26 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
                 disabled={Boolean(busy) || !target}
                 onClick={() =>
                   run("split", async () => {
+                    const regionsA = [...regions.slice(0, split.regionIndex), { ...target!, y1: splitY }];
+                    const regionsB = [{ ...target!, y0: splitY }, ...regions.slice(split.regionIndex + 1)];
+                    let textA = split.textA;
+                    let textB = split.textB;
+                    if (syncText) {
+                      const [ta, tb] = await Promise.all([regionText(regionsA), regionText(regionsB)]);
+                      if (ta) textA = ta;
+                      if (tb) textB = tb;
+                    }
                     const r = await api<{ question: { id: string; regions: Region[]; question_number: number } }>(`/api/admin/questions/${q.id}/split`, "POST", {
                       regionIndex: split.regionIndex,
                       y: Number(splitY.toFixed(4)),
                       newNumber: Number(split.newNumber),
                       newLabel: split.newLabel,
                       newSubNumber: split.newSub || null,
-                      textA: split.textA,
-                      textB: split.textB,
+                      textA,
+                      textB,
                       asChild: split.asChild,
                     });
                     // 두 문항 모두 이미지를 다시 만든다.
-                    const regionsA = [...regions.slice(0, split.regionIndex), { ...target!, y1: splitY }];
                     const [urlA, urlB] = await Promise.all([
                       recropQuestion(exam.id, q.question_number, regionsA, pageImages),
                       recropQuestion(exam.id, r.question.question_number, r.question.regions, pageImages),
@@ -360,6 +400,8 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
                       api(`/api/admin/questions/${r.question.id}`, "PATCH", { question: { question_image_url: urlB } }),
                     ]);
                     setRegions(regionsA);
+                    setInfo((cur) => ({ ...cur, question_text: textA }));
+                    setSplit((cur) => ({ ...cur, textA, textB }));
                     return `문항을 나눴습니다. 새 문항: ${split.newLabel}번`;
                   })
                 }
