@@ -23,6 +23,8 @@ export interface PageText {
   width: number;
   height: number;
   items: TextItem[];
+  /** 페이지에 그려진 그림 위치 (PDF point, 좌상단 원점). 그림으로 들어간 제시문이 문항 영역에서 잘리지 않게 한다. */
+  images?: { x: number; y: number; w: number; h: number }[];
 }
 
 export interface Line {
@@ -38,6 +40,8 @@ export interface ColumnBlock {
   x0: number;
   x1: number;
   lines: Line[];
+  /** 이 단의 그림들 (위쪽 y 순) */
+  images: { top: number; bottom: number }[];
 }
 
 export interface SegmentedQuestion {
@@ -201,11 +205,20 @@ export function buildColumnBlocks(pages: PageText[]): { blocks: ColumnBlock[]; l
     for (const col of columns) {
       const lines = groupLines(col.items);
       if (lines.length === 0) continue;
+      // 이 단에 속한 그림 (가운데가 단 안에 있고, 머리말/꼬리말 띠가 아닌 것)
+      const images = (page.images ?? [])
+        .filter((im) => {
+          const cx = im.x + im.w / 2;
+          return cx >= col.x0 && cx < col.x1 && im.y / page.height > 0.03 && (im.y + im.h) / page.height < 0.97;
+        })
+        .map((im) => ({ top: im.y, bottom: im.y + im.h }))
+        .sort((a, b) => a.top - b.top);
       blocks.push({
         pageNumber: page.pageNumber,
         x0: Math.max(col.x0 === 0 ? margin : col.x0 + 2, 0),
         x1: Math.min(col.x1 === page.width ? page.width - margin : col.x1 - 2, page.width),
         lines,
+        images,
       });
     }
   }
@@ -275,7 +288,15 @@ export function segmentQuestions(pages: PageText[]): SegmentationResult {
     }
     if (current && segStart !== null) {
       const last = block.lines[block.lines.length - 1];
-      current.segments.push({ page: block.pageNumber, x0: block.x0, x1: block.x1, top: segStart, bottom: last.bottom + pad });
+      // 마지막 글줄 아래에 그림(그림으로 들어간 제시문 등)이 있으면 그 아래까지 포함한다.
+      const imageBottom = Math.max(0, ...block.images.filter((im) => im.bottom > segStart).map((im) => im.bottom));
+      current.segments.push({
+        page: block.pageNumber,
+        x0: block.x0,
+        x1: block.x1,
+        top: segStart,
+        bottom: Math.max(last.bottom, imageBottom) + pad,
+      });
     }
   }
 

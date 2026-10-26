@@ -24,6 +24,14 @@ function Section({ title, children, right }: { title: string; children: ReactNod
   );
 }
 
+// 채팅 AI 로 문항 원문을 정확하게 받아쓰게 하는 프롬프트 (OCR 이 틀리는 기호·그림 겹침 부분까지 정확함)
+const DICTATION_PROMPT = `첨부한 이미지는 임용시험 기출 문항입니다. 이미지 속 글을 원문 그대로 받아써 주세요.
+- 설명이나 요약 없이 받아쓴 원문만 출력하세요.
+- 발문, 제시문, 말풍선·박스 안 글, (가)(나), ㉠㉡ 같은 원문자, 밑줄 표시 위치, <작성 방법>과 ○ 항목까지 빠짐없이 쓰세요.
+- 말풍선 앞에는 말하는 사람(예: 교사:, 갑:)을 붙이세요.
+- 줄바꿈은 문단 단위로 하고, 지면의 줄바꿈 때문에 끊긴 문장은 이어서 쓰세요.
+- 읽을 수 없는 글자는 [?] 로 표시하고 추측하지 마세요.`;
+
 const lines = (s: string) =>
   s
     .split("\n")
@@ -286,6 +294,19 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
             >
               {busy === "ocr" ? "OCR 중…" : "OCR 로 다시 읽기"}
             </button>
+            <button
+              className="btn ml-1 mt-1 text-xs"
+              title="Claude / ChatGPT / Gemini 채팅에 문항 이미지와 함께 붙여넣으면 원문을 그대로 받아써 줍니다"
+              onClick={() =>
+                run("dictate", async () => {
+                  await navigator.clipboard.writeText(DICTATION_PROMPT);
+                  return "받아쓰기 프롬프트를 복사했습니다. 채팅 AI 에 문항 이미지와 함께 붙여넣고, 받은 원문을 위 칸에 붙여넣은 뒤 '문항 정보 저장'을 누르세요.";
+                })
+              }
+            >
+              채팅 AI 받아쓰기 프롬프트 복사
+            </button>
+            {inlineStatus("dictate")}
             {progressLine("extract")}
             {progressLine("ocr")}
             {inlineStatus("ocr")}

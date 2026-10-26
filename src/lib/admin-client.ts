@@ -85,7 +85,10 @@ export async function processExamPdf(
   for (let n = 1; n <= total; n++) {
     onProgress({ step: `페이지 렌더링 / 텍스트 추출 (${n}/${total})`, done: n - 1, total });
     const page = await doc.getPage(n);
-    texts.push(await extractPageText(page as unknown as PdfPageLike));
+    const pt = await extractPageText(page as unknown as PdfPageLike);
+    const imgs = await findImageBoxes(doc, n).catch(() => []);
+    pt.images = imgs.map((b) => ({ x: b.x0 * pt.width, y: b.y0 * pt.height, w: (b.x1 - b.x0) * pt.width, h: (b.y1 - b.y0) * pt.height }));
+    texts.push(pt);
     canvases.set(n, await renderPageToCanvas(doc, n, RENDER_SCALE));
   }
 
