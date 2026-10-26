@@ -27,6 +27,28 @@ export class AnthropicProvider extends BaseProvider {
     this.effort = EFFORTS.includes(effort as Effort) ? (effort as Effort) : "high";
   }
 
+  private async callApi(params: Parameters<Anthropic["beta"]["messages"]["parse"]>[0]) {
+    try {
+      return await this.client.beta.messages.parse(params);
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new Error(
+          "ANTHROPIC_API_KEY 가 올바르지 않습니다. console.anthropic.com 의 API Keys 에서 sk-ant-api 로 시작하는 키를 새로 만들어 Vercel 환경변수에 다시 넣고 Redeploy 하세요.",
+        );
+      }
+      if (err instanceof Anthropic.PermissionDeniedError) {
+        throw new Error("이 API 키로는 해당 모델을 사용할 수 없습니다. AI_MODEL 값이나 Anthropic 콘솔의 권한/결제 상태를 확인하세요.");
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new Error("AI API 호출 한도를 초과했습니다. 잠시 후 다시 시도하거나 Anthropic 콘솔에서 크레딧/한도를 확인하세요.");
+      }
+      if (err instanceof Anthropic.BadRequestError && /credit balance/i.test(err.message)) {
+        throw new Error("Anthropic 크레딧이 부족합니다. console.anthropic.com → Billing 에서 크레딧을 충전하세요.");
+      }
+      throw err;
+    }
+  }
+
   protected async generate<S extends z.ZodType>(req: GenerateRequest<S>): Promise<{ data: z.infer<S>; usage: AIUsage }> {
     const content: BetaContentBlockParam[] = [
       ...(req.imageUrls ?? []).map(
@@ -36,7 +58,7 @@ export class AnthropicProvider extends BaseProvider {
     ];
 
     const useFallback = FALLBACK_MODELS.has(this.model);
-    const response = await this.client.beta.messages.parse({
+    const response = await this.callApi({
       model: this.model,
       max_tokens: 16000,
       system: req.system,

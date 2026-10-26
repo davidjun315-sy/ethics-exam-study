@@ -4,8 +4,13 @@ import "server-only";
  * 서버 전용 환경변수 접근. 이 파일은 client component 에서 import 할 수 없다.
  */
 function read(name: string): string | undefined {
-  const v = process.env[name];
-  return v && v.trim() !== "" ? v.trim() : undefined;
+  // 대시보드에 값을 붙여넣을 때 섞여 들어간 공백 / 따옴표 / "KEY=" 접두어를 제거한다.
+  const v = process.env[name]
+    ?.trim()
+    .replace(new RegExp(`^${name}=`), "")
+    .replace(/^["']|["']$/g, "")
+    .trim();
+  return v ? v : undefined;
 }
 
 export const serverEnv = {
