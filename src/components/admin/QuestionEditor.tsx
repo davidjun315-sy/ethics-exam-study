@@ -10,7 +10,7 @@ import type { AnalysisStatus, ExamPage, PhilosopherRole, Region, VerificationSta
 import { StatusBadge } from "@/components/ui";
 import { ManualAnalysis } from "./ManualAnalysis";
 
-type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation";
+type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation" | "deep";
 
 function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
@@ -200,9 +200,9 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           <button className="btn-primary" disabled={Boolean(busy)} onClick={() => reanalyze("full")}>
             {busy === "ai-full" ? "분석 중…" : a && a.status !== "pending" ? "전체 재분석" : "AI 분석"}
           </button>
-          {(["answer", "philosophers", "sources", "explanation"] as const).map((s) => (
+          {(["deep", "answer", "philosophers", "sources", "explanation"] as const).map((s) => (
             <button key={s} className="btn" disabled={Boolean(busy) || !a || a.status === "pending"} onClick={() => reanalyze(s)}>
-              {busy === `ai-${s}` ? "분석 중…" : { answer: "정답만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "해설만 재분석" }[s]}
+              {busy === `ai-${s}` ? "분석 중…" : { deep: "심화 분석 (출제 의도·개념 정리·향후 출제)", answer: "정답만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "해설만 재분석" }[s]}
             </button>
           ))}
         </div>

@@ -54,6 +54,69 @@ const ConfidenceSchema = z.object({
   overall: z.number(),
 });
 
+// ---------------------------------------------------------------------
+// 심화 분석: 출제자의 의도 / 문제풀이 개념정리 / 이 문항에서 확장될 수 있는 출제
+// ---------------------------------------------------------------------
+
+/** 문제 유형 (출제 방식). 전체 기출 패턴 분석에도 쓰인다. */
+export const QUESTION_FORMATS = [
+  "identification", // 사상가·학파 판별
+  "definition", // 개념의 정확한 의미
+  "comparison", // 두 개 이상 사상 비교
+  "source", // 원전 제시문 이해
+  "expression", // 제시문에서 특정 표현 찾기
+  "application", // 사례·상황에 적용
+  "critique", // 비판·한계 서술
+  "descriptive", // 논거·이유 서술
+  "memorization", // 단순 암기
+] as const;
+export const QuestionFormatSchema = z.enum(QUESTION_FORMATS);
+export type QuestionFormat = z.infer<typeof QuestionFormatSchema>;
+
+export const ExaminerIntentSchema = z.object({
+  summary: z.string().describe("출제자가 왜 이 문제를 냈는지. 문제 구조와 제시문을 근거로 한두 문단"),
+  skillsTested: z.array(z.string()).describe("이 문항이 확인하려는 핵심 능력"),
+  formats: z.array(QuestionFormatSchema).describe("문제 유형. 해당하는 것을 모두 고를 것"),
+  requiredTerms: z.array(z.string()).describe("답안에서 정확하게 써야 하는 개념어"),
+  trapPoints: z.array(z.string()).describe("수험생이 빠지도록 노린 오개념·함정"),
+  evidence: z.array(z.string()).describe("위 판단의 근거: 발문 구조, 제시문 표현 인용, 조건(<작성 방법>) 등"),
+});
+export type ExaminerIntent = z.infer<typeof ExaminerIntentSchema>;
+
+export const StudyConceptSchema = z.object({
+  name: z.string(),
+  importance: z.enum(["required", "supporting", "comparison"]).describe(
+    "required=이 문제를 풀려면 반드시 알아야 함, supporting=알면 더 정확히 이해, comparison=혼동하기 쉬워 함께 비교해야 함",
+  ),
+  philosopher: z.string().nullable().describe("이 개념의 사상가. 모르면 null"),
+  definition: z.string().describe("임용 답안에 쓸 수 있는 수준의 정의"),
+  examPoint: z.string().describe("시험에서 중요한 포인트"),
+  connectionToQuestion: z.string().describe("이 문제와 어떻게 연결되는지"),
+  confusableWith: z.array(z.string()).describe("자주 혼동하는 개념"),
+  distinction: z.string().describe("구별법"),
+});
+export type StudyConcept = z.infer<typeof StudyConceptSchema>;
+
+export const FutureExtensionSchema = z.object({
+  topic: z.string().describe("예상 주제 (예: 주희의 격물치지와 비교)"),
+  possibleQuestionType: z.string().describe("예상 출제 방식 (예: (가)(나) 제시문 비교 서술형)"),
+  format: QuestionFormatSchema,
+  rationale: z.string().describe("이 문항의 어떤 개념·구조에서 이런 확장이 가능한지"),
+  relatedConcepts: z.array(z.string()),
+  relatedPhilosophers: z.array(z.string()),
+  relatedSources: z.array(z.string()).describe("관련 원전명 (『』 없이). 모르면 빈 배열"),
+  likelihood: z.enum(["high", "medium", "low"]).describe("이 방향으로 변형 출제될 가능성"),
+  importance: z.enum(["high", "medium", "low"]).describe("학습 중요도"),
+});
+export type FutureExtension = z.infer<typeof FutureExtensionSchema>;
+
+export const DeepAnalysisSchema = z.object({
+  examinerIntent: ExaminerIntentSchema,
+  studyConcepts: z.array(StudyConceptSchema),
+  futureExtensions: z.array(FutureExtensionSchema).describe("이 문항의 개념이 앞으로 변형·확장 출제될 수 있는 방향 3~6개"),
+});
+export type DeepAnalysis = z.infer<typeof DeepAnalysisSchema>;
+
 const ReviewSchema = {
   needsReview: z.boolean().describe("애매하거나 해석이 갈리면 true"),
   reviewReasons: z.array(z.string()),
@@ -92,6 +155,7 @@ export const FullAnalysisSchema = z.object({
   confusableConcepts: z.array(z.object({ name: z.string(), reason: z.string() })),
   mistakeReasons: z.array(z.string()).describe("틀리기 쉬운 이유"),
   commonMistakes: z.array(z.string()).describe("오답 포인트"),
+  ...DeepAnalysisSchema.shape,
   confidence: ConfidenceSchema,
   ...ReviewSchema,
 });
@@ -177,3 +241,39 @@ export function clamp01(n: number | null | undefined): number | null {
   const v = n > 1 ? n / 100 : n;
   return Math.min(1, Math.max(0, v));
 }
+
+// ---------------------------------------------------------------------
+// 전체 기출 출제 예측: AI 해석 (점수는 DB 계산값, AI 는 해석만 덧붙인다)
+// ---------------------------------------------------------------------
+export const PredictionInterpretationSchema = z.object({
+  overview: z.string().describe("전체 출제 경향 요약 (제공된 통계 근거로만)"),
+  topics: z.array(
+    z.object({
+      topicKey: z.string().describe("입력에 주어진 topicKey 를 그대로"),
+      title: z.string().describe("더 구체적인 주제명 (예: 칸트 - 선의지와 도덕적 가치)"),
+      expectedFormat: z.string().describe("예상 출제 방식 (예: 『윤리형이상학 정초』 제시문 + 선의지·의무 서술형)"),
+      interpretation: z.string().describe("AI 해석: 왜 이 주제를 우선 공부해야 하는지. 주어진 데이터 근거를 인용할 것"),
+      studyConcepts: z.array(z.string()).describe("함께 공부할 개념"),
+      likelihood: z.enum(["high", "medium", "low"]).describe("학습 우선순위 판단 (확률 아님)"),
+      cautions: z.array(z.string()).describe("이 판단의 한계·불확실한 점"),
+    }),
+  ),
+  caveats: z.array(z.string()),
+});
+export type PredictionInterpretation = z.infer<typeof PredictionInterpretationSchema>;
+
+// ---------------------------------------------------------------------
+// 예상 연습문제 생성
+// ---------------------------------------------------------------------
+export const PracticeQuestionSchema = z.object({
+  passage: z.string().describe("제시문. 기존 기출·원전 문장을 그대로 복제하지 말고 새로 구성할 것"),
+  passageNote: z.string().describe("제시문 구성 방식 (예: 『전습록』 상권 내용을 바탕으로 재구성. 직접 인용 아님)"),
+  question: z.string().describe("발문"),
+  conditions: z.array(z.string()).describe("<작성 방법> 항목 (없으면 빈 배열)"),
+  modelAnswer: z.string(),
+  requiredKeywords: z.array(z.string()),
+  scoringPoints: z.array(z.string()),
+  rationale: z.string().describe("출제 근거: 어떤 기출 경향을 반영했는지"),
+  relatedQuestionRefs: z.array(z.string()).describe("입력에 주어진 관련 기출 ref 중에서만 고를 것"),
+});
+export type PracticeQuestion = z.infer<typeof PracticeQuestionSchema>;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataError, load } from "@/components/DataError";
+import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Empty, PageTitle, SectionTitle, StatCard, Tag, VerificationBadge, ConfidenceBadge } from "@/components/ui";
 import { getSource } from "@/lib/data/queries";
@@ -27,6 +28,7 @@ export default async function SourcePage({ params }: PageProps<"/sources/[id]">)
       </div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          <EntityPattern kind="source" id={s.id} />
           <section className="card p-4">
             <SectionTitle>핵심 내용</SectionTitle>
             {s.summary ? <p className="prose-study">{s.summary}</p> : <p className="text-sm text-faint">아직 정리되지 않았습니다.</p>}

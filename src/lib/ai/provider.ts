@@ -15,10 +15,15 @@ import {
   buildQuestionAnalysisPrompt,
 } from "@prompts/question-analysis";
 import { SOURCE_ANALYSIS_SYSTEM, buildSourceAnalysisPrompt } from "@prompts/source-analysis";
+import { PRACTICE_SYSTEM } from "@prompts/practice-question";
+import { PREDICTION_SYSTEM } from "@prompts/trend-prediction";
 import type { QuestionContext } from "@prompts/shared-rules";
 import {
   AnswerOnlySchema,
   ComparisonSchema,
+  DeepAnalysisSchema,
+  PracticeQuestionSchema,
+  PredictionInterpretationSchema,
   ExplanationOnlySchema,
   FullAnalysisSchema,
   GradingSchema,
@@ -26,6 +31,9 @@ import {
   SourcesOnlySchema,
   type AnswerOnly,
   type Comparison,
+  type DeepAnalysis,
+  type PracticeQuestion,
+  type PredictionInterpretation,
   type ExplanationOnly,
   type FullAnalysis,
   type Grading,
@@ -59,13 +67,15 @@ export interface QuestionInput extends QuestionContext {
   imageUrl: string | null;
 }
 
-export type PartialScope = "answer" | "philosophers" | "explanation";
+export type PartialScope = "answer" | "philosophers" | "explanation" | "deep";
 
 export type PartialResult<S extends PartialScope> = S extends "answer"
   ? AnswerOnly
   : S extends "philosophers"
     ? PhilosophersOnly
-    : ExplanationOnly;
+    : S extends "deep"
+      ? DeepAnalysis
+      : ExplanationOnly;
 
 /**
  * 공통 AI provider interface.
@@ -98,6 +108,10 @@ export interface AIProvider {
     b: { name: string; school: string | null },
     relatedQuestionSummaries: string[],
   ): Promise<AIResult<Comparison>>;
+  /** 전체 기출 통계(이미 계산된 값)를 해석한다 */
+  interpretPredictions(prompt: string): Promise<AIResult<PredictionInterpretation>>;
+  /** 출제 예상 주제로 새 연습문제를 만든다 */
+  generatePractice(prompt: string): Promise<AIResult<PracticeQuestion>>;
 }
 
 export abstract class BaseProvider implements AIProvider {
@@ -127,7 +141,13 @@ export abstract class BaseProvider implements AIProvider {
 
   reanalyzePart<S extends PartialScope>(input: QuestionInput, scope: S, existingSummary: string | null) {
     const schema = (
-      scope === "answer" ? AnswerOnlySchema : scope === "philosophers" ? PhilosophersOnlySchema : ExplanationOnlySchema
+      scope === "answer"
+        ? AnswerOnlySchema
+        : scope === "philosophers"
+          ? PhilosophersOnlySchema
+          : scope === "deep"
+            ? DeepAnalysisSchema
+            : ExplanationOnlySchema
     ) as unknown as z.ZodType<PartialResult<S>>;
     return this.run({
       schema,
@@ -173,6 +193,19 @@ export abstract class BaseProvider implements AIProvider {
       system: PHILOSOPHER_COMPARISON_SYSTEM,
       prompt: buildComparisonPrompt(a, b, relatedQuestionSummaries),
     });
+  }
+
+  interpretPredictions(prompt: string) {
+    return this.run({
+      schema: PredictionInterpretationSchema,
+      schemaName: "prediction_interpretation",
+      system: PREDICTION_SYSTEM,
+      prompt,
+    });
+  }
+
+  generatePractice(prompt: string) {
+    return this.run({ schema: PracticeQuestionSchema, schemaName: "practice_question", system: PRACTICE_SYSTEM, prompt });
   }
 }
 

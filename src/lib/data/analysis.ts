@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAIProvider, type QuestionInput } from "@/lib/ai/provider";
 import {
   clamp01,
+  type DeepAnalysis,
   type FullAnalysis,
   type ConceptFindingSchema,
   type PhilosopherFindingSchema,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/ai/schemas";
 import { examFullLabel, LOW_CONFIDENCE, normalizeTitle } from "@/lib/format";
 import { getAdminClient } from "@/lib/supabase/server";
-import type { AnalysisDetails, AnalysisScope, Exam, Question, QuestionAnalysis } from "@/lib/types";
+import { DEEP_ANALYSIS_VERSION, type AnalysisDetails, type AnalysisScope, type Exam, type Question, type QuestionAnalysis } from "@/lib/types";
 import type { z } from "zod";
 import { linkConceptPhilosopher, upsertConcept, upsertPhilosopher, upsertSource } from "./tags";
 
@@ -143,7 +144,11 @@ function summarizeExisting(a: QuestionAnalysis | null, philosophers: string[], c
     `사상가: ${philosophers.join(", ") || "-"}`,
     `개념: ${concepts.join(", ") || "-"}`,
     `정답: ${a.answer ?? "-"}`,
-  ].join("\n");
+    a.question_intent ? `요구하는 것: ${a.question_intent}` : "",
+    a.answer_explanation ? `해설 요약: ${a.answer_explanation.slice(0, 600)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function logRun(
@@ -191,6 +196,9 @@ async function saveFullAnalysis(
     confusableConcepts: d.confusableConcepts,
     mistakeReasons: d.mistakeReasons,
     relatedThinkers: d.relatedThinkers,
+    examinerIntent: d.examinerIntent,
+    studyConcepts: d.studyConcepts,
+    futureExtensions: d.futureExtensions,
   };
   const { error } = await db.from("question_analysis").upsert(
     {
@@ -214,6 +222,7 @@ async function saveFullAnalysis(
       status,
       review_reasons: reasons,
       ai_original: d,
+      analysis_version: DEEP_ANALYSIS_VERSION,
       edited_fields: [],
       edited_at: null,
       provider: meta.provider,
@@ -358,6 +367,17 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
       await replaceSources(db, questionId, d.sources);
       sourceConfidence = clamp01(d.sourceConfidence);
       patch = { source_confidence: sourceConfidence, ai_original: { ...original, sources: d.sources } };
+    } else if (scope === "deep") {
+      const res = await provider.reanalyzePart(input, "deep", existingSummary);
+      const d = res.data;
+      raw = d;
+      usage = res.usage;
+      meta = res;
+      patch = {
+        details: { ...a.details, examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
+        analysis_version: DEEP_ANALYSIS_VERSION,
+        ai_original: { ...original, ...d },
+      };
     } else if (scope === "explanation") {
       const res = await provider.reanalyzePart(input, "explanation", existingSummary);
       const d = res.data;
@@ -428,4 +448,21 @@ export async function saveFullAnalysisForManual(question: Question, d: FullAnaly
     model: source,
     usage: { inputTokens: null, outputTokens: null },
   });
+}
+
+/** 채팅 AI 심화 분석(출제 의도 / 개념 정리 / 향후 출제) 붙여넣기 저장 */
+export async function saveDeepAnalysisForManual(questionId: string, d: DeepAnalysis, source: string) {
+  const db = getAdminClient();
+  const { data: a } = await db.from("question_analysis").select("details, ai_original").eq("question_id", questionId).maybeSingle();
+  if (!a) throw new Error("먼저 전체 분석을 저장하세요. (심화 분석은 기존 분석에 덧붙이는 기능입니다)");
+  const { error } = await db
+    .from("question_analysis")
+    .update({
+      details: { ...(a.details ?? {}), examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
+      ai_original: { ...((a.ai_original as object) ?? {}), ...d },
+      analysis_version: DEEP_ANALYSIS_VERSION,
+    })
+    .eq("question_id", questionId);
+  if (error) throw new Error(error.message);
+  await logRun(db, { question_id: questionId, scope: "deep", provider: "manual", model: source, status: "success", raw_output: d });
 }

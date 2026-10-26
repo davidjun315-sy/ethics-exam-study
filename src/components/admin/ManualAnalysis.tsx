@@ -20,6 +20,7 @@ export function ManualAnalysis({
 }) {
   const [text, setText] = useState("");
   const [source, setSource] = useState(SOURCES[0]);
+  const [mode, setMode] = useState<"full" | "deep">("full");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export function ManualAnalysis({
   async function copyPrompt() {
     setError(null);
     try {
-      const { prompt } = await api<{ prompt: string }>(`/api/admin/questions/${questionId}/manual`, "GET");
+      const { prompt } = await api<{ prompt: string }>(`/api/admin/questions/${questionId}/manual?mode=${mode}`, "GET");
       await navigator.clipboard.writeText(prompt);
       setCopied(true);
       setTimeout(() => setCopied(false), 3000);
@@ -40,9 +41,9 @@ export function ManualAnalysis({
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ textUpdated: boolean }>(`/api/admin/questions/${questionId}/manual`, "POST", { text, source });
+      const r = await api<{ textUpdated: boolean }>(`/api/admin/questions/${questionId}/manual`, "POST", { text, source, mode });
       setText("");
-      onSaved(`${source} 분석 결과를 저장했습니다.${r.textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트도 채웠습니다." : ""}`);
+      onSaved(`${source} ${mode === "deep" ? "심화 분석(출제 의도·개념 정리·향후 출제)" : "분석"} 결과를 저장했습니다.${r.textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트도 채웠습니다." : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -61,6 +62,15 @@ export function ManualAnalysis({
         </li>
         <li>AI 가 준 답(```json … ```)을 통째로 복사해 아래 칸에 붙여넣고 저장합니다.</li>
       </ol>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="flex items-center gap-1.5">
+          <input type="radio" checked={mode === "full"} onChange={() => setMode("full")} /> 전체 분석
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="radio" checked={mode === "deep"} onChange={() => setMode("deep")} /> 심화 분석만 (출제 의도·개념 정리·향후 출제)
+        </label>
+        <span className="text-xs text-faint">이미 분석된 문항에 새 항목만 추가하려면 “심화 분석만”</span>
+      </div>
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" onClick={copyPrompt}>
           {copied ? "✓ 복사됨" : "분석 프롬프트 복사"}

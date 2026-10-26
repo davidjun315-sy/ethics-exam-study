@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataError, load } from "@/components/DataError";
+import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Badge, Empty, PageTitle, SectionTitle, StatCard, Tag } from "@/components/ui";
 import { getPhilosopher } from "@/lib/data/queries";
@@ -39,6 +40,7 @@ export default async function PhilosopherPage({ params }: PageProps<"/philosophe
       )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          <EntityPattern kind="philosopher" id={p.id} />
           <section className="card p-4">
             <SectionTitle>핵심 사상</SectionTitle>
             {p.core_ideas || p.description ? (

@@ -8,15 +8,17 @@ import { useBoolPref, useQuestionRecord } from "@/lib/local-study";
 import { Badge, ConfidenceBadge, Empty, StatusBadge } from "@/components/ui";
 import {
   AnswerSection,
-  ConceptsTab,
   PhilosophersTab,
   ProblemAnalysis,
   RelatedTab,
   SourcesTab,
 } from "./AnalysisSections";
 import { AnswerWriter } from "./AnswerWriter";
+import { FutureTab, IntentTab, StudyConceptsTab } from "./DeepSections";
+import type { MatchedQuestion } from "@/lib/data/related";
 
-const TABS = ["문제 분석", "사상가", "개념", "원전", "답안", "관련 기출", "내 메모"] as const;
+// 공부 흐름: 왜 이 문제가 나왔나(출제 의도) → 무엇을 알아야 하나(개념 정리) → 풀이·답안 → 어떻게 변형될까(향후 출제)
+const TABS = ["출제 의도", "개념 정리", "문제 분석", "사상가", "원전", "답안", "향후 출제", "관련 기출", "내 메모"] as const;
 type TabName = (typeof TABS)[number];
 
 
@@ -24,10 +26,12 @@ export function QuestionStudy({
   detail,
   related,
   isAdmin,
+  extensionMatches,
 }: {
   detail: QuestionDetail;
   related: (QuestionSummary & { score: number; reasons: string[] })[];
   isAdmin: boolean;
+  extensionMatches: MatchedQuestion[][];
 }) {
   const { question: q, exam, analysis: a } = detail;
   const refLabel = questionRef(exam, q.label);
@@ -35,7 +39,7 @@ export function QuestionStudy({
   // 문제 풀이 모드: 기본 ON (정답·해설을 처음부터 보여주지 않음)
   const [solveMode, setSolveMode] = useBoolPref("ees:solve-mode", true);
   const [reveal, setReveal] = useState({ answer: false, analysis: false, source: false });
-  const [tab, setTab] = useState<TabName>("문제 분석");
+  const [tab, setTab] = useState<TabName>("출제 의도");
   const [showText, setShowText] = useState(false);
 
   const showAnalysis = !solveMode || reveal.analysis;
@@ -64,12 +68,20 @@ export function QuestionStudy({
 
   function renderTab() {
     switch (tab) {
+      case "출제 의도":
+        return showAnalysis ? <IntentTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
+      case "개념 정리":
+        return showAnalysis ? <StudyConceptsTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
+      case "향후 출제":
+        return showAnalysis ? (
+          <FutureTab d={detail} isAdmin={isAdmin} matches={extensionMatches} />
+        ) : (
+          locked("AI 분석 보기", "analysis")
+        );
       case "문제 분석":
         return showAnalysis ? <ProblemAnalysis d={detail} /> : locked("AI 분석 보기", "analysis");
       case "사상가":
         return showAnalysis ? <PhilosophersTab d={detail} /> : locked("AI 분석 보기", "analysis");
-      case "개념":
-        return showAnalysis ? <ConceptsTab d={detail} /> : locked("AI 분석 보기", "analysis");
       case "원전":
         return showSource ? <SourcesTab d={detail} /> : locked("원전 보기", "source");
       case "답안":
@@ -218,7 +230,7 @@ export function QuestionStudy({
                   className="btn"
                   onClick={() => {
                     setReveal((r) => ({ ...r, analysis: true }));
-                    setTab("문제 분석");
+                    setTab("출제 의도");
                   }}
                 >
                   AI 분석 보기
@@ -240,7 +252,7 @@ export function QuestionStudy({
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`rounded-md px-3 py-1.5 text-sm ${tab === t ? "bg-navy text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+                className={`rounded-md px-2.5 py-1.5 text-sm ${tab === t ? "bg-navy text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
               >
                 {t}
               </button>

@@ -9,7 +9,7 @@ import { parseBody } from "@/lib/http";
 export const maxDuration = 300;
 
 const Body = z.object({
-  scope: z.enum(["full", "answer", "philosophers", "sources", "explanation"]),
+  scope: z.enum(["full", "answer", "philosophers", "sources", "explanation", "deep"]),
   force: z.boolean().optional(),
 });
 

@@ -1,10 +1,12 @@
+import type { ExaminerIntent, FutureExtension, QuestionFormat, StudyConcept } from "./ai/schemas";
+
 // DB row 타입 (supabase/schema.sql 과 동기화)
 
 export type Section = "A" | "B";
 export type PhilosopherRole = "main" | "comparison" | "distractor" | "mentioned";
 export type VerificationStatus = "confirmed" | "likely" | "candidate" | "unknown";
 export type AnalysisStatus = "pending" | "analyzed" | "needs_review" | "verified" | "error";
-export type AnalysisScope = "full" | "answer" | "philosophers" | "sources" | "explanation";
+export type AnalysisScope = "full" | "answer" | "philosophers" | "sources" | "explanation" | "deep";
 
 /** 페이지 위 문항 영역. 좌표는 0~1 로 정규화 (좌상단 원점) */
 export interface Region {
@@ -122,6 +124,10 @@ export interface AnalysisDetails {
   confusableConcepts?: { name: string; reason: string }[];
   mistakeReasons?: string[];
   relatedThinkers?: string[];
+  // 심화 분석 (analysis_version 2 이상)
+  examinerIntent?: ExaminerIntent;
+  studyConcepts?: StudyConcept[];
+  futureExtensions?: FutureExtension[];
 }
 
 export interface QuestionAnalysis {
@@ -146,6 +152,7 @@ export interface QuestionAnalysis {
   status: AnalysisStatus;
   review_reasons: string[];
   ai_original: unknown;
+  analysis_version: number;
   edited_fields: string[];
   edited_at: string | null;
   provider: string | null;
@@ -218,3 +225,21 @@ export const STATUS_LABEL: Record<AnalysisStatus, string> = {
   verified: "검수 완료",
   error: "오류",
 };
+
+export const FORMAT_LABEL: Record<QuestionFormat, string> = {
+  identification: "사상가 판별",
+  definition: "개념 정의",
+  comparison: "사상 비교",
+  source: "원전 이해",
+  expression: "제시문 표현 찾기",
+  application: "적용",
+  critique: "비판·한계",
+  descriptive: "서술·논증",
+  memorization: "단순 암기",
+};
+
+export const IMPORTANCE_LABEL = { required: "필수 개념", supporting: "보조 개념", comparison: "함께 비교할 개념" } as const;
+export const LEVEL_LABEL = { high: "높음", medium: "보통", low: "낮음" } as const;
+
+/** 심화 분석(출제 의도 / 개념 정리 / 향후 출제)이 들어간 분석 버전 */
+export const DEEP_ANALYSIS_VERSION = 2;

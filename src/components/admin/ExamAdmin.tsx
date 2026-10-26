@@ -10,9 +10,10 @@ import type { Exam, ExamPage } from "@/lib/types";
 import { Badge, ConfidenceBadge, StatusBadge } from "@/components/ui";
 import { ProgressBar } from "./ProgressBar";
 
-type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation";
+type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation" | "deep";
 const SCOPES: { scope: Scope; label: string }[] = [
   { scope: "full", label: "전체 재분석" },
+  { scope: "deep", label: "심화 분석 추가" },
   { scope: "answer", label: "정답만" },
   { scope: "philosophers", label: "사상가만" },
   { scope: "sources", label: "원전만" },
