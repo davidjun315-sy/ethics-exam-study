@@ -5,7 +5,7 @@
  * - 이 사상가의 개념: 문항마다 흩어진 "개념 정리"를 개념 이름으로 합침
  * - 문항별 분석 요약, 자주 노린 함정, 확장 출제 방향
  */
-import type { ExaminerIntent, FutureExtension, QuestionFormat, StudyConcept } from "../ai/schemas";
+import type { QuestionFormat, StoredExaminerIntent, StoredFutureExtension, StudyConcept } from "../ai/schemas";
 
 export interface NotebookQuestion {
   id: string;
@@ -15,9 +15,9 @@ export interface NotebookQuestion {
   answer: string | null;
   modelAnswer: string | null;
   requiredKeywords: string[];
-  intent: ExaminerIntent | null;
+  intent: StoredExaminerIntent | null;
   studyConcepts: StudyConcept[];
-  extensions: FutureExtension[];
+  extensions: StoredFutureExtension[];
   reasoning: {
     decisiveExpressions?: string[];
     similarPhilosophers?: { name: string; distinguishingPoint: string }[];
@@ -153,8 +153,9 @@ export function buildPhilosopherNotebook(
     }
     // 출제 의도·함정은 이 사상가가 주요/비교 사상가인 문항만 (오답 유도로만 나온 문항은 제외)
     if (counted && q.intent) {
-      q.intent.trapPoints.forEach((t) => traps.add(t, cite));
-      q.intent.skillsTested.forEach((t) => skills.add(t, cite));
+      // 함정(trapPoints)은 v2 분석에만 있다
+      (q.intent.trapPoints ?? []).forEach((t) => traps.add(t, cite));
+      (q.intent.skillsTested ?? []).forEach((t) => skills.add(t, cite));
       q.intent.formats.forEach((f) => formats.set(f, (formats.get(f) ?? 0) + 1));
     }
     // 이 사상가의 개념: 개념 정리에서 사상가가 이 사상가로 표시된 것 + (표시가 없으면) 이 사상가가 main 인 문항의 필수/보조 개념
@@ -178,7 +179,15 @@ export function buildPhilosopherNotebook(
     for (const x of q.extensions) {
       if (!x.relatedPhilosophers.some((n) => matchesPhilosopher(n, philosopher.name, philosopher.aliases))) continue;
       const k = norm(x.topic);
-      const cur = ext.get(k) ?? { topic: x.topic, format: x.format, possibleQuestionType: x.possibleQuestionType, rationale: x.rationale, importance: x.importance, from: [] };
+      // v3: 개념 설명 + 예상 문제 / v2: 출제 방식 + 근거
+      const cur = ext.get(k) ?? {
+        topic: x.topic,
+        format: x.format,
+        possibleQuestionType: x.possibleQuestionType ?? (x.concept ? `${x.philosopher ?? ""} ${x.concept}`.trim() : ""),
+        rationale: x.rationale ?? x.conceptSummary ?? "",
+        importance: x.importance,
+        from: [] as { id: string; ref: string }[],
+      };
       if (!cur.from.some((f) => f.id === q.id)) cur.from.push(cite);
       ext.set(k, cur);
     }

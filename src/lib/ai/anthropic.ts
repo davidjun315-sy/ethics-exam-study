@@ -60,7 +60,7 @@ export class AnthropicProvider extends BaseProvider {
     const useFallback = FALLBACK_MODELS.has(this.model);
     const response = await this.callApi({
       model: this.model,
-      max_tokens: 16000,
+      max_tokens: 20000, // 요구 사항별 해설·원문 해설·예상 문제로 출력이 길다 (스트리밍 없이 보낼 수 있는 범위)
       system: req.system,
       messages: [{ role: "user", content }],
       output_config: { effort: this.effort, format: betaZodOutputFormat(req.schema) },

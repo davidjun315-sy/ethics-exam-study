@@ -117,23 +117,27 @@ async function replaceSources(db: SupabaseClient, questionId: string, items: Sou
       const pid = s.philosopher ? await upsertPhilosopher(db, { name: s.philosopher }) : null;
       sourceId = await upsertSource(db, { title: s.title, philosopherId: pid });
     }
-    await db.from("question_sources").insert({
+    const row: Record<string, unknown> = {
       question_id: questionId,
       source_id: sourceId,
       philosopher_name: s.philosopher,
       title_raw: s.title ? normalizeTitle(s.title) : null,
       location: s.location,
+      source_overview: s.sourceOverview?.trim() || null,
       related_content: s.relatedContent,
       relation_to_question: s.relationToQuestion,
       quoted_text: s.quotedText,
       // AI 는 confirmed 를 주장할 수 있지만, 원전 DB 와 대조되지 않은 경우 likely 로 낮춘다.
       verification_status: s.status === "confirmed" ? "likely" : s.status,
       confidence: clamp01(s.confidence),
-      reasoning:
-        s.status === "confirmed"
-          ? `${s.reasoning} (AI 는 확인됨으로 판단했으나 원전 DB 와 대조되지 않아 '유력'으로 저장됨)`
-          : s.reasoning,
-    });
+      reasoning: s.status === "confirmed" ? "AI 는 확인됨으로 판단했으나 원전 DB 와 대조되지 않아 '유력'으로 저장됨" : null,
+    };
+    const { error } = await db.from("question_sources").insert(row);
+    // 004 마이그레이션 전 DB: source_overview 컬럼 없이 저장
+    if (error && /source_overview/.test(error.message)) {
+      delete row.source_overview;
+      await db.from("question_sources").insert(row);
+    }
   }
 }
 
@@ -183,18 +187,11 @@ async function saveFullAnalysis(
     reasons: d.reviewReasons,
   });
   const details: AnalysisDetails = {
-    keyClues: d.keyClues,
-    passageAnalysis: d.passageAnalysis,
-    solvingProcess: d.solvingProcess,
-    answerBasis: d.answerBasis,
-    subAnswers: d.subAnswers,
     modelAnswer: d.modelAnswer,
-    scoringPoints: d.scoringPoints,
-    recommendedExpressions: d.recommendedExpressions,
-    deductionRisks: d.deductionRisks,
+    itemExplanations: d.itemExplanations,
+    passageCommentary: d.passageCommentary,
     confusablePhilosophers: d.confusablePhilosophers,
     confusableConcepts: d.confusableConcepts,
-    mistakeReasons: d.mistakeReasons,
     relatedThinkers: d.relatedThinkers,
     examinerIntent: d.examinerIntent,
     studyConcepts: d.studyConcepts,
@@ -210,7 +207,7 @@ async function saveFullAnalysis(
       difficulty: d.difficulty,
       answer: d.answer,
       answer_explanation: d.explanation,
-      question_intent: d.questionIntent,
+      question_intent: d.examinerIntent.summary,
       required_keywords: d.requiredKeywords,
       common_mistakes: d.commonMistakes,
       details,
@@ -318,7 +315,8 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
         answer: d.answer,
         required_keywords: d.requiredKeywords,
         answer_confidence: clamp01(d.answerConfidence),
-        details: { ...a.details, subAnswers: d.subAnswers, answerBasis: d.answerBasis, modelAnswer: d.modelAnswer, scoringPoints: d.scoringPoints },
+        answer_explanation: d.explanation,
+        details: { ...a.details, modelAnswer: d.modelAnswer, itemExplanations: d.itemExplanations },
         ai_original: { ...original, ...d },
       };
     } else if (scope === "philosophers") {
@@ -374,8 +372,8 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
       usage = res.usage;
       meta = res;
       patch = {
+        question_intent: d.examinerIntent.summary,
         details: { ...a.details, examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
-        analysis_version: DEEP_ANALYSIS_VERSION,
         ai_original: { ...original, ...d },
       };
     } else if (scope === "explanation") {
@@ -385,18 +383,12 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
       usage = res.usage;
       meta = res;
       patch = {
-        question_intent: d.questionIntent,
-        answer_explanation: d.explanation,
         common_mistakes: d.commonMistakes,
         details: {
           ...a.details,
-          keyClues: d.keyClues,
-          passageAnalysis: d.passageAnalysis,
-          solvingProcess: d.solvingProcess,
-          recommendedExpressions: d.recommendedExpressions,
-          deductionRisks: d.deductionRisks,
+          passageCommentary: d.passageCommentary,
+          confusablePhilosophers: d.confusablePhilosophers,
           confusableConcepts: d.confusableConcepts,
-          mistakeReasons: d.mistakeReasons,
         },
         ai_original: { ...original, ...d },
       };
@@ -458,9 +450,9 @@ export async function saveDeepAnalysisForManual(questionId: string, d: DeepAnaly
   const { error } = await db
     .from("question_analysis")
     .update({
+      question_intent: d.examinerIntent.summary,
       details: { ...(a.details ?? {}), examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
       ai_original: { ...((a.ai_original as object) ?? {}), ...d },
-      analysis_version: DEEP_ANALYSIS_VERSION,
     })
     .eq("question_id", questionId);
   if (error) throw new Error(error.message);

@@ -6,19 +6,15 @@ import type { QuestionDetail, QuestionSummary } from "@/lib/data/queries";
 import { isLowConfidence, questionRef } from "@/lib/format";
 import { useBoolPref, useQuestionRecord } from "@/lib/local-study";
 import { Badge, ConfidenceBadge, Empty, StatusBadge } from "@/components/ui";
-import {
-  AnswerSection,
-  PhilosophersTab,
-  ProblemAnalysis,
-  RelatedTab,
-  SourcesTab,
-} from "./AnalysisSections";
+import { AnswerSection, PassageTab, PhilosophersTab, RelatedTab, SourcesTab } from "./AnalysisSections";
 import { AnswerWriter } from "./AnswerWriter";
-import { FutureTab, IntentTab, StudyConceptsTab } from "./DeepSections";
+import { FutureTab, IntentTab } from "./DeepSections";
+import { MemoBox, type ServerMemo } from "./MemoBox";
 import type { MatchedQuestion } from "@/lib/data/related";
+import { DEEP_ANALYSIS_VERSION } from "@/lib/types";
 
-// 공부 흐름: 왜 이 문제가 나왔나(출제 의도) → 무엇을 알아야 하나(개념 정리) → 풀이·답안 → 어떻게 변형될까(향후 출제)
-const TABS = ["출제 의도", "개념 정리", "문제 분석", "사상가", "원전", "답안", "향후 출제", "관련 기출", "내 메모"] as const;
+// 공부 흐름: 답안(모범답안·해설) → 출제 의도 → 원문 해설 → 사상가 → 원전 → 향후 출제(예상 문제) → 관련 기출
+const TABS = ["답안", "출제 의도", "원문 해설", "사상가", "원전", "향후 출제", "관련 기출", "내 메모"] as const;
 type TabName = (typeof TABS)[number];
 
 
@@ -27,11 +23,14 @@ export function QuestionStudy({
   related,
   isAdmin,
   extensionMatches,
+  memo,
 }: {
   detail: QuestionDetail;
   related: (QuestionSummary & { score: number; reasons: string[] })[];
   isAdmin: boolean;
   extensionMatches: MatchedQuestion[][];
+  /** 관리자 로그인 시 서버에 저장된 메모 (없으면 null) */
+  memo: ServerMemo | null;
 }) {
   const { question: q, exam, analysis: a } = detail;
   const refLabel = questionRef(exam, q.label);
@@ -39,7 +38,7 @@ export function QuestionStudy({
   // 문제 풀이 모드: 기본 ON (정답·해설을 처음부터 보여주지 않음)
   const [solveMode, setSolveMode] = useBoolPref("ees:solve-mode", true);
   const [reveal, setReveal] = useState({ answer: false, analysis: false, source: false });
-  const [tab, setTab] = useState<TabName>("출제 의도");
+  const [tab, setTab] = useState<TabName>("답안");
   const [showText, setShowText] = useState(false);
 
   const showAnalysis = !solveMode || reveal.analysis;
@@ -68,33 +67,31 @@ export function QuestionStudy({
 
   function renderTab() {
     switch (tab) {
+      case "답안":
+        return (
+          <div className="space-y-3">
+            <AnswerWriter questionId={q.id} refLabel={refLabel} />
+            {showAnswer ? <AnswerSection d={detail} /> : locked("모범답안 · 해설 보기", "answer")}
+          </div>
+        );
       case "출제 의도":
         return showAnalysis ? <IntentTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
-      case "개념 정리":
-        return showAnalysis ? <StudyConceptsTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
+      case "원문 해설":
+        return showAnalysis ? <PassageTab d={detail} /> : locked("AI 분석 보기", "analysis");
+      case "사상가":
+        return showAnalysis ? <PhilosophersTab d={detail} /> : locked("AI 분석 보기", "analysis");
+      case "원전":
+        return showSource ? <SourcesTab d={detail} /> : locked("원전 보기", "source");
       case "향후 출제":
         return showAnalysis ? (
           <FutureTab d={detail} isAdmin={isAdmin} matches={extensionMatches} />
         ) : (
           locked("AI 분석 보기", "analysis")
         );
-      case "문제 분석":
-        return showAnalysis ? <ProblemAnalysis d={detail} /> : locked("AI 분석 보기", "analysis");
-      case "사상가":
-        return showAnalysis ? <PhilosophersTab d={detail} /> : locked("AI 분석 보기", "analysis");
-      case "원전":
-        return showSource ? <SourcesTab d={detail} /> : locked("원전 보기", "source");
-      case "답안":
-        return (
-          <div className="space-y-3">
-            <AnswerWriter questionId={q.id} refLabel={refLabel} />
-            {showAnswer ? <AnswerSection d={detail} /> : locked("정답 보기", "answer")}
-          </div>
-        );
       case "관련 기출":
         return showAnalysis ? <RelatedTab related={related} /> : locked("AI 분석 보기", "analysis");
       case "내 메모":
-        return <MemoBox questionId={q.id} refLabel={refLabel} />;
+        return <MemoBox questionId={q.id} refLabel={refLabel} isAdmin={isAdmin} server={memo} />;
     }
   }
 
@@ -224,13 +221,13 @@ export function QuestionStudy({
                     setTab("답안");
                   }}
                 >
-                  정답 보기
+                  모범답안 보기
                 </button>
                 <button
                   className="btn"
                   onClick={() => {
                     setReveal((r) => ({ ...r, analysis: true }));
-                    setTab("출제 의도");
+                    setTab("답안");
                   }}
                 >
                   AI 분석 보기
@@ -258,6 +255,17 @@ export function QuestionStudy({
               </button>
             ))}
           </div>
+          {a && a.analysis_version < DEEP_ANALYSIS_VERSION && showAnalysis && tab !== "내 메모" && tab !== "관련 기출" && (
+            <p className="mb-3 rounded bg-surface-2 px-3 py-2 text-xs text-muted">
+              이전 형식으로 분석된 문항입니다. 다시 분석하면 요구 사항별 해설 · 원문 해설 · 원전 해설 · 예상 문제가 채워집니다.
+              {isAdmin && (
+                <>
+                  {" "}
+                  <Link href={`/admin/questions/${q.id}`} className="text-navy underline">관리자 화면에서 재분석</Link>
+                </>
+              )}
+            </p>
+          )}
           <div className="mb-3">{renderTab()}</div>
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             {markBtn("bookmarked", "★ 북마크", "border-navy text-navy")}
@@ -268,26 +276,5 @@ export function QuestionStudy({
         </div>
       </div>
     </div>
-  );
-}
-
-function MemoBox({ questionId, refLabel }: { questionId: string; refLabel: string }) {
-  const { record, update } = useQuestionRecord(questionId);
-  const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? record.memo ?? "";
-  return (
-    <section className="rounded-lg border border-line bg-surface p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-navy">내 메모</h3>
-        <span className="text-xs text-faint">자동 저장 · 이 브라우저에만 저장됩니다</span>
-      </div>
-      <textarea
-        className="input min-h-48 text-[15px] leading-7"
-        placeholder="헷갈렸던 점, 암기할 표현, 비교 포인트 등을 적어 두세요."
-        value={value}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => draft !== null && update({ memo: draft, ref: refLabel })}
-      />
-    </section>
   );
 }

@@ -7,11 +7,11 @@ const sc = (name: string, philosopher: string | null, importance: "required" | "
 const base = { modelAnswer: null, requiredKeywords: [], extensions: [], ownConcepts: [] };
 const qs: NotebookQuestion[] = [
   { ...base, id: "a", ref: "2018 A 1번", year: 2018, role: "main", answer: "양지",
-    intent: { summary: "주희와 구별", skillsTested: ["사상가 구별"], formats: ["comparison"], requiredTerms: [], trapPoints: ["격물치지와 혼동"], evidence: [] },
+    intent: { summary: "주희와 구별", skillsTested: ["사상가 구별"], formats: ["comparison"], itemIntents: [], trapPoints: ["격물치지와 혼동"], evidence: [] },
     studyConcepts: [sc("양지", "왕수인", "required", "선천적 도덕 판단 능력"), sc("격물치지", "주희", "comparison", "주희 개념")],
     reasoning: { decisiveExpressions: ["마음 밖에 이치가 없다"], similarPhilosophers: [{ name: "주희", distinguishingPoint: "주희는 격물궁리, 왕수인은 양지" }] } },
   { ...base, id: "b", ref: "2021 A 1번", year: 2021, role: "main", answer: "치양지",
-    intent: { summary: "치양지 의미", skillsTested: ["사상가 구별"], formats: ["definition"], requiredTerms: [], trapPoints: ["격물치지와 혼동."], evidence: [] },
+    intent: { summary: "치양지 의미", skillsTested: ["사상가 구별"], formats: ["definition"], itemIntents: [], trapPoints: ["격물치지와 혼동."], evidence: [] },
     studyConcepts: [sc("양지", "왕수인(왕양명)", "supporting", "선천적 도덕 판단 능력"), sc("치양지", null, "required", "양지 실현")],
     reasoning: { decisiveExpressions: ["마음 밖에 이치가 없다", "양지를 보존"], similarPhilosophers: [{ name: "주희", distinguishingPoint: "주희는 성즉리" }] } },
   { ...base, id: "c", ref: "2024 A 3번", year: 2024, role: "comparison", answer: "x", intent: null,

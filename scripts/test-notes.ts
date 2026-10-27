@@ -50,7 +50,7 @@ check("노트 이후 분석된 문항 / 빠진 문항", f.added.join() === "c,d"
 
 const q: NotebookQuestion = {
   id: "a", ref: "2018 A 1번", year: 2018, role: "main", answer: "양지".repeat(200), modelAnswer: null, requiredKeywords: ["양지"],
-  intent: { summary: "의도", skillsTested: ["구별"], formats: ["definition"], requiredTerms: [], trapPoints: ["함정"], evidence: [] },
+  intent: { summary: "의도", skillsTested: ["구별"], formats: ["definition"], itemIntents: [], trapPoints: ["함정"], evidence: [] },
   studyConcepts: [{ name: "양지", philosopher: "왕수인", importance: "required", definition: "정의", examPoint: "포인트", connectionToQuestion: "연결", confusableWith: [], distinction: "" }],
   extensions: [], reasoning: { decisiveExpressions: ["마음 밖에 이치가 없다"] }, ownConcepts: [{ id: "c1", name: "양지" }],
 };

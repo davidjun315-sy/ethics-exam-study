@@ -427,3 +427,20 @@ create table if not exists public.philosopher_notes (
 alter table public.philosopher_notes enable row level security;
 drop policy if exists "public read" on public.philosopher_notes;
 create policy "public read" on public.philosopher_notes for select using (true);
+
+-- ---------------------------------------------------------------------
+-- 004: 원전 해설 + 내 메모 (supabase/migrations/004_answer_commentary_and_memos.sql 과 동일)
+-- ---------------------------------------------------------------------
+-- 원전 해설: 어떤 저작인지, 구성, 핵심 주제 (문항 분석 v3)
+alter table public.question_sources add column if not exists source_overview text;
+
+-- 내 메모: 관리자(본인) 로그인 상태에서만 읽고 쓴다.
+-- 공개 읽기 정책을 만들지 않으므로 anon key 로는 읽을 수 없고, 서버가 service role 로만 접근한다.
+create table if not exists public.study_memos (
+  question_id uuid primary key references public.questions(id) on delete cascade,
+  memo text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists study_memos_updated_idx on public.study_memos (updated_at desc);
+alter table public.study_memos enable row level security;

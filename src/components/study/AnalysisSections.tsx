@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { QuestionDetail, QuestionSummary } from "@/lib/data/queries";
-import { isLowConfidence, pct, questionRef } from "@/lib/format";
+import { isLowConfidence, questionRef } from "@/lib/format";
 import { Badge, ConfidenceBadge, Empty, RoleBadge, VerificationBadge } from "@/components/ui";
 
 export function Block({ title, children, tone }: { title: string; children: ReactNode; tone?: "warn" }) {
@@ -29,74 +29,49 @@ function Text({ value }: { value?: string | null }) {
   return value ? <p className="prose-study">{value}</p> : <p className="text-sm text-faint">없음</p>;
 }
 
-export function ProblemAnalysis({ d }: { d: QuestionDetail }) {
+function Confusions({ title, items }: { title: string; items?: { name: string; reason: string }[] }) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <div className="text-xs font-semibold text-muted">{title}</div>
+      <ul className="mt-1 list-disc space-y-1 pl-5">
+        {items.map((c, i) => (
+          <li key={i}>
+            <b>{c.name}</b> — {c.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** ③ 원문 해설: 제시문을 부분별로 나눠 풀이 */
+export function PassageTab({ d }: { d: QuestionDetail }) {
   const a = d.analysis;
   if (!a) return <Empty>아직 AI 분석이 없습니다.</Empty>;
-  const x = a.details ?? {};
+  const parts = a.details?.passageCommentary;
+  if (!parts?.length) {
+    // 이전 형식 분석: 제시문 분석 문단만 보여 준다
+    return a.details?.passageAnalysis ? (
+      <Block title="제시문 분석">
+        <Text value={a.details.passageAnalysis} />
+      </Block>
+    ) : (
+      <Empty>원문 해설이 없습니다. 다시 분석하면 제시문을 부분별로 풀이한 원문 해설이 만들어집니다.</Empty>
+    );
+  }
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-1.5">
-        {a.area && <Badge tone="navy">{a.area}</Badge>}
-        {a.school && <Badge>학파 {a.school}</Badge>}
-        {a.era && <Badge>시대 {a.era}</Badge>}
-        {a.question_type && <Badge>{a.question_type}</Badge>}
-        {a.difficulty && <Badge>난이도 {a.difficulty}</Badge>}
-      </div>
-      <Block title="문제에서 요구하는 것">
-        <Text value={a.question_intent} />
-      </Block>
-      <Block title="핵심 단서">
-        <List items={x.keyClues} />
-      </Block>
-      <Block title="제시문 분석">
-        <Text value={x.passageAnalysis} />
-      </Block>
-      <Block title="풀이 과정">
-        <List items={x.solvingProcess} ordered />
-      </Block>
-      <Block title="해설">
-        <Text value={a.answer_explanation} />
-      </Block>
-      <Block title="오답 분석">
-        <div className="space-y-3">
-          <div>
-            <div className="text-xs font-semibold text-muted">자주 혼동할 사상가</div>
-            {x.confusablePhilosophers?.length ? (
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                {x.confusablePhilosophers.map((c, i) => (
-                  <li key={i}>
-                    <b>{c.name}</b> — {c.reason}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-faint">없음</p>
-            )}
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-muted">자주 혼동할 개념</div>
-            {x.confusableConcepts?.length ? (
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                {x.confusableConcepts.map((c, i) => (
-                  <li key={i}>
-                    <b>{c.name}</b> — {c.reason}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-faint">없음</p>
-            )}
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-muted">틀리기 쉬운 이유</div>
-            <List items={x.mistakeReasons} />
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-muted">오답 포인트</div>
-            <List items={a.common_mistakes} />
-          </div>
-        </div>
-      </Block>
+      {parts.map((p, i) => (
+        <section key={i} className="rounded-lg border border-line bg-surface p-4">
+          <h3 className="mb-2 flex items-baseline gap-2 text-sm font-bold text-navy">
+            <span className="text-faint">{i + 1}</span>
+            {p.part}
+          </h3>
+          {p.quote && <blockquote className="prose-study mb-2 border-l-4 border-navy/40 bg-surface-2 px-3 py-2 font-serif text-[15px]">{p.quote}</blockquote>}
+          <p className="prose-study">{p.commentary}</p>
+        </section>
+      ))}
     </div>
   );
 }
@@ -167,27 +142,6 @@ export function PhilosophersTab({ d }: { d: QuestionDetail }) {
   );
 }
 
-export function ConceptsTab({ d }: { d: QuestionDetail }) {
-  if (d.concepts.length === 0) return <Empty>연결된 개념이 없습니다.</Empty>;
-  const philosopherName = new Map(d.philosophers.map((p) => [p.philosopher_id, p.philosophers.name]));
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {d.concepts.map((c) => (
-        <Link key={c.concept_id} href={`/concepts/${c.concept_id}`} className="rounded-lg border border-line bg-surface p-4 hover:border-navy/50">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-navy">{c.concepts.name}</span>
-            {c.philosopher_id && philosopherName.get(c.philosopher_id) && (
-              <span className="text-xs text-muted">{philosopherName.get(c.philosopher_id)}</span>
-            )}
-          </div>
-          {c.concepts.definition && <p className="mt-1 text-sm text-muted">{c.concepts.definition}</p>}
-          <p className="mt-2 text-xs text-navy">이 개념이 나온 모든 기출 보기 →</p>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 export function SourcesTab({ d }: { d: QuestionDetail }) {
   const a = d.analysis;
   return (
@@ -217,11 +171,17 @@ export function SourcesTab({ d }: { d: QuestionDetail }) {
                 <ConfidenceBadge label="확신도" value={s.confidence} />
                 {s.is_manual && <Badge tone="ok">관리자 확인</Badge>}
               </div>
-              <dl className="mt-3 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-[15px]">
+              <dl className="mt-3 grid gap-x-3 sm:grid-cols-[6.5rem_1fr] gap-y-1.5 text-[15px]">
                 <dt className="text-sm text-muted">사상가</dt>
                 <dd>{s.philosopher_name ?? "-"}</dd>
                 <dt className="text-sm text-muted">장 / 편 / 권</dt>
                 <dd>{s.location ?? <span className="text-faint">확인되지 않음</span>}</dd>
+                {s.source_overview && (
+                  <>
+                    <dt className="text-sm text-muted">원전 해설</dt>
+                    <dd className="prose-study">{s.source_overview}</dd>
+                  </>
+                )}
                 <dt className="text-sm text-muted">관련 내용</dt>
                 <dd className="prose-study">{s.related_content ?? "-"}</dd>
                 <dt className="text-sm text-muted">제시문과의 관계</dt>
@@ -232,8 +192,6 @@ export function SourcesTab({ d }: { d: QuestionDetail }) {
                     <dd className="prose-study">“{s.quoted_text}”</dd>
                   </>
                 )}
-                <dt className="text-sm text-muted">판단 이유</dt>
-                <dd className="prose-study">{s.reasoning ?? "-"}</dd>
               </dl>
             </section>
           );
@@ -262,52 +220,62 @@ export function SourcesTab({ d }: { d: QuestionDetail }) {
   );
 }
 
+/** ① 답안: 모범답안 → 요구 사항별 해설 → 전체 해설 → 오답 분석 */
 export function AnswerSection({ d }: { d: QuestionDetail }) {
   const a = d.analysis;
   if (!a) return <Empty>아직 AI 분석이 없습니다.</Empty>;
   const x = a.details ?? {};
+  const items = x.itemExplanations ?? [];
+  const hasWrong = Boolean(x.confusablePhilosophers?.length || x.confusableConcepts?.length || a.common_mistakes.length);
   return (
     <div className="space-y-3">
-      <Block title={`정답 (확신도 ${pct(a.answer_confidence)})`}>
-        <p className="prose-study font-semibold">{a.answer ?? "-"}</p>
-        {x.subAnswers && x.subAnswers.length > 0 && (
-          <ul className="mt-2 space-y-1">
-            {x.subAnswers.map((s, i) => (
-              <li key={i}>
-                <span className="font-semibold text-navy">{s.label}</span> {s.answer}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Block>
-      <Block title="정답 근거">
-        <Text value={x.answerBasis} />
-      </Block>
       <Block title="모범답안">
-        <Text value={x.modelAnswer} />
+        <Text value={x.modelAnswer ?? a.answer} />
       </Block>
-      <Block title="필수 키워드">
-        {a.required_keywords.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {a.required_keywords.map((k) => (
-              <Badge key={k} tone="navy">
-                {k}
-              </Badge>
-            ))}
+      {items.length > 0 ? (
+        <section className="space-y-3">
+          <h3 className="text-sm font-bold text-navy">해설</h3>
+          {items.map((it, i) => (
+            <article key={i} className="rounded-lg border border-line bg-surface p-4">
+              <header className="flex flex-wrap items-baseline gap-2">
+                <span className="rounded bg-navy px-2 py-0.5 text-xs font-bold text-white dark:text-[#0f141c]">{it.label}</span>
+                <span className="font-bold text-ink">{it.answer}</span>
+              </header>
+              {it.sourcePart && (
+                <div className="mt-2">
+                  <div className="text-xs font-semibold text-muted">근거가 되는 제시문</div>
+                  <blockquote className="prose-study mt-1 border-l-4 border-navy/40 bg-surface-2 px-3 py-2 font-serif text-[15px]">{it.sourcePart}</blockquote>
+                </div>
+              )}
+              <p className="prose-study mt-2">{it.explanation}</p>
+            </article>
+          ))}
+          {a.answer_explanation && (
+            <Block title="전체 해설">
+              <Text value={a.answer_explanation} />
+            </Block>
+          )}
+        </section>
+      ) : (
+        <Block title="해설">
+          {x.answerBasis && <p className="prose-study mb-2">{x.answerBasis}</p>}
+          <Text value={a.answer_explanation} />
+        </Block>
+      )}
+      {hasWrong && (
+        <Block title="오답 분석" tone="warn">
+          <div className="space-y-3">
+            <Confusions title="혼동하기 쉬운 사상가" items={x.confusablePhilosophers} />
+            <Confusions title="혼동하기 쉬운 개념" items={x.confusableConcepts} />
+            {a.common_mistakes.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-muted">자주 하는 실수</div>
+                <List items={a.common_mistakes} />
+              </div>
+            )}
           </div>
-        ) : (
-          <p className="text-sm text-faint">없음</p>
-        )}
-      </Block>
-      <Block title="채점 포인트">
-        <List items={x.scoringPoints} />
-      </Block>
-      <Block title="답안에 포함하면 좋은 표현">
-        <List items={x.recommendedExpressions} />
-      </Block>
-      <Block title="빠지면 감점될 가능성이 있는 요소" tone="warn">
-        <List items={x.deductionRisks} />
-      </Block>
+        </Block>
+      )}
     </div>
   );
 }

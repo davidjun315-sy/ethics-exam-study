@@ -1,4 +1,4 @@
-import type { ExaminerIntent, FutureExtension, QuestionFormat, StudyConcept } from "./ai/schemas";
+import type { ItemExplanation, PassageCommentary, QuestionFormat, StoredExaminerIntent, StoredFutureExtension, StudyConcept } from "./ai/schemas";
 
 // DB row 타입 (supabase/schema.sql 과 동기화)
 
@@ -109,25 +109,31 @@ export interface SourcePassage {
   note: string | null;
 }
 
-/** question_analysis.details 에 저장되는 상세 분석 */
+/**
+ * question_analysis.details 에 저장되는 상세 분석.
+ * v3(현재): 답안(요구 사항별 해설) / 출제 의도(요구 사항별) / 원문 해설 / 원전 해설 / 예상 문제.
+ * v2 이하 항목(keyClues 등)은 이전 분석을 보여주기 위해 남겨 둔다.
+ */
 export interface AnalysisDetails {
+  modelAnswer?: string;
+  itemExplanations?: ItemExplanation[];
+  passageCommentary?: PassageCommentary[];
+  confusablePhilosophers?: { name: string; reason: string }[];
+  confusableConcepts?: { name: string; reason: string }[];
+  relatedThinkers?: string[];
+  examinerIntent?: StoredExaminerIntent;
+  studyConcepts?: StudyConcept[];
+  futureExtensions?: StoredFutureExtension[];
+  // v2 이하
   keyClues?: string[];
   passageAnalysis?: string;
   solvingProcess?: string[];
   answerBasis?: string;
   subAnswers?: { label: string; answer: string }[];
-  modelAnswer?: string;
   scoringPoints?: string[];
   recommendedExpressions?: string[];
   deductionRisks?: string[];
-  confusablePhilosophers?: { name: string; reason: string }[];
-  confusableConcepts?: { name: string; reason: string }[];
   mistakeReasons?: string[];
-  relatedThinkers?: string[];
-  // 심화 분석 (analysis_version 2 이상)
-  examinerIntent?: ExaminerIntent;
-  studyConcepts?: StudyConcept[];
-  futureExtensions?: FutureExtension[];
 }
 
 export interface QuestionAnalysis {
@@ -194,6 +200,7 @@ export interface QuestionSourceLink {
   philosopher_name: string | null;
   title_raw: string | null;
   location: string | null;
+  source_overview?: string | null; // 원전 해설 (004 이후)
   related_content: string | null;
   relation_to_question: string | null;
   quoted_text: string | null;
@@ -242,4 +249,5 @@ export const IMPORTANCE_LABEL = { required: "필수 개념", supporting: "보조
 export const LEVEL_LABEL = { high: "높음", medium: "보통", low: "낮음" } as const;
 
 /** 심화 분석(출제 의도 / 개념 정리 / 향후 출제)이 들어간 분석 버전 */
-export const DEEP_ANALYSIS_VERSION = 2;
+/** 1 = 기본, 2 = 출제 의도·개념 정리·향후 출제, 3 = 답안 해설·원문 해설·원전 해설·예상 문제 */
+export const DEEP_ANALYSIS_VERSION = 3;

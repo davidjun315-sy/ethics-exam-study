@@ -202,7 +202,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           </button>
           {(["deep", "answer", "philosophers", "sources", "explanation"] as const).map((s) => (
             <button key={s} className="btn" disabled={Boolean(busy) || !a || a.status === "pending"} onClick={() => reanalyze(s)}>
-              {busy === `ai-${s}` ? "분석 중…" : { deep: "심화 분석 (출제 의도·개념 정리·향후 출제)", answer: "정답만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "해설만 재분석" }[s]}
+              {busy === `ai-${s}` ? "분석 중…" : { deep: "출제 의도·향후 출제만 재분석", answer: "답안·해설만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "원문 해설·오답 분석만 재분석" }[s]}
             </button>
           ))}
         </div>
@@ -526,15 +526,14 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           ))}
         </div>
         <div className="mt-2 grid gap-2 lg:grid-cols-2">
-          <div><label className="label">정답</label><textarea className="input min-h-24" value={an.answer} onChange={(e) => setAn({ ...an, answer: e.target.value })} /></div>
-          <div><label className="label">문제에서 요구하는 것</label><textarea className="input min-h-24" value={an.question_intent} onChange={(e) => setAn({ ...an, question_intent: e.target.value })} /></div>
-          <div><label className="label">해설</label><textarea className="input min-h-40" value={an.answer_explanation} onChange={(e) => setAn({ ...an, answer_explanation: e.target.value })} /></div>
           <div><label className="label">모범답안</label><textarea className="input min-h-40" value={an.modelAnswer} onChange={(e) => setAn({ ...an, modelAnswer: e.target.value })} /></div>
-          <div><label className="label">필수 키워드 (쉼표로 구분)</label><textarea className="input min-h-16" value={an.required_keywords} onChange={(e) => setAn({ ...an, required_keywords: e.target.value })} /></div>
-          <div><label className="label">오답 포인트 (한 줄에 하나)</label><textarea className="input min-h-16" value={an.common_mistakes} onChange={(e) => setAn({ ...an, common_mistakes: e.target.value })} /></div>
+          <div><label className="label">전체 해설</label><textarea className="input min-h-40" value={an.answer_explanation} onChange={(e) => setAn({ ...an, answer_explanation: e.target.value })} /></div>
+          <div><label className="label">정답 요약 (채점·검색용, 화면에는 안 보임)</label><textarea className="input min-h-16" value={an.answer} onChange={(e) => setAn({ ...an, answer: e.target.value })} /></div>
+          <div><label className="label">채점 키워드 (쉼표로 구분, 화면에는 안 보임)</label><textarea className="input min-h-16" value={an.required_keywords} onChange={(e) => setAn({ ...an, required_keywords: e.target.value })} /></div>
+          <div><label className="label">자주 하는 실수 — 오답 분석 (한 줄에 하나)</label><textarea className="input min-h-16" value={an.common_mistakes} onChange={(e) => setAn({ ...an, common_mistakes: e.target.value })} /></div>
         </div>
         <details className="mt-2">
-          <summary className="cursor-pointer text-sm text-muted">상세 분석 JSON (핵심 단서, 풀이 과정, 채점 포인트 등)</summary>
+          <summary className="cursor-pointer text-sm text-muted">상세 분석 JSON (요구 사항별 해설, 원문 해설, 출제 의도, 예상 문제 등)</summary>
           <textarea className="input mt-2 min-h-72 font-mono text-xs" value={an.details} onChange={(e) => setAn({ ...an, details: e.target.value })} />
         </details>
         <button
