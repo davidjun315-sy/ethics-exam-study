@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { api, processExamPdf, type ProcessProgress } from "@/lib/admin-client";
 import type { QuestionSummary } from "@/lib/data/queries";
 import { examFullLabel, formatBytes, pct } from "@/lib/format";
@@ -42,8 +42,31 @@ export function ExamAdmin({
   const [msg, setMsg] = useState<string | null>(justSegmented !== null ? `${justSegmented}개 문항을 자동으로 분리했습니다. 문항 영역을 확인하세요.` : null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProcessProgress | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busyLabel, setBusy] = useState<string | null>(null);
+  // 서버에서 새 목록을 받아올 때까지도 작업 중으로 본다 (순서 변경 직후 예전 순서가 잠깐 보이지 않도록)
+  const [refreshing, startTransition] = useTransition();
+  const busy = busyLabel ?? (refreshing ? "refresh" : null);
   const [rowState, setRowState] = useState<Record<string, string>>({});
+  // 직접 추가할 문항 번호: 기본값은 빠진 번호 중 가장 작은 것 (예: 1, 3, 4 가 있으면 2)
+  const usedNumbers = new Set(questions.map((q) => q.question_number));
+  const firstMissing = (() => {
+    let n = 1;
+    while (usedNumbers.has(n)) n++;
+    return n;
+  })();
+  const [addNumber, setAddNumber] = useState<string>("");
+  // 화면 순서가 문항 번호순과 다른지 (직접 추가·나누기 후)
+  const outOfOrder = questions.some((q, i) => i > 0 && q.question_number < questions[i - 1].question_number);
+
+  function move(index: number, delta: -1 | 1) {
+    const order = questions.map((q) => q.id);
+    const j = index + delta;
+    if (j < 0 || j >= order.length) return;
+    [order[index], order[j]] = [order[j], order[index]];
+    return run("order", async () => {
+      await api(`/api/admin/exams/${exam.id}/order`, "POST", { mode: "manual", order });
+    });
+  }
   const scanned = pages.length > 0 && pages.every((p) => !p.has_text_layer);
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -52,7 +75,7 @@ export function ExamAdmin({
     setMsg(null);
     try {
       await fn();
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -173,23 +196,36 @@ export function ExamAdmin({
               {questions.length ? "페이지 분석 다시 실행" : "페이지 분석 실행"}
             </button>
             <ProgressBar p={progress} />
-            <button
-              className="btn"
-              disabled={Boolean(busy)}
-              onClick={() =>
-                run("add", async () => {
-                  const n = (questions.at(-1)?.question_number ?? 0) + 1;
-                  const r = await api<{ question: { id: string } }>("/api/admin/questions", "POST", {
-                    exam_id: exam.id,
-                    question_number: n,
-                    label: String(n),
-                  });
-                  router.push(`/admin/questions/${r.question.id}`);
-                })
-              }
-            >
-              문항 직접 추가
-            </button>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                className="input !w-20"
+                aria-label="추가할 문항 번호"
+                placeholder={String(firstMissing)}
+                value={addNumber}
+                onChange={(e) => setAddNumber(e.target.value)}
+              />
+              <span className="text-sm text-muted">번</span>
+              <button
+                className="btn"
+                disabled={Boolean(busy)}
+                onClick={() =>
+                  run("add", async () => {
+                    const n = Number(addNumber || firstMissing);
+                    const r = await api<{ question: { id: string } }>("/api/admin/questions", "POST", {
+                      exam_id: exam.id,
+                      question_number: n,
+                      label: String(n),
+                    });
+                    router.push(`/admin/questions/${r.question.id}`);
+                  })
+                }
+              >
+                문항 직접 추가
+              </button>
+            </div>
+            <p className="text-xs text-muted">추가한 문항은 번호에 맞는 자리에 들어갑니다. 비워 두면 빠진 번호({firstMissing}번)로 추가합니다.</p>
           </section>
 
           <section className="card space-y-3 p-4">
@@ -240,9 +276,27 @@ export function ExamAdmin({
         </div>
 
         <section className="card overflow-x-auto">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+            <span className="text-sm font-semibold">문항 순서</span>
+            {outOfOrder && <span className="text-xs text-warn">⚠ 번호순과 다른 순서가 있습니다</span>}
+            <button
+              className={outOfOrder ? "btn-primary !py-1 text-xs" : "btn !py-1 text-xs"}
+              disabled={Boolean(busy) || questions.length < 2}
+              onClick={() =>
+                run("order", async () => {
+                  await api(`/api/admin/exams/${exam.id}/order`, "POST", { mode: "byNumber" });
+                  setMsg("문항 번호순으로 정렬했습니다.");
+                })
+              }
+            >
+              {busy === "order" ? "정렬 중…" : "번호순 정렬"}
+            </button>
+            <span className="text-xs text-faint">▲▼ 로 한 칸씩 옮길 수도 있습니다. 공부 화면의 이전/다음 문항 순서에도 반영됩니다.</span>
+          </div>
           <table className="w-full min-w-[760px] text-sm">
             <thead className="border-b border-line bg-surface-2 text-left text-muted">
               <tr>
+                <th className="w-10 px-2 py-2 font-medium">순서</th>
                 <th className="px-3 py-2 font-medium">문항</th>
                 <th className="px-3 py-2 font-medium">페이지</th>
                 <th className="px-3 py-2 font-medium">사상가 / 정답</th>
@@ -253,6 +307,26 @@ export function ExamAdmin({
             <tbody className="divide-y divide-line align-top">
               {questions.map((q, i) => (
                 <tr key={q.id}>
+                  <td className="px-2 py-2">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <button
+                        className="rounded px-1.5 text-xs text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30"
+                        disabled={Boolean(busy) || i === 0}
+                        onClick={() => move(i, -1)}
+                        aria-label={`${q.label}번 위로`}
+                      >
+                        ▲
+                      </button>
+                      <button
+                        className="rounded px-1.5 text-xs text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30"
+                        disabled={Boolean(busy) || i === questions.length - 1}
+                        onClick={() => move(i, 1)}
+                        aria-label={`${q.label}번 아래로`}
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-3 py-2">
                     <Link href={`/admin/questions/${q.id}`} className="font-bold text-navy hover:underline">{q.label}번</Link>
                     <div className="text-xs text-muted">{q.score !== null ? `${q.score}점` : "배점 ?"} {q.question_type ?? ""}</div>
@@ -335,7 +409,7 @@ export function ExamAdmin({
               ))}
               {questions.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-8 text-center text-muted">문항이 없습니다. 페이지 분석을 실행하세요.</td>
+                  <td colSpan={6} className="px-3 py-8 text-center text-muted">문항이 없습니다. 페이지 분석을 실행하세요.</td>
                 </tr>
               )}
             </tbody>

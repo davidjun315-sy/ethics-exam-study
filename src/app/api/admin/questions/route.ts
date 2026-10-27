@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
+import { placeByNumber } from "@/lib/data/ordering";
 import { parseBody } from "@/lib/http";
 import { QuestionFieldsSchema } from "@/lib/schemas-admin";
 import { getAdminClient } from "@/lib/supabase/server";
@@ -31,6 +32,8 @@ export async function POST(req: Request) {
       .select("*")
       .single();
     if (e) throw new Error(e.message);
+    // 맨 뒤가 아니라 문항 번호에 맞는 자리에 끼워 넣는다 (예: 빠진 2번을 추가하면 1번 다음)
+    await placeByNumber(db, data.exam_id, q.id);
     return NextResponse.json({ question: q });
   } catch (e) {
     return jsonError(e);
