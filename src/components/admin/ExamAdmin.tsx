@@ -8,7 +8,69 @@ import type { QuestionSummary } from "@/lib/data/queries";
 import { examFullLabel, formatBytes, pct } from "@/lib/format";
 import type { Exam, ExamPage } from "@/lib/types";
 import { Badge, ConfidenceBadge, StatusBadge } from "@/components/ui";
+import { createZip, padLabel, safeFileName } from "@/lib/zip";
 import { ProgressBar } from "./ProgressBar";
+
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+
+/** 문항 이미지를 지금 순서대로 받아 ZIP 하나로 내려받는다 (브라우저에서 처리) */
+function ImagesZipButton({ exam, questions }: { exam: Exam; questions: QuestionSummary[] }) {
+  const withImage = questions.filter((q) => q.question_image_url);
+  const [state, setState] = useState<{ done: number; total: number } | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const prefix = safeFileName(`${exam.exam_year} ${exam.section ? `전공${exam.section}` : exam.exam_name}`);
+
+  async function download() {
+    setNote(null);
+    setState({ done: 0, total: withImage.length });
+    const files: { name: string; data: Uint8Array }[] = [];
+    const failed: string[] = [];
+    const used = new Set<string>();
+    for (const q of withImage) {
+      try {
+        const res = await fetch(q.question_image_url!, { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const type = res.headers.get("content-type")?.split(";")[0] ?? "";
+        const ext = EXT[type] ?? q.question_image_url!.split("?")[0].split(".").pop() ?? "png";
+        let name = `${prefix} ${padLabel(safeFileName(q.label))}번.${ext}`;
+        for (let i = 2; used.has(name); i++) name = `${prefix} ${padLabel(safeFileName(q.label))}번 (${i}).${ext}`;
+        used.add(name);
+        files.push({ name, data: new Uint8Array(await res.arrayBuffer()) });
+      } catch {
+        failed.push(`${q.label}번`);
+      }
+      setState((s) => s && { ...s, done: s.done + 1 });
+    }
+    setState(null);
+    if (files.length === 0) {
+      setNote({ ok: false, text: "이미지를 받지 못했습니다." });
+      return;
+    }
+    const blob = new Blob([createZip(files) as BlobPart], { type: "application/zip" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    // ZIP 이름은 영문으로 (일부 브라우저는 한글 이름을 무시하고 "download" 로 저장). 안의 이미지 이름은 한글 그대로
+    a.download = `${exam.exam_year}_${exam.section ? `major-${exam.section}` : "exam"}_question-images.zip`;
+    document.body.appendChild(a); // 일부 브라우저는 문서에 붙은 링크에서만 파일 이름을 지킨다
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    const missing = questions.length - withImage.length;
+    setNote({
+      ok: failed.length === 0,
+      text: `${files.length}개 이미지를 내려받았습니다.${failed.length ? ` 실패: ${failed.join(", ")}` : ""}${missing ? ` (이미지 없는 문항 ${missing}개 제외)` : ""}`,
+    });
+  }
+
+  return (
+    <span className="ml-auto flex flex-wrap items-center gap-2">
+      {note && <span className={`text-xs ${note.ok ? "text-ok" : "text-warn"}`}>{note.text}</span>}
+      <button className="btn !py-1 text-xs" disabled={withImage.length === 0 || state !== null} onClick={download} title="문항 번호별로 잘린 이미지를 ZIP 하나로 받습니다">
+        {state ? `받는 중… ${state.done}/${state.total}` : `문항 이미지 전체 내려받기 (${withImage.length})`}
+      </button>
+    </span>
+  );
+}
 
 type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation" | "deep";
 const SCOPES: { scope: Scope; label: string }[] = [
@@ -292,6 +354,7 @@ export function ExamAdmin({
               {busy === "order" ? "정렬 중…" : "번호순 정렬"}
             </button>
             <span className="text-xs text-faint">▲▼ 로 한 칸씩 옮길 수도 있습니다. 공부 화면의 이전/다음 문항 순서에도 반영됩니다.</span>
+            <ImagesZipButton exam={exam} questions={questions} />
           </div>
           <table className="w-full min-w-[760px] text-sm">
             <thead className="border-b border-line bg-surface-2 text-left text-muted">

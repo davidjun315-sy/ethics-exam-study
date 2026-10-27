@@ -29,6 +29,7 @@ export interface QuestionSummary {
   score: number | null;
   question_type: string | null;
   question_text: string | null;
+  question_image_url: string | null;
   page_start: number | null;
   page_end: number | null;
   exam: Pick<Exam, "id" | "exam_year" | "section" | "exam_name" | "subject">;
@@ -46,7 +47,7 @@ export interface QuestionSummary {
 }
 
 const SUMMARY_SELECT = `
-  id, label, question_number, sort_order, score, question_type, question_text, page_start, page_end,
+  id, label, question_number, sort_order, score, question_type, question_text, question_image_url, page_start, page_end,
   exams!inner ( id, exam_year, section, exam_name, subject ),
   question_analysis ( area, answer, difficulty, overall_confidence, source_confidence, status ),
   question_philosophers ( role, philosophers ( id, name ) ),
@@ -70,6 +71,7 @@ function toSummary(row: any): QuestionSummary {
     score: row.score,
     question_type: row.question_type,
     question_text: row.question_text,
+    question_image_url: row.question_image_url ?? null,
     page_start: row.page_start,
     page_end: row.page_end,
     exam: one<any>(row.exams),
