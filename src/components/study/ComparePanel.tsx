@@ -159,7 +159,7 @@ export function ComparePanel({
 
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="card p-4">
-              <h3 className="mb-2 text-sm font-bold text-navy">임용 시험에서 구별하는 표현</h3>
+              <h3 className="mb-2 text-sm font-bold text-navy">시험에서 구별하는 표현</h3>
               <ul className="space-y-2">
                 {current.distinguishingExpressions.map((d, i) => (
                   <li key={i} className="rounded border border-line px-3 py-2">

@@ -11,7 +11,7 @@ export default async function Home() {
   return (
     <div className="space-y-8">
       <section className="rounded-xl border border-line bg-surface px-6 py-8">
-        <h1 className="text-3xl font-bold tracking-tight text-ink">윤리 임용고시 기출 분석</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-ink">윤리 기출</h1>
         <p className="mt-2 text-muted">기출을 사상가, 개념, 원전 단위로 연결해서 공부하세요.</p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Link href="/exams" className="btn-primary">기출문제 보기</Link>

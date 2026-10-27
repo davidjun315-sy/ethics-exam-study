@@ -6,7 +6,7 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "윤리 임용고시 기출 분석", template: "%s · 윤리 임용 기출 분석" },
+  title: { default: "윤리 기출", template: "%s · 윤리 기출" },
   description: "기출을 사상가, 개념, 원전 단위로 연결해서 공부하는 개인 학습 사이트",
   robots: { index: false, follow: false },
 };
