@@ -2,6 +2,7 @@
 import { validatePasted } from "../src/lib/ai/lenient.ts";
 import { PhilosopherStudyNoteSchema } from "../src/lib/ai/schemas.ts";
 import { buildPhilosopherNotebook, type NotebookQuestion } from "../src/lib/study/notebook.ts";
+import { deriveConceptMap, questionConceptMap } from "../src/lib/study/concept-map.ts";
 import { buildNoteInput, noteConceptCount, noteFreshness, noteOutline, sanitizeNoteRefs } from "../src/lib/study/notes.ts";
 
 let failed = 0;
@@ -64,6 +65,13 @@ check("구조도가 없으면 단원·개념에서 자동 생성", derived.deriv
 const own = noteOutline({ ...clean, outline: [{ title: "1. 출발점", items: [{ keyword: "심즉리", gist: "마음 = 이치", sub: ["心卽理"] }] }] });
 check("AI 가 만든 구조도는 그대로 사용", !own.derived && own.outline[0].items[0].gist === "마음 = 이치");
 check("빈 구조도 단원만 있으면 자동 생성으로", noteOutline({ ...clean, outline: [{ title: "x", items: [] }] }).derived);
+
+const sc = (name: string, importance: "required" | "supporting" | "comparison", philosopher: string | null) => ({ name, importance, philosopher, definition: `${name}은 정의다. 둘째 문장`, examPoint: "", connectionToQuestion: "", confusableWith: [], distinction: "" });
+const maps = deriveConceptMap([sc("격물치지", "comparison", "주희"), sc("치양지", "supporting", "왕수인"), sc("양지", "required", "왕수인"), sc("심즉리", "supporting", null)], "왕수인");
+const wang = maps.find((m) => m.philosopher === "왕수인")!;
+check("구조도 자동 생성: 사상가별, 핵심 개념이 중심", maps.length === 2 && wang.focus === "양지" && wang.branches.map((b) => b.keyword).join() === "치양지,심즉리" && wang.focusGist === "양지은 정의다");
+check("저장된 구조도 우선", !questionConceptMap([{ philosopher: "x", focus: "y", focusGist: "", branches: [] }], [], null).derived);
+check("개념이 없으면 빈 구조도", questionConceptMap(undefined, undefined, null).maps.length === 0);
 
 if (failed) {
   console.log(`\n${failed}개 실패`);

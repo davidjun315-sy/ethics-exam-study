@@ -1,7 +1,7 @@
 import { describeQuestion, systemPrompt, type QuestionContext } from "./shared-rules";
 
 /**
- * 문항 분석 작성 지침 (화면 순서: 답안 → 출제 의도 → 원문 해설 → 사상가 → 원전 → 향후 출제).
+ * 문항 분석 작성 지침 (화면 순서: 답안 → 출제 의도 → 원문 해설 → 개념 정리 → 원전 → 향후 출제).
  * 자세히 쓸 곳(★)과 짧게 쓸 곳을 구분해, 수험생에게 필요한 내용만 정확하게 담게 한다.
  */
 export const DEEP_ANALYSIS_GUIDE = `작성 원칙:
@@ -32,15 +32,18 @@ export const DEEP_ANALYSIS_GUIDE = `작성 원칙:
   원문(quote)과 풀이(commentary)를 쓰세요. 풀이에는 어려운 용어의 뜻, 문장이 말하는 내용, 사상 안에서의 의미를
   처음 공부하는 사람도 이해할 수 있게 자세히 풀어 쓰세요. 빈칸(㉠ 등)이 있는 부분은 빈칸에 들어갈 말과 연결해 설명하세요.
 
-[④ 사상가] 아래 분석 지침을 따르세요.
+[④ 개념 정리 — 키워드 구조도 → 개념별 설명]
+- ★ conceptMap: 사상가마다 하나. 이 문항에서 출제된 핵심 개념을 focus(중심)에 두고, 그 사상가의 관련 개념 3~7개를 branches 로
+  사상 체계의 흐름 순서대로 연결하세요. relation 은 중심 개념과의 관계(근거, 전제, 실현 방법, 결과, 대비 등)를 2~6자로,
+  gist 는 15자 안팎의 어구로 쓰세요. 문장으로 쓰지 마세요. 이 문항에 직접 나온 개념은 inQuestion=true.
+- ★ studyConcepts: 구조도에 나온 개념마다 하나씩, 중심 개념 → 관련 개념 순서로. 너무 짧거나 길지 않게:
+  정의 1~2문장, 시험 포인트 1문장, 이 문제와의 연결 1문장, 구별법 1문장. 개념명은 구조도와 똑같이 쓰세요.
+- 사상가 판별(philosophers)은 아래 분석 지침을 따르세요.
 
 [⑤ 원전]
 - ★ sourceOverview: 원전에 대한 간략한 해설 — 어떤 저작인지(저자, 성립 배경), 전체 구성, 핵심 주제와 사상사적 의의.
 - ★ relatedContent: 제시문과 관련된 원전 부분을 자세히 — 그 편·장에서 무엇을 논하는지, 앞뒤 맥락, 핵심 논지와 주요 구절의 뜻.
 - 원전·위치가 불확실하면 status 를 낮추고 location 을 null 로 두세요. 원전 내용을 지어내지 마세요.
-
-[studyConcepts — 사상가별 개념 정리 노트의 재료]
-- 이 문제를 풀기 위해 알아야 하는 개념을 정의·시험 포인트·이 문제와의 연결·혼동 개념·구별법으로 간결하게.
 
 [⑥ 향후 출제]
 - ★ futureExtensions 2~3개. 막연한 주제가 아니라 "사상가의 구체적인 개념"(예: 왕수인 - 지행합일)을 정하고,
@@ -72,7 +75,7 @@ export const PARTIAL_INSTRUCTIONS = {
   philosophers:
     "사상가 판별과 개념 연결만 다시 분석하세요. 사상가별 결정적 표현, 유사 사상가와 구별 포인트를 특히 꼼꼼하게 쓰세요.",
   explanation: "③ 원문 해설(passageCommentary)과 오답 분석(혼동 사상가·혼동 개념·자주 하는 실수)만 다시 작성하세요.",
-  deep: "② 출제 의도(examinerIntent), 개념 정리(studyConcepts), ⑥ 향후 출제(futureExtensions — 구체적 개념, 예상 문제, 예상 답안)만 작성하세요.",
+  deep: "② 출제 의도(examinerIntent), ④ 개념 정리(conceptMap 키워드 구조도 + studyConcepts 개념별 설명), ⑥ 향후 출제(futureExtensions — 구체적 개념, 예상 문제, 예상 답안)만 작성하세요.",
 } as const;
 
 export function buildPartialPrompt(

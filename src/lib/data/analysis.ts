@@ -194,6 +194,7 @@ async function saveFullAnalysis(
     confusableConcepts: d.confusableConcepts,
     relatedThinkers: d.relatedThinkers,
     examinerIntent: d.examinerIntent,
+    conceptMap: d.conceptMap,
     studyConcepts: d.studyConcepts,
     futureExtensions: d.futureExtensions,
   };
@@ -373,7 +374,7 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
       meta = res;
       patch = {
         question_intent: d.examinerIntent.summary,
-        details: { ...a.details, examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
+        details: { ...a.details, examinerIntent: d.examinerIntent, conceptMap: d.conceptMap, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
         ai_original: { ...original, ...d },
       };
     } else if (scope === "explanation") {
@@ -451,7 +452,7 @@ export async function saveDeepAnalysisForManual(questionId: string, d: DeepAnaly
     .from("question_analysis")
     .update({
       question_intent: d.examinerIntent.summary,
-      details: { ...(a.details ?? {}), examinerIntent: d.examinerIntent, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
+      details: { ...(a.details ?? {}), examinerIntent: d.examinerIntent, conceptMap: d.conceptMap, studyConcepts: d.studyConcepts, futureExtensions: d.futureExtensions },
       ai_original: { ...((a.ai_original as object) ?? {}), ...d },
     })
     .eq("question_id", questionId);

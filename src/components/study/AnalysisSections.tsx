@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { QuestionDetail, QuestionSummary } from "@/lib/data/queries";
 import { isLowConfidence, questionRef } from "@/lib/format";
-import { Badge, ConfidenceBadge, Empty, RoleBadge, VerificationBadge } from "@/components/ui";
+import { Badge, ConfidenceBadge, Empty, VerificationBadge } from "@/components/ui";
 
 export function Block({ title, children, tone }: { title: string; children: ReactNode; tone?: "warn" }) {
   return (
@@ -72,72 +72,6 @@ export function PassageTab({ d }: { d: QuestionDetail }) {
           <p className="prose-study">{p.commentary}</p>
         </section>
       ))}
-    </div>
-  );
-}
-
-export function PhilosophersTab({ d }: { d: QuestionDetail }) {
-  if (d.philosophers.length === 0) return <Empty>연결된 사상가가 없습니다.</Empty>;
-  return (
-    <div className="space-y-3">
-      {d.philosophers.map((link) => {
-        const p = link.philosophers;
-        const r = link.reasoning ?? {};
-        return (
-          <section key={link.philosopher_id} className="rounded-lg border border-line bg-surface p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href={`/philosophers/${p.id}`} className="text-lg font-bold text-navy hover:underline">
-                {p.name}
-              </Link>
-              {p.original_name && <span className="text-sm text-muted">{p.original_name}</span>}
-              <RoleBadge role={link.role} />
-              <ConfidenceBadge label="확신도" value={link.confidence} />
-              {link.is_manual && <Badge tone="ok">관리자 확인</Badge>}
-            </div>
-            <div className="mt-1 text-sm text-muted">{[p.tradition, p.school, p.era].filter(Boolean).join(" · ")}</div>
-            {r.decisiveExpressions && r.decisiveExpressions.length > 0 && (
-              <div className="mt-3">
-                <div className="text-xs font-semibold text-muted">결정적 표현</div>
-                <ul className="mt-1 space-y-1">
-                  {r.decisiveExpressions.map((e, i) => (
-                    <li key={i} className="rounded bg-navy-soft/60 px-2 py-1 text-[15px]">
-                      “{e}”
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {r.reasoning && (
-              <div className="mt-3">
-                <div className="text-xs font-semibold text-muted">판별 근거</div>
-                <p className="prose-study mt-1">{r.reasoning}</p>
-              </div>
-            )}
-            {r.similarPhilosophers && r.similarPhilosophers.length > 0 && (
-              <div className="mt-3">
-                <div className="text-xs font-semibold text-muted">유사 사상가와 구별 포인트</div>
-                <ul className="mt-1 space-y-2">
-                  {r.similarPhilosophers.map((s, i) => (
-                    <li key={i} className="rounded border border-line px-3 py-2">
-                      <b>{s.name}</b>
-                      <p className="mt-0.5 text-[15px]">{s.distinguishingPoint}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        );
-      })}
-      {d.analysis?.details?.relatedThinkers && d.analysis.details.relatedThinkers.length > 0 && (
-        <Block title="관련 사상가">
-          <div className="flex flex-wrap gap-2">
-            {d.analysis.details.relatedThinkers.map((t) => (
-              <Badge key={t}>{t}</Badge>
-            ))}
-          </div>
-        </Block>
-      )}
     </div>
   );
 }

@@ -202,7 +202,7 @@ export function QuestionEditor({ detail, pages, recropHint }: { detail: Question
           </button>
           {(["deep", "answer", "philosophers", "sources", "explanation"] as const).map((s) => (
             <button key={s} className="btn" disabled={Boolean(busy) || !a || a.status === "pending"} onClick={() => reanalyze(s)}>
-              {busy === `ai-${s}` ? "분석 중…" : { deep: "출제 의도·향후 출제만 재분석", answer: "답안·해설만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "원문 해설·오답 분석만 재분석" }[s]}
+              {busy === `ai-${s}` ? "분석 중…" : { deep: "출제 의도·개념 정리·향후 출제만 재분석", answer: "답안·해설만 재분석", philosophers: "사상가만 재분석", sources: "원전만 재분석", explanation: "원문 해설·오답 분석만 재분석" }[s]}
             </button>
           ))}
         </div>

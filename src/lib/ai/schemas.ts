@@ -95,11 +95,11 @@ export const StudyConceptSchema = z.object({
     "required=이 문제를 풀려면 반드시 알아야 함, supporting=알면 더 정확히 이해, comparison=혼동하기 쉬워 함께 비교해야 함",
   ),
   philosopher: z.string().nullable().describe("이 개념의 사상가. 모르면 null"),
-  definition: z.string().describe("임용 답안에 쓸 수 있는 수준의 정의"),
-  examPoint: z.string().describe("시험에서 중요한 포인트"),
-  connectionToQuestion: z.string().describe("이 문제와 어떻게 연결되는지"),
-  confusableWith: z.array(z.string()).describe("자주 혼동하는 개념"),
-  distinction: z.string().describe("구별법"),
+  definition: z.string().describe("임용 답안에 쓸 수 있는 정의 1~2문장"),
+  examPoint: z.string().describe("시험에서 중요한 포인트 1문장"),
+  connectionToQuestion: z.string().describe("이 문제의 어느 부분과 어떻게 연결되는지 1문장"),
+  confusableWith: z.array(z.string()).describe("자주 혼동하는 개념 (없으면 [])"),
+  distinction: z.string().describe("혼동 개념과의 구별법 1문장 (없으면 빈 문자열)"),
 });
 export type StudyConcept = z.infer<typeof StudyConceptSchema>;
 
@@ -130,9 +130,28 @@ export type StoredFutureExtension = Pick<FutureExtension, "topic" | "format" | "
     likelihood?: "high" | "medium" | "low";
   };
 
+/** 개념 정리 탭 맨 위의 키워드 구조도: 이 문항의 핵심 개념을 중심에 두고 사상가의 관련 개념을 가지로 연결 */
+export const ConceptMapSchema = z.object({
+  philosopher: z.string().describe("사상가 (문항에 여러 명이면 사상가마다 하나씩)"),
+  focus: z.string().describe("이 문항에서 출제된 이 사상가의 핵심 개념 (중심 키워드)"),
+  focusGist: z.string().describe("중심 개념의 핵심 어구 15자 안팎 (문장 X)"),
+  branches: z
+    .array(
+      z.object({
+        relation: z.string().describe("중심 개념과의 관계를 2~6자로 (예: 근거, 전제, 실현 방법, 결과, 대비, 비판)"),
+        keyword: z.string().describe("관련 개념 (studyConcepts 의 개념명과 같게)"),
+        gist: z.string().describe("핵심 어구 15자 안팎 (문장 X)"),
+        inQuestion: z.boolean().describe("이 문항 제시문·정답에 직접 나온 개념이면 true"),
+      }),
+    )
+    .describe("관련 개념 3~7개. 사상 체계 안에서의 흐름 순서대로"),
+});
+export type ConceptMap = z.infer<typeof ConceptMapSchema>;
+
 export const DeepAnalysisSchema = z.object({
   examinerIntent: ExaminerIntentSchema,
-  studyConcepts: z.array(StudyConceptSchema),
+  conceptMap: z.array(ConceptMapSchema).describe("개념 정리의 키워드 구조도"),
+  studyConcepts: z.array(StudyConceptSchema).describe("개념 정리: 구조도에 나온 개념별 설명 (중심 개념 → 관련 개념 순서)"),
   futureExtensions: z.array(FutureExtensionSchema).describe("이 문항에서 확장될 수 있는 사상가의 구체적 개념과 예상 문제·답안 2~3개"),
 });
 export type DeepAnalysis = z.infer<typeof DeepAnalysisSchema>;
@@ -193,8 +212,9 @@ export const FullAnalysisSchema = z.object({
   concepts: z.array(ConceptFindingSchema),
   relatedThinkers: z.array(z.string()),
   sources: z.array(SourceFindingSchema),
-  // 사상가 개념 정리 노트의 재료 (문항 화면에는 따로 보이지 않음)
-  studyConcepts: z.array(StudyConceptSchema).describe("이 문제를 풀기 위해 알아야 하는 개념 (사상가별 개념 정리 노트의 재료)"),
+  // ④ 개념 정리: 키워드 구조도 → 개념별 설명 (사상가별 개념 정리 노트의 재료이기도 함)
+  conceptMap: DeepAnalysisSchema.shape.conceptMap,
+  studyConcepts: DeepAnalysisSchema.shape.studyConcepts,
   // ⑥ 향후 출제
   futureExtensions: DeepAnalysisSchema.shape.futureExtensions,
   confidence: ConfidenceSchema,

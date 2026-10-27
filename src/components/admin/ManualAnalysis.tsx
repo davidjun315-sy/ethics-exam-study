@@ -43,7 +43,7 @@ export function ManualAnalysis({
     try {
       const r = await api<{ textUpdated: boolean }>(`/api/admin/questions/${questionId}/manual`, "POST", { text, source, mode });
       setText("");
-      onSaved(`${source} ${mode === "deep" ? "출제 의도·향후 출제" : "분석"} 결과를 저장했습니다.${r.textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트도 채웠습니다." : ""}`);
+      onSaved(`${source} ${mode === "deep" ? "출제 의도·개념 정리·향후 출제" : "분석"} 결과를 저장했습니다.${r.textUpdated ? " AI 가 이미지에서 읽은 전체 원문으로 문항 텍스트도 채웠습니다." : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -67,7 +67,7 @@ export function ManualAnalysis({
           <input type="radio" checked={mode === "full"} onChange={() => setMode("full")} /> 전체 분석
         </label>
         <label className="flex items-center gap-1.5">
-          <input type="radio" checked={mode === "deep"} onChange={() => setMode("deep")} /> 출제 의도·향후 출제만
+          <input type="radio" checked={mode === "deep"} onChange={() => setMode("deep")} /> 출제 의도·개념 정리·향후 출제만
         </label>
         <span className="text-xs text-faint">새 형식(요구 사항별 해설·원문 해설·원전 해설)으로 바꾸려면 “전체”로 다시 분석하세요</span>
       </div>

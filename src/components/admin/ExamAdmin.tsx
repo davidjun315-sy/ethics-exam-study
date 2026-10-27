@@ -75,7 +75,7 @@ function ImagesZipButton({ exam, questions }: { exam: Exam; questions: QuestionS
 type Scope = "full" | "answer" | "philosophers" | "sources" | "explanation" | "deep";
 const SCOPES: { scope: Scope; label: string }[] = [
   { scope: "full", label: "전체 재분석" },
-  { scope: "deep", label: "출제 의도·향후 출제만" },
+  { scope: "deep", label: "출제 의도·개념 정리·향후 출제만" },
   { scope: "answer", label: "답안·해설만" },
   { scope: "philosophers", label: "사상가만" },
   { scope: "sources", label: "원전만" },

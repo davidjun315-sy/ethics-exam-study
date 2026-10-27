@@ -1,4 +1,4 @@
-import type { ItemExplanation, PassageCommentary, QuestionFormat, StoredExaminerIntent, StoredFutureExtension, StudyConcept } from "./ai/schemas";
+import type { ConceptMap, ItemExplanation, PassageCommentary, QuestionFormat, StoredExaminerIntent, StoredFutureExtension, StudyConcept } from "./ai/schemas";
 
 // DB row 타입 (supabase/schema.sql 과 동기화)
 
@@ -122,6 +122,7 @@ export interface AnalysisDetails {
   confusableConcepts?: { name: string; reason: string }[];
   relatedThinkers?: string[];
   examinerIntent?: StoredExaminerIntent;
+  conceptMap?: ConceptMap[];
   studyConcepts?: StudyConcept[];
   futureExtensions?: StoredFutureExtension[];
   // v2 이하

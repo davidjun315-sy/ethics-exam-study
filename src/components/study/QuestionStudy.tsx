@@ -6,15 +6,15 @@ import type { QuestionDetail, QuestionSummary } from "@/lib/data/queries";
 import { isLowConfidence, questionRef } from "@/lib/format";
 import { useBoolPref, useQuestionRecord } from "@/lib/local-study";
 import { Badge, ConfidenceBadge, Empty, StatusBadge } from "@/components/ui";
-import { AnswerSection, PassageTab, PhilosophersTab, RelatedTab, SourcesTab } from "./AnalysisSections";
+import { AnswerSection, PassageTab, RelatedTab, SourcesTab } from "./AnalysisSections";
 import { AnswerWriter } from "./AnswerWriter";
-import { FutureTab, IntentTab } from "./DeepSections";
+import { ConceptsTab, FutureTab, IntentTab } from "./DeepSections";
 import { MemoBox, type ServerMemo } from "./MemoBox";
 import type { MatchedQuestion } from "@/lib/data/related";
 import { DEEP_ANALYSIS_VERSION } from "@/lib/types";
 
-// 공부 흐름: 답안(모범답안·해설) → 출제 의도 → 원문 해설 → 사상가 → 원전 → 향후 출제(예상 문제) → 관련 기출
-const TABS = ["답안", "출제 의도", "원문 해설", "사상가", "원전", "향후 출제", "관련 기출", "내 메모"] as const;
+// 공부 흐름: 답안(모범답안·해설) → 출제 의도 → 원문 해설 → 개념 정리(구조도·개념 설명) → 원전 → 향후 출제(예상 문제) → 관련 기출
+const TABS = ["답안", "출제 의도", "원문 해설", "개념 정리", "원전", "향후 출제", "관련 기출", "내 메모"] as const;
 type TabName = (typeof TABS)[number];
 
 
@@ -78,8 +78,8 @@ export function QuestionStudy({
         return showAnalysis ? <IntentTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
       case "원문 해설":
         return showAnalysis ? <PassageTab d={detail} /> : locked("AI 분석 보기", "analysis");
-      case "사상가":
-        return showAnalysis ? <PhilosophersTab d={detail} /> : locked("AI 분석 보기", "analysis");
+      case "개념 정리":
+        return showAnalysis ? <ConceptsTab d={detail} isAdmin={isAdmin} /> : locked("AI 분석 보기", "analysis");
       case "원전":
         return showSource ? <SourcesTab d={detail} /> : locked("원전 보기", "source");
       case "향후 출제":
@@ -257,7 +257,7 @@ export function QuestionStudy({
           </div>
           {a && a.analysis_version < DEEP_ANALYSIS_VERSION && showAnalysis && tab !== "내 메모" && tab !== "관련 기출" && (
             <p className="mb-3 rounded bg-surface-2 px-3 py-2 text-xs text-muted">
-              이전 형식으로 분석된 문항입니다. 다시 분석하면 요구 사항별 해설 · 원문 해설 · 원전 해설 · 예상 문제가 채워집니다.
+              이전 형식으로 분석된 문항입니다. 다시 분석하면 요구 사항별 해설 · 원문 해설 · 개념 구조도 · 원전 해설 · 예상 문제가 채워집니다.
               {isAdmin && (
                 <>
                   {" "}
