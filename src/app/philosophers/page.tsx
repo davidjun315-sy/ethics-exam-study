@@ -2,17 +2,14 @@ import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Empty, PageTitle } from "@/components/ui";
 import { listPhilosophers } from "@/lib/data/queries";
+import { groupByTradition } from "@/lib/traditions";
 
 export const metadata = { title: "사상가" };
 
 export default async function PhilosophersPage() {
   const { data, error } = await load(listPhilosophers);
   if (error || !data) return <DataError error={error} />;
-  const groups = new Map<string, typeof data>();
-  for (const p of data) {
-    const k = p.tradition ?? "기타";
-    groups.set(k, [...(groups.get(k) ?? []), p]);
-  }
+  const groups = groupByTradition(data);
   return (
     <div>
       <PageTitle
@@ -24,7 +21,7 @@ export default async function PhilosophersPage() {
         <Empty>AI 분석을 실행하면 사상가가 자동으로 등록됩니다.</Empty>
       ) : (
         <div className="space-y-5">
-          {[...groups.entries()].map(([g, list]) => (
+          {groups.map(({ chapter: g, items: list }) => (
             <section key={g}>
               <h2 className="mb-2 text-sm font-bold text-muted">{g}</h2>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { api } from "@/lib/admin-client";
+import { TRADITIONS, UNCLASSIFIED } from "@/lib/traditions";
 import type { Philosopher } from "@/lib/types";
 import { AiPasteBox } from "./AiPasteBox";
 
@@ -36,7 +37,7 @@ const FIELDS: { key: keyof Philosopher; label: string; area?: boolean; list?: bo
   { key: "name", label: "이름" },
   { key: "original_name", label: "한자 / 원어" },
   { key: "aliases", label: "다른 이름 (쉼표로 구분)", list: true },
-  { key: "tradition", label: "분야 (동양윤리 / 서양윤리 …)" },
+  { key: "tradition", label: "분야 (사상가 페이지 편집 목록의 챕터)" },
   { key: "school", label: "학파" },
   { key: "era", label: "시대" },
   { key: "core_ideas", label: "핵심 사상 (개념 정리 노트가 없을 때 보임)", area: true },
@@ -86,14 +87,63 @@ export function PhilosopherInfoForm({ philosopher }: { philosopher: Philosopher 
           {f.area ? (
             <textarea className="input min-h-24 text-sm" value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} />
           ) : (
-            <input className="input" value={draft[f.key]} required={f.key === "name"} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} />
+            <input
+              className="input"
+              value={draft[f.key]}
+              required={f.key === "name"}
+              list={f.key === "tradition" ? "tradition-options" : undefined}
+              onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+            />
           )}
         </div>
       ))}
+      <datalist id="tradition-options">
+        {TRADITIONS.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
       <div className="flex items-center gap-2 pt-1">
         <button className="btn-primary" disabled={busy || pending}>{busy || pending ? "저장 중…" : "기본 정보 저장"}</button>
         {msg && <span className={`text-sm ${msg.ok ? "text-ok" : "text-danger"}`}>{msg.text}</span>}
       </div>
     </form>
+  );
+}
+
+/** 목록에서 바로 분야(챕터)를 바꾼다 */
+export function TraditionSelect({ id, value, raw }: { id: string; value: string; raw: string | null }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <span className="flex items-center gap-1">
+      <select
+        className="input !w-auto !py-0.5 text-xs"
+        aria-label="분야"
+        title={raw && raw !== value ? `저장된 값: ${raw}` : undefined}
+        value={TRADITIONS.includes(value as (typeof TRADITIONS)[number]) ? value : ""}
+        disabled={busy || pending}
+        onChange={async (e) => {
+          setBusy(true);
+          setError(null);
+          try {
+            await api(`/api/admin/entities/philosophers/${id}`, "PATCH", { tradition: e.target.value || null });
+            startTransition(() => router.refresh());
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <option value="">{UNCLASSIFIED}</option>
+        {TRADITIONS.map((t) => (
+          <option key={t}>{t}</option>
+        ))}
+      </select>
+      {(busy || pending) && <span className="text-xs text-faint">…</span>}
+      {error && <span className="text-xs text-danger">{error}</span>}
+    </span>
   );
 }
