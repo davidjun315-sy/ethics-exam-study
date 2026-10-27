@@ -277,3 +277,64 @@ export const PracticeQuestionSchema = z.object({
   relatedQuestionRefs: z.array(z.string()).describe("입력에 주어진 관련 기출 ref 중에서만 고를 것"),
 });
 export type PracticeQuestion = z.infer<typeof PracticeQuestionSchema>;
+
+// ---------------------------------------------------------------------
+// 사상가 개념 정리 노트 (채팅 AI 로 기출 분석을 재구성 → 붙여넣기)
+// ---------------------------------------------------------------------
+
+const refs = z.array(z.string()).describe("입력의 <questions> 에 있는 기출 ref 그대로 (예: \"2024 A 3번\"). 없으면 []");
+
+export const NoteConceptSchema = z.object({
+  name: z.string().describe("개념명"),
+  originalTerm: z.string().nullable().describe("한자/원어. 모르면 null"),
+  definition: z.string().describe("한두 문장의 핵심 정의"),
+  explanation: z.string().describe("수험생이 이해할 수 있게 풀어 쓴 설명 (앞 개념과의 연결을 포함)"),
+  keyPoints: z.array(z.string()).describe("반드시 기억할 요점"),
+  examPoints: z.array(z.string()).describe("기출에서 이 개념을 어떻게 물었는지 / 답안에 들어가야 할 표현"),
+  confusions: z
+    .array(z.object({ with: z.string(), distinction: z.string() }))
+    .describe("혼동하기 쉬운 개념·사상가와 구별법"),
+  relatedQuestionRefs: refs,
+});
+
+export const PhilosopherStudyNoteSchema = z.object({
+  overview: z.object({
+    oneLine: z.string().describe("이 사상가를 한 문장으로"),
+    summary: z.string().describe("사상 전체의 큰 그림 (3~6문장)"),
+    keywords: z.array(z.string()).describe("핵심 키워드 5~12개"),
+  }),
+  sections: z
+    .array(
+      z.object({
+        title: z.string().describe("단원 제목 (예: 1. 인간관과 출발점)"),
+        intro: z.string().nullable().describe("이 단원에서 무엇을 배우는지, 앞 단원과의 연결"),
+        concepts: z.array(NoteConceptSchema),
+      }),
+    )
+    .describe("사상의 논리적 순서(출발점 → 핵심 이론 → 실천·수양 → 사회·정치 → 영향)대로 배열한 단원"),
+  identification: z.object({
+    decisiveExpressions: z.array(z.string()).describe("제시문에서 이 사상가로 판별하게 하는 표현"),
+    tips: z.array(z.string()).describe("판별 요령"),
+  }),
+  comparisons: z
+    .array(
+      z.object({
+        other: z.string().describe("비교 대상 사상가 또는 학파"),
+        common: z.string().nullable().describe("공통점. 없으면 null"),
+        differences: z.array(z.object({ aspect: z.string(), mine: z.string(), theirs: z.string() })).describe("쟁점별 차이 (이 사상가 / 상대)"),
+        relatedQuestionRefs: refs,
+      }),
+    )
+    .describe("기출에서 함께 나온·혼동되는 사상가와의 비교"),
+  traps: z
+    .array(z.object({ trap: z.string().describe("자주 노린 함정·오개념"), correction: z.string().describe("바른 이해"), relatedQuestionRefs: refs }))
+    .describe("출제자가 노린 함정"),
+  answerTips: z.array(z.string()).describe("서술형 답안 작성 요령 (필수 용어, 조건 처리 등)"),
+  futureTopics: z
+    .array(z.object({ topic: z.string(), reason: z.string() }))
+    .describe("아직 출제되지 않았거나 확장될 수 있는 주제 (AI 판단임을 전제)"),
+  studyOrder: z.array(z.string()).describe("추천 공부 순서 (단계별 한 줄씩)"),
+  caveats: z.array(z.string()).describe("입력 분석끼리 충돌하거나 해석이 갈리는 부분, 확인이 필요한 부분"),
+});
+export type PhilosopherStudyNote = z.infer<typeof PhilosopherStudyNoteSchema>;
+export type NoteConcept = z.infer<typeof NoteConceptSchema>;

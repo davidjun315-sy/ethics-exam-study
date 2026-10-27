@@ -7,7 +7,7 @@ import {
   PREDICTION_SYSTEM,
   type PredictionTopicInput,
 } from "@prompts/trend-prediction";
-import { extractJson, normalize } from "@/lib/ai/lenient";
+import { validatePasted as validate } from "@/lib/ai/lenient";
 import { getAIProvider } from "@/lib/ai/provider";
 import {
   PracticeQuestionSchema,
@@ -51,19 +51,6 @@ async function loadTopic(topicId: string) {
   const { data } = await getReadClient().from("prediction_topics").select("*").eq("id", topicId).maybeSingle();
   if (!data) throw new Error("예상 주제를 찾을 수 없습니다.");
   return data as PredictionTopicRow;
-}
-
-function validate<S extends z.ZodType>(schema: S, pasted: string): z.infer<S> {
-  const normalized = normalize(z.toJSONSchema(schema) as Parameters<typeof normalize>[0], extractJson(pasted));
-  const parsed = schema.safeParse(normalized);
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .slice(0, 5)
-      .map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`)
-      .join(" / ");
-    throw new Error(`양식이 맞지 않습니다. ${issues}`);
-  }
-  return parsed.data as z.infer<S>;
 }
 
 // ---------------------------------------------------------------------

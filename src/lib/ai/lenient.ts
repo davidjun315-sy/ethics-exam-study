@@ -5,6 +5,7 @@
  * - "0.9" 같은 숫자 문자열은 숫자로 변환
  * 정리한 뒤에는 반드시 Zod 로 다시 검증한다.
  */
+import { z } from "zod";
 
 type JsonSchema = {
   type?: string | string[];
@@ -68,4 +69,18 @@ export function normalize(schema: JsonSchema, value: unknown): unknown {
   }
   if (t.includes("string") && typeof value !== "string" && typeof value !== "object") return String(value);
   return value;
+}
+
+/** 붙여넣은 채팅 AI 답 → JSON 추출 → 기본값 채움 → Zod 검증. 실패하면 한국어 오류 */
+export function validatePasted<S extends z.ZodType>(schema: S, pasted: string): z.infer<S> {
+  const normalized = normalize(z.toJSONSchema(schema) as JsonSchema, extractJson(pasted));
+  const parsed = schema.safeParse(normalized);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .slice(0, 5)
+      .map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`)
+      .join(" / ");
+    throw new Error(`양식이 맞지 않습니다. ${issues}`);
+  }
+  return parsed.data as z.infer<S>;
 }

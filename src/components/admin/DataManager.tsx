@@ -152,6 +152,9 @@ export function DataManager({
                 {titleOf(r)}
                 {tab === "sources" && r.philosopher_id ? <span className="ml-2 text-xs text-muted">{philName.get(r.philosopher_id as string)}</span> : null}
               </button>
+              {tab === "philosophers" && (
+                <Link href={`/admin/philosophers/${r.id}`} className="text-xs text-navy hover:underline">페이지 편집</Link>
+              )}
               {PUBLIC_PATH[tab] && (
                 <Link href={`${PUBLIC_PATH[tab]}/${r.id}`} className="text-xs text-muted hover:text-navy">보기</Link>
               )}

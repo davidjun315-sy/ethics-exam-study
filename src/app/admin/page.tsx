@@ -28,6 +28,7 @@ export default async function AdminHome() {
         actions={
           <>
             <Link href="/admin/upload" className="btn-primary">PDF 업로드</Link>
+            <Link href="/admin/philosophers" className="btn">사상가 페이지 편집</Link>
             <Link href="/admin/data" className="btn">사상가·개념·원전 관리</Link>
             <LogoutButton />
           </>
