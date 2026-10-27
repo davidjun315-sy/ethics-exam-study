@@ -2,7 +2,7 @@
 import { validatePasted } from "../src/lib/ai/lenient.ts";
 import { PhilosopherStudyNoteSchema } from "../src/lib/ai/schemas.ts";
 import { buildPhilosopherNotebook, type NotebookQuestion } from "../src/lib/study/notebook.ts";
-import { buildNoteInput, noteConceptCount, noteFreshness, sanitizeNoteRefs } from "../src/lib/study/notes.ts";
+import { buildNoteInput, noteConceptCount, noteFreshness, noteOutline, sanitizeNoteRefs } from "../src/lib/study/notes.ts";
 
 let failed = 0;
 const check = (label: string, ok: boolean, d = "") => {
@@ -58,6 +58,12 @@ const nb = buildPhilosopherNotebook({ name: "왕수인", aliases: [] }, [q], new
 const input = buildNoteInput({ name: "왕수인", aliases: [], originalName: null, tradition: null, school: null, era: null, coreIdeas: null }, nb);
 check("프롬프트 입력: 문항 ref·개념·함정 포함", input.questions[0].ref === "2018 A 1번" && input.concepts[0].askedIn[0] === "2018 A 1번" && input.traps[0] === "함정");
 check("긴 정답은 잘라서 보냄", (input.questions[0].answer ?? "").length <= 201);
+
+const derived = noteOutline(clean);
+check("구조도가 없으면 단원·개념에서 자동 생성", derived.derived && derived.outline[0].items.map((i) => i.keyword).join() === "심즉리,양지" && derived.outline[0].items[0].gist === "마음이 곧 이치");
+const own = noteOutline({ ...clean, outline: [{ title: "1. 출발점", items: [{ keyword: "심즉리", gist: "마음 = 이치", sub: ["心卽理"] }] }] });
+check("AI 가 만든 구조도는 그대로 사용", !own.derived && own.outline[0].items[0].gist === "마음 = 이치");
+check("빈 구조도 단원만 있으면 자동 생성으로", noteOutline({ ...clean, outline: [{ title: "x", items: [] }] }).derived);
 
 if (failed) {
   console.log(`\n${failed}개 실패`);

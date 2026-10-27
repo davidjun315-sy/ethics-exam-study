@@ -87,3 +87,26 @@ export function noteFreshness(basedOn: string[], currentIds: string[]) {
     removed: basedOn.filter((id) => !cur.has(id)),
   };
 }
+
+type Outline = PhilosopherStudyNote["outline"];
+
+/** 구조도가 없는(이전 버전) 노트는 단원·개념에서 키워드 구조도를 만든다 */
+export function deriveOutline(note: PhilosopherStudyNote): Outline {
+  const short = (t: string) => {
+    const first = t.split(/[.。!?]\s|\n/)[0].trim();
+    return first.length > 22 ? `${first.slice(0, 20)}…` : first;
+  };
+  return note.sections.map((s) => ({
+    title: s.title,
+    items: s.concepts.map((c) => ({
+      keyword: c.name,
+      gist: short(c.definition || c.explanation || ""),
+      sub: [c.originalTerm, ...c.confusions.map((x) => `vs ${x.with}`)].filter((x): x is string => Boolean(x)).slice(0, 4),
+    })),
+  }));
+}
+
+export function noteOutline(note: PhilosopherStudyNote): { outline: Outline; derived: boolean } {
+  const own = (note.outline ?? []).filter((s) => s.items.length > 0);
+  return own.length ? { outline: own, derived: false } : { outline: deriveOutline(note), derived: true };
+}

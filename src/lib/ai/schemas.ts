@@ -303,6 +303,20 @@ export const PhilosopherStudyNoteSchema = z.object({
     summary: z.string().describe("사상 전체의 큰 그림 (3~6문장)"),
     keywords: z.array(z.string()).describe("핵심 키워드 5~12개"),
   }),
+  outline: z
+    .array(
+      z.object({
+        title: z.string().describe("sections 의 같은 순서 단원 제목 (짧게, 예: 1. 인간관)"),
+        items: z.array(
+          z.object({
+            keyword: z.string().describe("sections 의 개념명과 똑같이"),
+            gist: z.string().describe("15자 안팎의 핵심 어구 (문장 X, 예: 마음 = 이치)"),
+            sub: z.array(z.string()).describe("하위 키워드 0~4개 (단어만)"),
+          }),
+        ),
+      }),
+    )
+    .describe("본문 전에 보여 줄 키워드 구조도. 문장 없이 키워드·어구만으로, sections 와 같은 순서·같은 개념"),
   sections: z
     .array(
       z.object({

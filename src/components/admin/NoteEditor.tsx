@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
 import type { NoteConcept, PhilosopherStudyNote as Note } from "@/lib/ai/schemas";
 import { api } from "@/lib/admin-client";
+import { deriveOutline } from "@/lib/study/notes";
 
 export const EMPTY_NOTE: Note = {
   overview: { oneLine: "", summary: "", keywords: [] },
+  outline: [],
   sections: [],
   identification: { decisiveExpressions: [], tips: [] },
   comparisons: [],
@@ -157,7 +159,7 @@ function ConceptEditor({ c, set, refs }: { c: NoteConcept; set: (c: NoteConcept)
  */
 export function NoteEditor({ philosopherId, initial, refs, hasNote }: { philosopherId: string; initial: Note | null; refs: string[]; hasNote: boolean }) {
   const router = useRouter();
-  const [note, setNote] = useState<Note>(initial ?? EMPTY_NOTE);
+  const [note, setNote] = useState<Note>({ ...EMPTY_NOTE, ...initial });
   const [dirty, setDirty] = useState(false);
   const [mode, setMode] = useState<"form" | "json">("form");
   const [json, setJson] = useState("");
@@ -272,6 +274,53 @@ export function NoteEditor({ philosopherId, initial, refs, hasNote }: { philosop
               />
             </Field>
             <Lines label="추천 공부 순서" value={note.studyOrder} onChange={(v) => update({ ...note, studyOrder: v })} rows={4} />
+          </fieldset>
+
+          <fieldset className="card space-y-3 p-4">
+            <legend className="px-1 text-sm font-bold">키워드 구조도 <span className="font-normal text-faint">(사상가 페이지 맨 위에 보입니다)</span></legend>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn text-sm"
+                onClick={() => (!note.outline.length || confirm("지금 구조도를 단원·개념 기준으로 새로 만들까요?")) && reorder({ ...note, outline: deriveOutline(note) })}
+              >
+                단원·개념에서 자동 생성
+              </button>
+              <span className="text-xs text-faint">비워 두면 단원·개념에서 자동으로 만들어 보여 줍니다.</span>
+            </div>
+            {note.outline.map((o, oi) => {
+              const setO = (no: Note["outline"][number]) => update({ ...note, outline: note.outline.map((x, j) => (j === oi ? no : x)) });
+              return (
+                <div key={oi} className="space-y-2 rounded-lg border border-line p-3">
+                  <div className="flex items-center gap-2">
+                    <input className="input font-semibold" placeholder="단원 제목" value={o.title} onChange={(e) => setO({ ...o, title: e.target.value })} />
+                    <Toolbar
+                      onUp={() => reorder({ ...note, outline: move(note.outline, oi, -1) })}
+                      onDown={() => reorder({ ...note, outline: move(note.outline, oi, 1) })}
+                      onRemove={() => reorder({ ...note, outline: note.outline.filter((_, j) => j !== oi) })}
+                    />
+                  </div>
+                  <Lines
+                    label="키워드"
+                    hint="한 줄에 하나: 키워드 :: 핵심 어구 :: 하위1, 하위2"
+                    rows={Math.max(3, o.items.length + 1)}
+                    value={o.items.map((it) => [it.keyword, it.gist, it.sub.join(", ")].filter((x, i) => i < 2 || x).join(" :: "))}
+                    onChange={(v) =>
+                      setO({
+                        ...o,
+                        items: v.map((line) => {
+                          const [keyword = "", gist = "", sub = ""] = line.split("::").map((x) => x.trim());
+                          return { keyword, gist, sub: fromRefs(sub) };
+                        }),
+                      })
+                    }
+                  />
+                </div>
+              );
+            })}
+            <button type="button" className="btn text-sm" onClick={() => reorder({ ...note, outline: [...note.outline, { title: `${note.outline.length + 1}. `, items: [] }] })}>
+              + 구조도 단원 추가
+            </button>
           </fieldset>
 
           <div className="space-y-3">

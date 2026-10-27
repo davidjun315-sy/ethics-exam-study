@@ -1,6 +1,6 @@
 import { systemPrompt } from "./shared-rules";
 
-export const NOTE_PROMPT_VERSION = "philosopher-note-2026-10-v1";
+export const NOTE_PROMPT_VERSION = "philosopher-note-2026-10-v2";
 
 export const NOTE_SYSTEM = systemPrompt(`작업: 한 사상가에 대해 여러 기출 문항의 AI 분석 결과가 흩어져 있습니다. 이것을 임용 수험생이 처음부터 순서대로 읽으며 공부할 수 있는 "개념 정리 노트"로 재구성하세요.
 
@@ -12,7 +12,14 @@ export const NOTE_SYSTEM = systemPrompt(`작업: 한 사상가에 대해 여러 
 - 정의·설명은 임용 교재의 표준 해석을 따르고, 입력 분석끼리 충돌하거나 해석이 갈리면 caveats 에 적으세요.
 - relatedQuestionRefs 에는 입력 <questions> 에 있는 ref 만 그대로 쓰세요. 새 ref 를 만들지 마세요.
 - 정답·모범 답안 문장을 통째로 옮기지 말고 개념 이해에 필요한 만큼만 쓰세요.
-- 설명은 간결한 한국어 문장으로, 한 항목에 한 가지 내용만 쓰세요.`);
+- 설명은 간결한 한국어 문장으로, 한 항목에 한 가지 내용만 쓰세요.
+
+키워드 구조도(outline):
+- 수험생이 본문을 읽기 전에 사상 전체의 뼈대를 한눈에 보도록, 문장 없이 키워드와 짧은 어구만으로 구조화하세요.
+- outline 의 단원은 sections 와 같은 순서·같은 개수로, 각 단원의 items 는 그 단원 concepts 와 같은 순서·같은 개념명으로 쓰세요.
+- gist 는 15자 안팎의 핵심 어구입니다. (예: "마음 = 이치", "선천적 도덕 판단력", "결과 아닌 동기") 문장으로 쓰지 마세요.
+- sub 에는 그 개념을 떠올리게 하는 하위 키워드(원어·관련 용어·대비 개념)를 0~4개 단어로만 쓰세요.
+- 구조도만 보고도 "출발점 → 핵심 이론 → 실천 → …" 흐름이 보이게 하세요.`);
 
 export interface NotePromptInput {
   philosopher: {

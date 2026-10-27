@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { PhilosopherStudyNote as Note } from "@/lib/ai/schemas";
 import { Badge } from "@/components/ui";
+import { normalizeText } from "@/lib/study/notebook";
+import { noteOutline } from "@/lib/study/notes";
 
 function Refs({ refs, refMap }: { refs: string[]; refMap: Record<string, string> }) {
   if (!refs.length) return null;
@@ -44,8 +46,13 @@ function Block({ id, title, children, note }: { id: string; title: string; child
 
 /** 사상가 개념 정리 노트 (채팅 AI 로 기출 분석을 재구성해 관리자가 붙여넣은 것) */
 export function PhilosopherStudyNote({ name, note, refMap }: { name: string; note: Note; refMap: Record<string, string> }) {
+  const { outline, derived } = noteOutline(note);
+  // 구조도 키워드 → 본문 개념 위치
+  const anchor = new Map<string, string>();
+  note.sections.forEach((s, si) => s.concepts.forEach((c, ci) => anchor.set(normalizeText(c.name), `note-c${si + 1}-${ci + 1}`)));
   const nav = [
-    { id: "note-overview", label: "큰 그림" },
+    { id: "note-map", label: "구조도" },
+    (note.overview.summary || note.studyOrder.length > 0) && { id: "note-overview", label: "큰 그림" },
     ...note.sections.map((s, i) => ({ id: `note-s${i + 1}`, label: s.title })),
     note.identification.decisiveExpressions.length + note.identification.tips.length > 0 && { id: "note-identify", label: "판별법" },
     note.comparisons.length > 0 && { id: "note-compare", label: "비교" },
@@ -63,27 +70,67 @@ export function PhilosopherStudyNote({ name, note, refMap }: { name: string; not
         ))}
       </nav>
 
-      <section id="note-overview" className="card scroll-mt-20 border-navy/30 p-4">
+      <section id="note-map" className="card scroll-mt-20 border-navy/30 p-4">
         <p className="text-lg font-bold leading-8 text-navy">{note.overview.oneLine}</p>
-        {note.overview.summary && <p className="prose-study mt-2">{note.overview.summary}</p>}
         {note.overview.keywords.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {note.overview.keywords.map((k) => (
               <Badge key={k} tone="navy">{k}</Badge>
             ))}
           </div>
         )}
-        {note.studyOrder.length > 0 && (
-          <div className="mt-4 rounded-lg bg-surface-2 p-3">
-            <h3 className="mb-1 text-xs font-bold text-navy">추천 공부 순서</h3>
-            <ol className="list-decimal space-y-0.5 pl-5 text-[15px] leading-7 marker:font-semibold marker:text-navy">
-              {note.studyOrder.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
-          </div>
-        )}
+        <div className="mt-4 flex items-baseline gap-2">
+          <h2 className="text-xs font-bold text-navy">한눈에 보는 구조</h2>
+          <span className="text-[11px] text-faint">{derived ? "단원·개념에서 자동으로 만든 구조도" : "키워드를 누르면 본문으로 이동"}</span>
+        </div>
+        <ol className="mt-2 space-y-2">
+          {outline.map((sec, si) => (
+            <li key={si} className="relative rounded-lg border border-line bg-surface-2/60 p-3">
+              {si > 0 && <span className="absolute -top-2.5 left-5 text-xs text-faint" aria-hidden>▼</span>}
+              <div className="mb-1.5 text-sm font-bold text-ink">{sec.title}</div>
+              <ul className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                {sec.items.map((it, ii) => {
+                  const id = anchor.get(normalizeText(it.keyword));
+                  return (
+                    <li key={ii} className="text-[14px] leading-6">
+                      {id ? (
+                        <a href={`#${id}`} className="font-bold text-navy hover:underline">{it.keyword}</a>
+                      ) : (
+                        <span className="font-bold text-navy">{it.keyword}</span>
+                      )}
+                      {it.gist && <span className="text-muted"> — {it.gist}</span>}
+                      {it.sub.length > 0 && (
+                        <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
+                          {it.sub.map((x) => (
+                            <span key={x} className="rounded border border-line bg-surface px-1.5 text-[11px] text-muted">{x}</span>
+                          ))}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          ))}
+        </ol>
       </section>
+
+      {(note.overview.summary || note.studyOrder.length > 0) && (
+        <section id="note-overview" className="card scroll-mt-20 p-4">
+          <h2 className="mb-1 text-[15px] font-bold text-ink">큰 그림</h2>
+          {note.overview.summary && <p className="prose-study">{note.overview.summary}</p>}
+          {note.studyOrder.length > 0 && (
+            <div className="mt-3 rounded-lg bg-surface-2 p-3">
+              <h3 className="mb-1 text-xs font-bold text-navy">추천 공부 순서</h3>
+              <ol className="list-decimal space-y-0.5 pl-5 text-[15px] leading-7 marker:font-semibold marker:text-navy">
+                {note.studyOrder.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </section>
+      )}
 
       {note.sections.map((s, si) => (
         <section key={si} id={`note-s${si + 1}`} className="card scroll-mt-20 p-4">
@@ -91,7 +138,7 @@ export function PhilosopherStudyNote({ name, note, refMap }: { name: string; not
           {s.intro && <p className="mt-1 text-[15px] leading-7 text-muted">{s.intro}</p>}
           <div className="mt-3 space-y-3">
             {s.concepts.map((c, ci) => (
-              <article key={ci} className="rounded-lg border border-line p-3">
+              <article key={ci} id={`note-c${si + 1}-${ci + 1}`} className="scroll-mt-20 rounded-lg border border-line p-3">
                 <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-xs font-bold text-faint">{si + 1}-{ci + 1}</span>
                   <h3 className="font-bold text-navy">{c.name}</h3>
