@@ -4,14 +4,23 @@ import { DataError, load } from "@/components/DataError";
 import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Badge, Empty, PageTitle, SectionTitle, StatCard, Tag } from "@/components/ui";
+import { PhilosopherNotebook } from "@/components/study/PhilosopherNotebook";
 import { getPhilosopher } from "@/lib/data/queries";
+import { getPhilosopherNotebook } from "@/lib/data/study";
 
 export default async function PhilosopherPage({ params }: PageProps<"/philosophers/[id]">) {
   const { id } = await params;
-  const { data, error } = await load(() => getPhilosopher(id));
+  const { data, error } = await load(async () => {
+    const base = await getPhilosopher(id);
+    return base ? { ...base, notebook: await getPhilosopherNotebook(base.philosopher) } : null;
+  });
   if (error) return <DataError error={error} />;
   if (!data) notFound();
-  const { philosopher: p, questions, concepts, sources, coPhilosophers, decisiveExpressions, lastYear } = data;
+  const { philosopher: p, questions, concepts: taggedConcepts, sources, coPhilosophers, lastYear, notebook } = data;
+  // 사이드바 개념: 공부 노트의 "이 사상가의 개념" (비교 상대의 개념은 제외). 노트가 비어 있으면 기존 태그 집계
+  const concepts = notebook.concepts.length
+    ? notebook.concepts.map((c) => ({ id: c.id, name: c.name, count: c.askedIn.length }))
+    : taggedConcepts;
 
   return (
     <div className="space-y-6">
@@ -40,7 +49,6 @@ export default async function PhilosopherPage({ params }: PageProps<"/philosophe
       )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <EntityPattern kind="philosopher" id={p.id} />
           <section className="card p-4">
             <SectionTitle>핵심 사상</SectionTitle>
             {p.core_ideas || p.description ? (
@@ -49,16 +57,11 @@ export default async function PhilosopherPage({ params }: PageProps<"/philosophe
               <p className="text-sm text-faint">아직 정리되지 않았습니다. 관리자 페이지 → 데이터 관리에서 입력할 수 있습니다.</p>
             )}
           </section>
-          {decisiveExpressions.length > 0 && (
-            <section className="card p-4">
-              <SectionTitle>기출에서 이 사상가를 판별하게 한 결정적 표현</SectionTitle>
-              <ul className="grid gap-1.5 sm:grid-cols-2">
-                {decisiveExpressions.map((e) => (
-                  <li key={e} className="rounded bg-navy-soft/60 px-2 py-1 text-[15px]">“{e}”</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <div>
+            <SectionTitle>공부 노트 — 기출 분석 모아보기</SectionTitle>
+            <PhilosopherNotebook name={p.name} nb={notebook} />
+          </div>
+          <EntityPattern kind="philosopher" id={p.id} />
           <section>
             <SectionTitle>관련 기출 ({questions.length})</SectionTitle>
             {questions.length === 0 ? (
@@ -77,11 +80,15 @@ export default async function PhilosopherPage({ params }: PageProps<"/philosophe
             <SectionTitle>주요 개념</SectionTitle>
             {concepts.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {concepts.map((c) => (
-                  <Tag key={c.id} href={`/concepts/${c.id}`}>
-                    {c.name} {c.count > 0 && <span className="ml-1 text-xs text-faint">{c.count}</span>}
-                  </Tag>
-                ))}
+                {concepts.map((c) =>
+                  c.id ? (
+                    <Tag key={c.id} href={`/concepts/${c.id}`}>
+                      {c.name} {c.count > 0 && <span className="ml-1 text-xs text-faint">{c.count}</span>}
+                    </Tag>
+                  ) : (
+                    <Badge key={c.name}>{c.name}</Badge>
+                  ),
+                )}
               </div>
             ) : (
               <p className="text-sm text-faint">없음</p>
