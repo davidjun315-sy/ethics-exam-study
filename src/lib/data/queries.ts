@@ -585,3 +585,35 @@ export async function getTrends() {
   const all = await listQuestionSummaries();
   return computeTrends(all);
 }
+
+export interface PhilosopherQuestions {
+  philosopher: Pick<Philosopher, "id" | "name" | "tradition" | "school">;
+  questions: (QuestionSummary & { role: PhilosopherRole })[];
+  asked: number; // 주요·비교 사상가로 나온 문항 수
+  lastYear: number | null;
+}
+
+const ROLE_ORDER: Record<PhilosopherRole, number> = { main: 0, comparison: 1, distractor: 2, mentioned: 3 };
+
+/** 기출문제 → 사상가별 보기: 사상가마다 등장한 문항 (주요 → 비교 → 그 외, 최근 연도 먼저) */
+export async function listQuestionsByPhilosopher(): Promise<PhilosopherQuestions[]> {
+  const db = getReadClient();
+  const [{ data, error }, all] = await Promise.all([db.from("philosophers").select("id, name, tradition, school"), listQuestionSummaries()]);
+  if (error) throw new Error(error.message);
+  const byP = new Map<string, (QuestionSummary & { role: PhilosopherRole })[]>();
+  for (const q of all) for (const p of q.philosophers) byP.set(p.id, [...(byP.get(p.id) ?? []), { ...q, role: p.role }]);
+  return ((data ?? []) as PhilosopherQuestions["philosopher"][])
+    .filter((p) => byP.has(p.id))
+    .map((p) => {
+      const qs = byP.get(p.id)!.sort(
+        (a, b) =>
+          ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
+          b.exam.exam_year - a.exam.exam_year ||
+          (a.exam.section ?? "").localeCompare(b.exam.section ?? "") ||
+          a.sort_order - b.sort_order,
+      );
+      const asked = qs.filter((q) => q.role === "main" || q.role === "comparison");
+      return { philosopher: p, questions: qs, asked: asked.length, lastYear: asked.length ? Math.max(...asked.map((q) => q.exam.exam_year)) : null };
+    })
+    .sort((a, b) => b.asked - a.asked || b.questions.length - a.questions.length || a.philosopher.name.localeCompare(b.philosopher.name));
+}
