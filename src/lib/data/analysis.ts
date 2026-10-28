@@ -13,6 +13,7 @@ import { examFullLabel, LOW_CONFIDENCE, normalizeTitle } from "@/lib/format";
 import { getAdminClient } from "@/lib/supabase/server";
 import { DEEP_ANALYSIS_VERSION, type AnalysisDetails, type AnalysisScope, type Exam, type Question, type QuestionAnalysis } from "@/lib/types";
 import type { z } from "zod";
+import { syncQuestionQuietly } from "@/lib/quiz/bank";
 import { linkConceptPhilosopher, upsertConcept, upsertPhilosopher, upsertSource } from "./tags";
 
 type PhilosopherFinding = z.infer<typeof PhilosopherFindingSchema>;
@@ -253,6 +254,8 @@ async function saveFullAnalysis(
     output_tokens: meta.usage.outputTokens,
     raw_output: d,
   });
+  // 윤리 퀴즈 문제은행에 바로 반영 (실패해도 분석 저장에는 영향 없음)
+  await syncQuestionQuietly(question.id);
   return { textUpdated };
 }
 
@@ -420,6 +423,7 @@ export async function runAnalysis(questionId: string, scope: AnalysisScope, forc
       output_tokens: usage.outputTokens,
       raw_output: raw,
     });
+    await syncQuestionQuietly(questionId);
     return { status: "analyzed", message: "부분 재분석이 완료되었습니다." };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -458,4 +462,5 @@ export async function saveDeepAnalysisForManual(questionId: string, d: DeepAnaly
     .eq("question_id", questionId);
   if (error) throw new Error(error.message);
   await logRun(db, { question_id: questionId, scope: "deep", provider: "manual", model: source, status: "success", raw_output: d });
+  await syncQuestionQuietly(questionId);
 }

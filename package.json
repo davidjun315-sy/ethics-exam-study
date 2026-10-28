@@ -14,7 +14,8 @@
     "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.ts",
     "test:notes": "node --experimental-strip-types --no-warnings scripts/test-notes.ts",
     "test:traditions": "node --experimental-strip-types --no-warnings scripts/test-traditions.ts",
-    "test:zip": "node --experimental-strip-types --no-warnings scripts/test-zip.ts"
+    "test:zip": "node --experimental-strip-types --no-warnings scripts/test-zip.ts",
+    "test:quiz": "node --experimental-strip-types --no-warnings scripts/test-quiz.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

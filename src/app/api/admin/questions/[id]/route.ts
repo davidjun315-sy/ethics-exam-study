@@ -4,6 +4,7 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { AnalysisEditSchema, QuestionFieldsSchema } from "@/lib/schemas-admin";
 import { getAdminClient } from "@/lib/supabase/server";
+import { syncQuestionQuietly } from "@/lib/quiz/bank";
 
 const Body = z.object({
   question: QuestionFieldsSchema.partial().optional(),
@@ -44,6 +45,8 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/question
       );
       if (e) throw new Error(e.message);
     }
+    // 문항 원문이나 분석을 고치면 윤리 퀴즈 문제은행에도 반영 (관리자가 고친 퀴즈 문제는 덮어쓰지 않음)
+    if (data.question || data.analysis) await syncQuestionQuietly(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return jsonError(e);
@@ -56,6 +59,8 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/questi
   const { id } = await ctx.params;
   try {
     const db = getAdminClient();
+    // 퀴즈 문제는 지우지 않고 출제 중지 (학습 기록 보존). 테이블이 없으면 무시
+    await db.from("quiz_items").update({ status: "stale" }).eq("question_id", id);
     const { error } = await db.from("questions").delete().eq("id", id);
     if (error) throw new Error(error.message);
     return NextResponse.json({ ok: true });

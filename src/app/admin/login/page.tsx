@@ -5,8 +5,8 @@ export const metadata = { title: "관리자 로그인" };
 
 export default async function LoginPage({ searchParams }: PageProps<"/admin/login">) {
   const sp = await searchParams;
-  // 로그인 후 돌아갈 곳: 관리자 화면 또는 내 학습만 허용 (외부 주소로 보내지 않음)
-  const next = typeof sp.next === "string" && /^\/(admin|my)(\/|\?|$)/.test(sp.next) ? sp.next : "/admin";
+  // 로그인 후 돌아갈 곳: 관리자 화면 · 내 학습 · 윤리 퀴즈만 허용 (외부 주소로 보내지 않음)
+  const next = typeof sp.next === "string" && /^\/(admin|my|quiz)(\/|\?|$)/.test(sp.next) ? sp.next : "/admin";
   return (
     <div className="mx-auto mt-16 max-w-sm">
       <div className="card p-6">

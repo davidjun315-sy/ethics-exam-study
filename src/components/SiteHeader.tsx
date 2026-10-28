@@ -8,6 +8,7 @@ import { ThemeToggle } from "./ThemeToggle";
 const NAV = [
   { href: "/", label: "홈" },
   { href: "/exams", label: "기출문제" },
+  { href: "/quiz", label: "윤리 퀴즈" },
   { href: "/philosophers", label: "사상가" },
   { href: "/concepts", label: "개념" },
   { href: "/sources", label: "원전" },
