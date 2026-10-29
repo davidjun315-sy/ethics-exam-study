@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AttemptResult, Filters, ItemView, Session, Solution } from "@/lib/quiz/learn";
 import { quizApi } from "@/lib/quiz/client";
 import type { QuizResult } from "@/lib/quiz/srs";
@@ -15,22 +15,24 @@ const SELF: { value: QuizResult; title: string; help: string; tone: string }[] =
   { value: "wrong", title: "틀림 / 모르겠음", help: "제대로 답하지 못했음", tone: "border-danger/50 hover:bg-danger-soft" },
 ];
 
-/** 원문에서 이번 문제의 기호(㉠ 등)를 강조 */
+/** 원문에서 이번 문제의 기호(㉠, 묶인 문제는 ㉢·㉣ 모두)를 강조 */
 function Passage({ text, label }: { text: string; label: string }) {
-  const mark = label.match(/[㉠-㉻①-⑳ⓐ-ⓩ]|\([가-힣]\)/)?.[0];
-  if (!mark) return <>{text}</>;
-  const parts = text.split(mark);
-  const out: ReactNode[] = [];
-  parts.forEach((p, i) => {
-    out.push(p);
-    if (i < parts.length - 1)
-      out.push(
-        <mark key={i} className="rounded bg-warn-soft px-0.5 font-bold text-warn">
-          {mark}
-        </mark>,
-      );
-  });
-  return <>{out}</>;
+  const marks = [...new Set(label.match(/[㉠-㉻①-⑳ⓐ-ⓩ]|\([가-힣]\)/g) ?? [])];
+  if (!marks.length) return <>{text}</>;
+  const re = new RegExp(`(${marks.map((m) => m.replace(/[()]/g, "\\$&")).join("|")})`);
+  return (
+    <>
+      {text.split(re).map((part, i) =>
+        marks.includes(part) ? (
+          <mark key={i} className="rounded bg-warn-soft px-0.5 font-bold text-warn">
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
 }
 
 export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) {
@@ -199,7 +201,7 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
             {view.passage && view.imageUrl && (
               <div className="mb-3 flex justify-end">
                 <button type="button" className="text-xs text-navy underline" onClick={() => setShowImage((v) => !v)}>
-                  {showImage ? "텍스트로 보기" : "원본 이미지로 보기 (표·밑줄 원형)"}
+                  {showImage ? "이 문제만 보기" : "원본 이미지 (전체 문항)"}
                 </button>
               </div>
             )}
@@ -214,7 +216,8 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
           </section>
 
           {/* 이번 문제 (세부 발문) */}
-          {(view.prompt || view.label) && view.kind === "exam" && (
+          {/* 원문의 <작성 방법>에 이 문제의 조건만 남겨 두었으므로, 원문에서 조건을 찾지 못한 경우에만 따로 안내 */}
+          {view.kind === "exam" && view.label && !(view.prompt && view.passage?.includes(view.prompt)) && (
             <section className="rounded-lg border-2 border-navy/40 bg-navy-soft/40 p-4">
               <div className="mb-1 text-xs font-bold text-navy">이번 문제{view.label ? ` · ${view.label}` : ""}</div>
               <p className="whitespace-pre-wrap text-[16px] font-medium leading-7">

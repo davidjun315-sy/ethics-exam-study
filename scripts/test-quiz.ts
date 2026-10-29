@@ -1,7 +1,7 @@
 /** 윤리 퀴즈 로직 점검 (분리 · 채점 · 복습 · 경험치 · 미션 배정).  npm run test:quiz */
 import { isCorrectFill, isShortAnswer, normalizeAnswer, seedAcceptedAnswers } from "../src/lib/quiz/grade.ts";
 import { buildMission, buildPractice, spaceOut, type Candidate, type ProgressLite } from "../src/lib/quiz/mission.ts";
-import { expectedFromAnalysis, requirementLines, splitQuestion, type SplitInput } from "../src/lib/quiz/split.ts";
+import { expectedFromAnalysis, focusRequirement, requirementLines, splitQuestion, type SplitInput } from "../src/lib/quiz/split.ts";
 import { addDays, answerXp, currentStreak, kstDay, levelForXp, newBadges, NEW_PROGRESS, nextReview, streakAfterCompletion } from "../src/lib/quiz/srs.ts";
 
 let failed = 0;
@@ -53,6 +53,35 @@ check("기입형인데 정답이 길면 자기평가 + 검수 사유", fillLong[
 const ex = expectedFromAnalysis("Q1", { topic: "왕수인 - 지행합일", philosopher: "왕수인", concept: "지행합일", expectedQuestion: "다음 글을 읽고…\n<작성 방법>\n○ 밑줄 친 주장을 서술할 것.", expectedAnswer: "앎과 행함은 본래 하나이며 참된 앎은 실천으로 드러난다는 지행합일을 뜻한다.", conceptSummary: "요약" });
 check("예상 문제 → 서술형 자기평가", ex !== null && ex.format === "essay" && ex.kind === "expected" && ex.key.startsWith("x:Q1:"));
 check("문제나 정답이 없는 예상 문제는 제외", expectedFromAnalysis("Q1", { topic: "t", expectedQuestion: "", expectedAnswer: "a" }) === null);
+
+// 사용자 예시: 칸트 4점 문항 (작성 방법 3줄, AI 해설은 ㉠ ㉡ ㉢ ㉣ 넷)
+const kant = `10. 다음은 서양 근대 윤리 사상가의 주장이다. <작성 방법>에 따라 서술하시오. [4점]
+
+의무의 보편적 명령은 “마치 너의 행위의 준칙이 너의 의지에 의해 보편적 ( ㉠ )이/가 되어야 하는 것처럼, 그렇게 행위하라.”는 것이다. … ㉡내적 불가능성은 없지만 … 준칙 (1)과 (2)는 ㉢완전한 의무에 어긋나고, 준칙 (3)과 (4)는 ㉣불완전한 의무에 어긋난다.
+
+<작성 방법>
+
+○ 괄호 안의 ㉠에 해당하는 용어를 쓸 것.
+
+○ 준칙 (4)를 보편화하면 밑줄 친 ㉡이 생기는 이유를 ‘도움’을 사용하여 서술할 것.
+
+○ 밑줄 친 ㉢, ㉣의 의미를 순서대로 서술할 것.`;
+const kItems = splitQuestion({
+  ...base, questionId: "K", questionText: kant, questionType: "서술형",
+  details: { itemExplanations: [
+    { label: "㉠", answer: "자연법칙", sourcePart: "", explanation: "" },
+    { label: "㉡", answer: "누구나 도움이 필요할 때가 있으므로 도움을 받지 않겠다는 것을 의욕할 수 없다.", sourcePart: "", explanation: "" },
+    { label: "㉢", answer: "예외 없이 반드시 지켜야 하는 의무", sourcePart: "", explanation: "" },
+    { label: "㉣", answer: "행위자의 재량에 맡겨진 의무", sourcePart: "", explanation: "" },
+  ] },
+});
+check("작성 방법 3줄 → 문제 3개 (㉢·㉣ 한 문제)", kItems.length === 3 && kItems[2].label === "㉢, ㉣", kItems.map((i) => i.label).join(" / "));
+check("묶인 문제의 정답은 레이블별로", kItems[2].answer === "㉢ 예외 없이 반드시 지켜야 하는 의무\n㉣ 행위자의 재량에 맡겨진 의무" && kItems[2].grading === "self");
+check("㉠ 기입형 자동 채점, ㉡ 서술형", kItems[0].format === "fill" && kItems[0].grading === "auto" && kItems[1].format === "essay");
+const focused = focusRequirement(kant, kItems[1].prompt)!;
+check("퀴즈 원문: 작성 방법에 이 문제 조건만", focused.includes("㉡이 생기는 이유") && !focused.includes("㉠에 해당하는 용어") && !focused.includes("㉢, ㉣의 의미"));
+check("퀴즈 원문: 발문·제시문은 그대로", focused.startsWith("10. 다음은 서양 근대 윤리 사상가의 주장이다.") && focused.includes("㉣불완전한 의무에 어긋난다."));
+check("작성 방법이 없으면 원문 그대로", focusRequirement("본문만", "○ 조건") === "본문만");
 
 // ---------------- 채점 ----------------
 check("띄어쓰기·문장부호 무시", isCorrectFill(" 격물 치지. ", ["격물치지"]));

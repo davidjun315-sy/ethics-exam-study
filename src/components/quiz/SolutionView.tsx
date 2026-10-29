@@ -35,12 +35,14 @@ export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; k
         </section>
       )}
 
-      {kind === "exam" && s.itemExplanation ? (
-        <section className="space-y-2 rounded-lg border border-line bg-surface p-4">
-          <div className="text-xs font-bold text-navy">핵심 해설</div>
-          {s.itemExplanation.sourcePart && <blockquote className={quote}>{s.itemExplanation.sourcePart}</blockquote>}
-          <p className="whitespace-pre-wrap text-[16px] leading-8">{s.itemExplanation.explanation}</p>
-        </section>
+      {kind === "exam" && s.itemExplanations.length ? (
+        s.itemExplanations.map((x, i) => (
+          <section key={i} className="space-y-2 rounded-lg border border-line bg-surface p-4">
+            <div className="text-xs font-bold text-navy">핵심 해설{s.itemExplanations.length > 1 ? ` · ${x.label}` : ""}</div>
+            {x.sourcePart && <blockquote className={quote}>{x.sourcePart}</blockquote>}
+            <p className="whitespace-pre-wrap text-[16px] leading-8">{x.explanation}</p>
+          </section>
+        ))
       ) : kind === "expected" && s.expectedExplanation ? (
         <section className="rounded-lg border border-line bg-surface p-4">
           <div className="text-xs font-bold text-navy">해설</div>
@@ -127,7 +129,7 @@ export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; k
           )}
         </More>
       )}
-      {kind === "exam" && !s.itemExplanation && !s.passageCommentary.length && !hasConcepts && !hasIntent && (
+      {kind === "exam" && !s.itemExplanations.length && !s.passageCommentary.length && !hasConcepts && !hasIntent && (
         <p className="text-sm text-faint">이 문항에는 상세 분석 자료가 아직 없습니다.</p>
       )}
     </div>

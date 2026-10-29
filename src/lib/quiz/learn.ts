@@ -7,6 +7,7 @@ import type { AnalysisDetails, Exam } from "@/lib/types";
 import { getQuizSettings, quizError, type QuizItemRow } from "./bank.ts";
 import { isCorrectFill } from "./grade.ts";
 import { fetchAll } from "./paged.ts";
+import { focusRequirement } from "./split.ts";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
 import {
   answerXp,
@@ -211,7 +212,8 @@ export async function getItemView(id: string): Promise<ItemView> {
     format: it.format,
     grading: it.grading,
     prompt: it.prompt,
-    passage: it.kind === "exam" ? (src?.text ?? null) : it.passage,
+    // 기출: <작성 방법> 아래에는 이 문제의 조건만 (한 화면에 한 문제)
+    passage: it.kind === "exam" ? focusRequirement(src?.text ?? null, it.prompt) : it.passage,
     imageUrl: it.kind === "exam" ? (src?.image ?? null) : null,
     ref: src ? questionRef(src.exam, src.label) : null,
     score: it.kind === "exam" ? (src?.score ?? null) : null,
@@ -227,7 +229,7 @@ export interface Solution {
   answer: string | null;
   accepted: string[];
   modelAnswer: string | null;
-  itemExplanation: { sourcePart: string; explanation: string } | null;
+  itemExplanations: { label: string; answer: string; sourcePart: string; explanation: string }[];
   passageCommentary: { part: string; quote: string; commentary: string }[];
   conceptMap: NonNullable<AnalysisDetails["conceptMap"]>;
   studyConcepts: NonNullable<AnalysisDetails["studyConcepts"]>;
@@ -249,14 +251,17 @@ export async function getSolution(id: string): Promise<Solution> {
     it.question_id ? db.from("question_analysis").select("answer, details, status").eq("question_id", it.question_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const d = ((a?.details ?? {}) as AnalysisDetails) || {};
-  const ie = it.kind === "exam" && it.label ? d.itemExplanations?.find((x) => normLabel(x.label) === normLabel(it.label)) : undefined;
-  const itemIntent = it.kind === "exam" && it.label ? d.examinerIntent?.itemIntents?.find((x) => normLabel(x.label) === normLabel(it.label))?.intent : undefined;
+  // 여러 요구 사항을 묶은 문제는 레이블이 "㉢, ㉣" → 각각의 해설·의도를 모두 보여 준다
+  const labels = new Set(it.kind === "exam" && it.label ? it.label.split(",").map(normLabel).filter(Boolean) : []);
+  const ies = (d.itemExplanations ?? []).filter((x) => labels.has(normLabel(x.label)));
+  const intents = (d.examinerIntent?.itemIntents ?? []).filter((x) => labels.has(normLabel(x.label)));
+  const itemIntent = intents.length ? intents.map((x) => (intents.length > 1 ? `${x.label} ${x.intent}` : x.intent)).join("\n") : undefined;
   const related = it.question_id ? await findRelatedQuestions(it.question_id, 5).catch(() => []) : [];
   return {
-    answer: it.kind === "exam" ? (ie?.answer ?? it.answer) : it.answer,
+    answer: it.kind === "exam" && ies.length ? ies.map((x) => (ies.length > 1 ? `${x.label} ${x.answer}` : x.answer)).join("\n") : it.answer,
     accepted: it.accepted_answers,
     modelAnswer: it.kind === "exam" ? (d.modelAnswer ?? null) : it.model_answer,
-    itemExplanation: ie ? { sourcePart: ie.sourcePart, explanation: ie.explanation } : null,
+    itemExplanations: ies.map((x) => ({ label: x.label, answer: x.answer, sourcePart: x.sourcePart, explanation: x.explanation })),
     passageCommentary: it.kind === "exam" ? (d.passageCommentary ?? []) : [],
     conceptMap: d.conceptMap ?? [],
     studyConcepts: d.studyConcepts ?? [],

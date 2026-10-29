@@ -50,13 +50,24 @@ export function hashText(s: string): string {
   return (h >>> 0).toString(36);
 }
 
+/**
+ * 조건 목록의 <작성 방법> 머리글 위치. 발문에도 "<작성 방법>에 따라 서술하시오"처럼 같은 말이 나오므로
+ * 마지막에 나오는 것을 조건 목록으로 본다.
+ */
+function lastHeader(text: string): { start: number; end: number } | null {
+  const re = /<\s*작\s*성\s*방\s*법\s*>|【\s*작\s*성\s*방\s*법\s*】|\[\s*작\s*성\s*방\s*법\s*\]/g;
+  let last: { start: number; end: number } | null = null;
+  for (const m of text.matchAll(re)) last = { start: m.index!, end: m.index! + m[0].length };
+  return last;
+}
+
 /** <작성 방법> 아래의 조건 줄들 (원문 그대로) */
 export function requirementLines(text: string | null): string[] {
   if (!text) return [];
-  const idx = text.search(/<\s*작\s*성\s*방\s*법\s*>|【\s*작\s*성\s*방\s*법\s*】|\[\s*작\s*성\s*방\s*법\s*\]/);
-  if (idx < 0) return [];
+  const h = lastHeader(text);
+  if (!h) return [];
   const lines: string[] = [];
-  for (const raw of text.slice(idx).split("\n").slice(1)) {
+  for (const raw of text.slice(h.end).split("\n")) {
     const line = raw.trim();
     if (!line) continue;
     if (/^[○ㅇ◦•·∙▪■□\-–]/.test(line)) lines.push(line);
@@ -106,24 +117,44 @@ export function splitQuestion(input: SplitInput): SplitItem[] {
   const difficulty = DIFF[input.difficulty ?? "중"] ?? 2;
   if (reqs.length === 0) return [];
 
+  // 1) 요구 사항마다 원문의 작성 방법 줄 찾기
   const seen = new Map<string, number>();
-  return reqs.map((r, i) => {
-    const reasons: string[] = [];
-    const answer = r.answer?.trim() ?? "";
+  const found = reqs.map((r, i) => {
     let label = r.label?.trim() || `${i + 1}`;
     const n = (seen.get(label) ?? 0) + 1;
     seen.set(label, n);
-    if (n > 1) {
-      reasons.push("같은 레이블이 여러 번 나옵니다");
-      label = `${label} (${n})`;
-    }
-    const prompt = findPrompt(label, lines, i, reqs.length);
-    if (!answer) reasons.push("정답이 없습니다");
-    if (!prompt && reqs.length > 1) reasons.push("원문에서 이 요구 사항의 발문(작성 방법 조건)을 찾지 못했습니다");
+    const dup = n > 1;
+    if (dup) label = `${label} (${n})`;
+    return { label, answer: r.answer?.trim() ?? "", prompt: findPrompt(label, lines, i, reqs.length), dup };
+  });
+
+  // 2) 같은 작성 방법 줄을 가리키는 요구 사항은 한 문제로 (예: "㉢, ㉣의 의미를 순서대로 서술할 것")
+  const groups: (typeof found)[] = [];
+  for (const f of found) {
+    const g = f.prompt ? groups.find((x) => x[0].prompt === f.prompt) : undefined;
+    if (g) g.push(f);
+    else groups.push([f]);
+  }
+
+  return groups.map((g, i) => {
+    const reasons: string[] = [];
+    const merged = g.length > 1;
+    const label = g.map((x) => x.label).join(", ");
+    const answer = merged ? g.map((x) => `${x.label} ${x.answer}`).join("\n") : g[0].answer;
+    const prompt = g[0].prompt;
+    if (g.some((x) => x.dup)) reasons.push("같은 레이블이 여러 번 나옵니다");
+    if (g.some((x) => !x.answer)) reasons.push("정답이 없습니다");
+    if (!prompt && found.length > 1) reasons.push("원문에서 이 요구 사항의 발문(작성 방법 조건)을 찾지 못했습니다");
     // 발문 안에 정답이 그대로 들어 있으면 문제를 풀 의미가 없다
-    if (prompt && answer && answer.length >= 2 && prompt.replace(/\s/g, "").includes(answer.replace(/\s/g, ""))) reasons.push("발문에 정답이 드러날 수 있습니다");
-    const { format, grading } = decideFormat(input.questionType, prompt, answer);
-    if (format === "fill" && grading === "self") reasons.push("기입형이지만 정답이 길어 자기평가로 바꿨습니다");
+    if (prompt && g.some((x) => x.answer.length >= 2 && prompt.replace(/\s/g, "").includes(x.answer.replace(/\s/g, "")))) reasons.push("발문에 정답이 드러날 수 있습니다");
+    let { format, grading } = decideFormat(input.questionType, prompt, merged ? "" : answer);
+    if (merged) {
+      // 여러 칸을 한 번에 답하는 문제: 기입형이면 자기평가로 (칸별 자동 채점은 하지 않음)
+      const allShort = g.every((x) => isShortAnswer(x.answer));
+      format = allShort && !(prompt && DESCRIPTIVE.test(prompt)) ? "fill" : "essay";
+      grading = "self";
+    }
+    if (!merged && format === "fill" && grading === "self") reasons.push("기입형이지만 정답이 길어 자기평가로 바꿨습니다");
     return {
       key: `q:${input.questionId}:${normLabel(label)}`,
       kind: "exam" as const,
@@ -139,6 +170,17 @@ export function splitQuestion(input: SplitInput): SplitItem[] {
       sortOrder: i,
     };
   });
+}
+
+/**
+ * 퀴즈 화면용 원문: 발문·제시문은 그대로 두고 <작성 방법> 아래에는 이 문제의 조건 줄만 남긴다.
+ * (다른 요구 사항이 함께 보이면 한 화면에 여러 문제가 나오는 셈이므로)
+ */
+export function focusRequirement(text: string | null, prompt: string | null): string | null {
+  if (!text || !prompt) return text;
+  const h = lastHeader(text);
+  if (!h) return text;
+  return `${text.slice(0, h.end).trimEnd()}\n\n${prompt}`;
 }
 
 export interface ExpectedSource {
