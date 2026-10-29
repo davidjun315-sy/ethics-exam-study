@@ -1,10 +1,8 @@
 /**
  * 기출 문항 → 퀴즈 세부 문제 분리. (순수 계산, AI 호출 없음)
  *
- * 이미 저장된 AI 분석을 그대로 쓴다.
- *  - v3 분석: itemExplanations (요구 사항별 정답·해설)
- *  - v2 분석: subAnswers (하위 문항별 정답)
- *  - 둘 다 없으면 문항 전체를 문제 하나로 (분리하지 않음)
+ * 문항별 AI 분석의 "요구 사항별 해설"(itemExplanations)만 쓴다. 요구 사항 하나 = 퀴즈 문제 하나.
+ * 요구 사항별 해설이 없는 이전 형식 분석은 문제로 만들지 않는다 (재분석하면 들어온다).
  * 세부 발문은 원문의 <작성 방법> 조건 줄에서 해당 레이블(㉠ 등)이 들어 있는 줄을 그대로 가져온다.
  * 원문(question_text)은 바꾸지 않는다. 분리가 불분명하면 review_reasons 를 남겨 관리자 검수 대상으로 둔다.
  */
@@ -104,38 +102,9 @@ const DIFF: Record<string, 1 | 2 | 3> = { 하: 1, 중: 2, 상: 3 };
 export function splitQuestion(input: SplitInput): SplitItem[] {
   const d = input.details ?? {};
   const lines = requirementLines(input.questionText);
-  const reqs: { label: string; answer: string }[] =
-    d.itemExplanations?.length
-      ? d.itemExplanations.map((x) => ({ label: x.label, answer: x.answer }))
-      : d.subAnswers?.length
-        ? d.subAnswers.map((x) => ({ label: x.label, answer: x.answer }))
-        : [];
+  const reqs = (d.itemExplanations ?? []).map((x) => ({ label: x.label, answer: x.answer }));
   const difficulty = DIFF[input.difficulty ?? "중"] ?? 2;
-
-  // 세부 정답이 없으면 분리하지 않고 문항 전체를 한 문제로
-  if (reqs.length === 0) {
-    const answer = (input.answer ?? d.modelAnswer ?? "").trim();
-    const reasons: string[] = [];
-    if (!answer) reasons.push("정답이 없습니다");
-    if (lines.length > 1) reasons.push("요구 사항이 여러 개지만 요구 사항별 정답이 없어 나누지 않았습니다 (재분석하면 나눌 수 있음)");
-    const { format, grading } = lines.length > 1 ? { format: "essay" as const, grading: "self" as const } : decideFormat(input.questionType, null, answer);
-    return [
-      {
-        key: `q:${input.questionId}:main`,
-        kind: "exam",
-        label: "",
-        format,
-        grading,
-        prompt: null,
-        answer: answer || "",
-        acceptedAnswers: grading === "auto" ? seedAcceptedAnswers(answer) : [],
-        reviewReasons: reasons,
-        sourceHash: hashText(["main", answer, input.questionText ?? ""].join("|")),
-        difficulty,
-        sortOrder: 0,
-      },
-    ];
-  }
+  if (reqs.length === 0) return [];
 
   const seen = new Map<string, number>();
   return reqs.map((r, i) => {
@@ -224,33 +193,5 @@ export function expectedFromAnalysis(questionId: string, ext: ExpectedSource): E
     reviewReasons: [],
     sourceHash: hashText(`${q}|${a}|${ext.conceptSummary ?? ""}`),
     dedupeKey: dedupeKey(q),
-  };
-}
-
-/** 출제 예측 → 예상 문제(practice_questions) 를 퀴즈 문제로 */
-export function expectedFromPractice(p: {
-  id: string;
-  passage: string;
-  question: string;
-  conditions: string[];
-  model_answer: string;
-  rationale: string;
-}): ExpectedItem {
-  const text = [p.passage.trim(), "", p.question.trim(), ...(p.conditions.length ? ["", "<작성 방법>", ...p.conditions.map((c) => `○ ${c}`)] : [])].join("\n");
-  const short = isShortAnswer(p.model_answer);
-  return {
-    key: `p:${p.id}`,
-    kind: "expected",
-    label: "",
-    format: short ? "fill" : "essay",
-    grading: short ? "auto" : "self",
-    passage: text,
-    answer: p.model_answer,
-    modelAnswer: p.model_answer,
-    explanation: p.rationale,
-    acceptedAnswers: short ? seedAcceptedAnswers(p.model_answer) : [],
-    reviewReasons: [],
-    sourceHash: hashText(`${text}|${p.model_answer}`),
-    dedupeKey: dedupeKey(text),
   };
 }

@@ -73,7 +73,7 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
               <SyncButton />
             </div>
             <p className="text-sm text-muted">
-              분석이 끝난 모든 기출을 요구 사항(㉠·㉡·작성 방법 조건) 단위로 나누고, 분석의 예상 문제와 출제 예측의 예상 문제를 가져옵니다.
+              문항별 AI 분석의 <b>요구 사항별 해설</b>로 기출을 ㉠·㉡·작성 방법 조건 단위 문제로 나누고, <b>향후 출제</b>의 예상 문제(문제·답안이 있는 것)를 가져옵니다.
               이미 있는 문제는 같은 id 로 갱신되어 학습 기록이 유지되고, 관리자가 고친 문제는 덮어쓰지 않습니다.
               문항을 분석·수정하면 그 문항은 자동으로 반영됩니다.
             </p>
@@ -82,6 +82,20 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
                 문제은행에 아직 없는 분석 기출 {data.status.unsynced.length}개: {data.status.unsynced.slice(0, 12).map((u) => u.ref).join(", ")}
                 {data.status.unsynced.length > 12 ? " …" : ""} — 동기화하세요.
               </p>
+            )}
+            {data.status.needsAnalysis.length > 0 && (
+              <details className="rounded bg-surface-2 p-2 text-sm">
+                <summary className="cursor-pointer text-muted">
+                  요구 사항별 해설이 없어 퀴즈로 만들 수 없는 분석 {data.status.needsAnalysis.length}개 — 이전 형식 분석입니다. 문항 수정에서 셀프 분석 &apos;전체&apos;로 다시 분석하면 자동으로 들어옵니다.
+                </summary>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {data.status.needsAnalysis.map((q) => (
+                    <Link key={q.id} href={`/admin/questions/${q.id}`} className="rounded border border-line bg-surface px-2 py-0.5 text-xs hover:border-navy hover:text-navy">
+                      {q.ref}
+                    </Link>
+                  ))}
+                </div>
+              </details>
             )}
             {data.status.changed > 0 && (
               <p className="rounded bg-warn-soft/50 p-2 text-sm text-warn">
@@ -172,10 +186,8 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
           <section className="card space-y-3 p-4">
             <h2 className="text-[15px] font-bold">예상 문제 추가</h2>
             <p className="text-sm text-muted">
-              전체 기출 분석을 바탕으로 한 예상 문제는{" "}
-              <Link href="/trends?tab=predict" className="text-navy underline">출제분석 → 출제 예측</Link>
-              에서 주제별로 만들 수 있습니다 (API 또는 채팅 AI 붙여넣기). 만든 뒤 위 &apos;현황 → 동기화&apos;를 누르면 승인 대기로 들어옵니다.
-              문항별 예상 문제는 기출 분석의 &apos;향후 출제&apos;에서 가져옵니다. 직접 쓰려면 아래에 입력하세요.
+              예상 문제는 문항별 AI 분석의 &apos;향후 출제&apos;(예상 문제 + 예상 답안)에서 가져와 승인 대기로 들어옵니다.
+              더 만들려면 문항 수정 화면에서 &apos;출제 의도·개념 정리·향후 출제만&apos; 다시 분석하세요. 직접 쓰려면 아래에 입력하세요.
             </p>
             <ManualItemForm />
           </section>

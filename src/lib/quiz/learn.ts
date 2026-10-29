@@ -6,6 +6,7 @@ import { questionRef } from "@/lib/format";
 import type { AnalysisDetails, Exam } from "@/lib/types";
 import { getQuizSettings, quizError, type QuizItemRow } from "./bank.ts";
 import { isCorrectFill } from "./grade.ts";
+import { fetchAll } from "./paged.ts";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
 import {
   answerXp,
@@ -67,20 +68,26 @@ export interface Filters {
   which?: "any" | "new" | "review";
 }
 
+type CandidateRow = { id: string; kind: "exam" | "expected"; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
+
 async function approvedItems(f: Filters = {}) {
-  let q = getAdminClient()
-    .from("quiz_items")
-    .select("id, kind, question_id, area, philosopher_names, difficulty, format, exam_year")
-    .eq("status", "approved");
-  if (f.kind) q = q.eq("kind", f.kind);
-  if (f.format) q = q.eq("format", f.format);
-  if (f.difficulty) q = q.eq("difficulty", f.difficulty);
-  if (f.year) q = q.eq("exam_year", f.year);
-  if (f.area) q = q.eq("area", f.area);
-  if (f.philosopher) q = q.contains("philosopher_names", [f.philosopher]);
-  const { data, error } = await q.limit(20000);
-  if (error) throw quizError(error.message);
-  return (data ?? []).map(
+  const build = () => {
+    let q = getAdminClient()
+      .from("quiz_items")
+      .select("id, kind, question_id, area, philosopher_names, difficulty, format, exam_year")
+      .eq("status", "approved");
+    if (f.kind) q = q.eq("kind", f.kind);
+    if (f.format) q = q.eq("format", f.format);
+    if (f.difficulty) q = q.eq("difficulty", f.difficulty);
+    if (f.year) q = q.eq("exam_year", f.year);
+    if (f.area) q = q.eq("area", f.area);
+    if (f.philosopher) q = q.contains("philosopher_names", [f.philosopher]);
+    return q.order("id");
+  };
+  const data = await fetchAll<CandidateRow>((from, to) => build().range(from, to)).catch((e: Error) => {
+    throw quizError(e.message);
+  });
+  return data.map(
     (r): Candidate => ({
       id: r.id,
       kind: r.kind,
@@ -93,9 +100,17 @@ async function approvedItems(f: Filters = {}) {
 }
 
 async function progressMap(learner: string): Promise<Map<string, ProgressLite & { raw: Record<string, unknown> }>> {
-  const { data, error } = await getAdminClient().from("quiz_progress").select("*").eq("learner", learner).limit(20000);
-  if (error) throw quizError(error.message);
-  return new Map((data ?? []).map((r) => [r.item_id as string, { lastResult: r.last_result, dueOn: r.due_on, mastery: r.mastery, lastAt: r.last_at, raw: r }]));
+  const data = await fetchAll<Record<string, unknown>>((from, to) =>
+    getAdminClient().from("quiz_progress").select("*").eq("learner", learner).order("item_id").range(from, to),
+  ).catch((e: Error) => {
+    throw quizError(e.message);
+  });
+  return new Map(
+    data.map((r) => [
+      r.item_id as string,
+      { lastResult: (r.last_result as QuizResult | null) ?? null, dueOn: (r.due_on as string | null) ?? null, mastery: r.mastery as number, lastAt: (r.last_at as string | null) ?? null, raw: r },
+    ]),
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -431,11 +446,14 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     getProfile(learner),
     getDailySession(learner, false),
     progressMap(learner),
-    db.from("quiz_items").select("id, area, philosopher_names, difficulty").eq("status", "approved").limit(20000),
-    db.from("quiz_attempts").select("day, result, item_id").eq("learner", learner).gte("created_at", from.toISOString()).limit(20000),
+    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 }>((a, b) =>
+      db.from("quiz_items").select("id, area, philosopher_names, difficulty").eq("status", "approved").order("id").range(a, b),
+    ).then((data) => ({ data })),
+    fetchAll<{ day: string; result: string; item_id: string }>((a, b) =>
+      db.from("quiz_attempts").select("day, result, item_id").eq("learner", learner).gte("created_at", from.toISOString()).order("created_at").range(a, b),
+    ).then((data) => ({ data })),
     db.from("quiz_daily").select("day, completed_at").eq("learner", learner).gte("day", kstDay(from)),
   ]);
-  if (items.error) throw quizError(items.error.message);
   const byArea = new Map<string, { seen: number; total: number; sum: number }>();
   const byPh = new Map<string, { seen: number; sum: number }>();
   const levelStats: Dashboard["levelStats"] = { 1: { attempts: 0, correct: 0 }, 2: { attempts: 0, correct: 0 }, 3: { attempts: 0, correct: 0 } };
@@ -503,8 +521,11 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
 
 /** 자유 학습 조건 목록 (공개된 문제 기준) */
 export async function getFilterOptions() {
-  const { data, error } = await getAdminClient().from("quiz_items").select("area, philosopher_names, exam_year, kind").eq("status", "approved").limit(20000);
-  if (error) throw quizError(error.message);
+  const data = await fetchAll<{ area: string | null; philosopher_names: string[] | null; exam_year: number | null; kind: string }>((from, to) =>
+    getAdminClient().from("quiz_items").select("area, philosopher_names, exam_year, kind").eq("status", "approved").order("id").range(from, to),
+  ).catch((e: Error) => {
+    throw quizError(e.message);
+  });
   const count = <K extends string | number>(list: K[]) => {
     const m = new Map<K, number>();
     list.forEach((k) => m.set(k, (m.get(k) ?? 0) + 1));

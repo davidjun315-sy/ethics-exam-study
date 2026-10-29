@@ -44,8 +44,7 @@ check("정답이 바뀌면 지문이 바뀜", splitQuestion({ ...base, details: 
 
 const noLines = splitQuestion({ ...base, questionText: "다음 글의 ㉠, ㉡에 들어갈 말을 쓰시오. ( ㉠ ) ( ㉡ )", questionType: "기입형" });
 check("작성 방법이 없으면 발문을 못 찾아 검수 대상", noLines.length === 3 && noLines[0].reviewReasons.some((r) => r.includes("발문")));
-const single = splitQuestion({ ...base, details: {} });
-check("요구 사항별 정답이 없으면 나누지 않고 검수 대상", single.length === 1 && single[0].format === "essay" && single[0].reviewReasons.length > 0);
+check("요구 사항별 해설이 없는 분석은 문제로 만들지 않음", splitQuestion({ ...base, details: {} }).length === 0 && splitQuestion({ ...base, details: { subAnswers: [{ label: "㉠", answer: "양지" }] } }).length === 0);
 const leak = splitQuestion({ ...base, details: { itemExplanations: [{ label: "㉠", answer: "개념", sourcePart: "", explanation: "" }] } });
 check("발문에 정답이 보이면 검수 대상", leak[0].reviewReasons.some((r) => r.includes("드러날")));
 const fillLong = splitQuestion({ ...base, questionType: "기입형", details: { itemExplanations: [{ label: "㉠", answer: "이치는 마음 밖에 있지 않고 마음 그 자체가 이치라는 주장", sourcePart: "", explanation: "" }] } });

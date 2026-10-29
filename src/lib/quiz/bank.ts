@@ -4,11 +4,12 @@ import { classifyPhilosopher, classifyTradition, UNCLASSIFIED } from "@/lib/trad
 import type { AnalysisDetails } from "@/lib/types";
 import { listQuestionSummaries, type QuestionSummary } from "@/lib/data/queries";
 import { seedAcceptedAnswers } from "./grade.ts";
-import { dedupeKey, expectedFromAnalysis, expectedFromPractice, splitQuestion, type ExpectedItem, type SplitItem } from "./split.ts";
+import { chunks, fetchAll, fetchIn } from "./paged.ts";
+import { dedupeKey, expectedFromAnalysis, splitQuestion, type ExpectedItem, type SplitItem } from "./split.ts";
 
 /**
  * 퀴즈 문제은행 동기화.
- * - 분석된 기출 문항을 세부 문제로 나누고, 분석의 예상 문제·출제 예측 예상 문제를 가져온다.
+ * - 문항별 AI 분석의 "요구 사항별 해설"로 기출을 세부 문제로 나누고, "향후 출제"의 예상 문제를 가져온다.
  * - key 로 이미 있는 문제를 찾아 갱신한다 → 문제 id 가 유지되어 학습 기록이 그대로 이어진다.
  * - 관리자가 고친 문제(edited)는 덮어쓰지 않고 "원본 분석 변경됨" 표시만 한다.
  * - 원본에서 사라진 문제는 지우지 않고 stale(출제 중지)로 둔다.
@@ -87,14 +88,16 @@ function meta(s: QuestionSummary) {
   };
 }
 
+type AnalysisRow = { question_id: string; answer: string | null; difficulty: "상" | "중" | "하" | null; area: string | null; details: AnalysisDetails };
+
 async function loadAnalyzed(questionIds?: string[]) {
   const db = getAdminClient();
-  let q = db.from("question_analysis").select("question_id, status, answer, difficulty, area, details").in("status", ANALYZED);
-  if (questionIds) q = q.in("question_id", questionIds);
-  const { data, error } = await q.limit(10000);
-  if (error) throw new Error(error.message);
-  const analyses = (data ?? []) as { question_id: string; answer: string | null; difficulty: "상" | "중" | "하" | null; area: string | null; details: AnalysisDetails }[];
-  const summaries = await listQuestionSummaries({ ids: analyses.map((a) => a.question_id) });
+  const cols = "question_id, status, answer, difficulty, area, details";
+  const analyses = questionIds
+    ? await fetchIn<AnalysisRow>(questionIds, (part) => db.from("question_analysis").select(cols).in("status", ANALYZED).in("question_id", part))
+    : await fetchAll<AnalysisRow>((from, to) => db.from("question_analysis").select(cols).in("status", ANALYZED).order("question_id").range(from, to));
+  // 전체 동기화는 문항 목록을 한 번에 (id 목록을 URL 에 싣지 않음)
+  const summaries = questionIds ? await listQuestionSummaries({ ids: questionIds }) : await listQuestionSummaries();
   const byId = new Map(summaries.map((s) => [s.id, s]));
   return analyses.filter((a) => byId.has(a.question_id)).map((a) => ({ a, s: byId.get(a.question_id)! }));
 }
@@ -206,7 +209,7 @@ export interface SyncResult {
 /**
  * 문제은행 동기화. questionIds 를 주면 그 문항만 (분석 저장 직후 자동 반영용).
  */
-export async function syncQuizBank(opts: { questionIds?: string[]; includePractice?: boolean } = {}): Promise<SyncResult> {
+export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promise<SyncResult> {
   const db = getAdminClient();
   const settings = await getQuizSettings();
   const rows = await loadAnalyzed(opts.questionIds);
@@ -218,28 +221,18 @@ export async function syncQuizBank(opts: { questionIds?: string[]; includePracti
       if (x) planned.push(planExpected(s, x, { origin: "analysis", question_id: s.id }));
     }
   }
-  if (opts.includePractice !== false && !opts.questionIds) {
-    const { data: practice } = await db.from("practice_questions").select("id, passage, question, conditions, model_answer, rationale, related_question_ids").limit(2000);
-    for (const p of practice ?? []) {
-      const x = expectedFromPractice(p as Parameters<typeof expectedFromPractice>[0]);
-      const rel = ((p.related_question_ids as string[]) ?? [])[0] ?? null;
-      planned.push(planExpected(null, x, { origin: "practice", practice_question_id: p.id, question_id: rel }));
-    }
-  }
 
-  // 기존 문제 (키 / 해당 문항)
-  const keys = planned.map((p) => p.key);
-  const existing = new Map<string, QuizItemRow>();
-  for (let i = 0; i < keys.length; i += 300) {
-    const { data, error } = await db.from("quiz_items").select("*").in("key", keys.slice(i, i + 300));
-    if (error) throw quizError(error.message);
-    for (const r of (data ?? []) as QuizItemRow[]) existing.set(r.key, r);
-  }
+  // 기존 문제: 전체 동기화는 문제은행 전체를, 문항 동기화는 그 문항의 문제만 읽는다 (키 목록을 URL 에 싣지 않음)
+  const current = opts.questionIds
+    ? await fetchIn<QuizItemRow>(opts.questionIds, (part) => db.from("quiz_items").select("*").in("question_id", part))
+    : await fetchAll<QuizItemRow>((from, to) => db.from("quiz_items").select("*").order("created_at").range(from, to));
+  const existing = new Map(current.map((r) => [r.key, r]));
   // 중복 검사용: 이미 있는 예상 문제의 본문 키
-  const { data: expRows, error: expErr } = await db.from("quiz_items").select("key, passage").eq("kind", "expected");
-  if (expErr) throw quizError(expErr.message);
+  const expRows = await fetchAll<{ key: string; passage: string | null }>((from, to) =>
+    db.from("quiz_items").select("key, passage").eq("kind", "expected").order("key").range(from, to),
+  );
   const dedupe = new Map<string, string>();
-  for (const r of expRows ?? []) if (r.passage) dedupe.set(dedupeKey(r.passage as string), r.key as string);
+  for (const r of expRows) if (r.passage) dedupe.set(dedupeKey(r.passage), r.key);
 
   const result: SyncResult = { created: 0, updated: 0, changed: 0, stale: 0, expected: 0, duplicates: 0 };
   const now = new Date().toISOString();
@@ -280,29 +273,29 @@ export async function syncQuizBank(opts: { questionIds?: string[]; includePracti
     if (error) throw quizError(error.message);
     result.updated++;
   }
-  for (let i = 0; i < inserts.length; i += 200) {
-    const { error } = await db.from("quiz_items").insert(inserts.slice(i, i + 200));
+  for (const part of chunks(inserts, 100)) {
+    const { error } = await db.from("quiz_items").insert(part);
     if (error) throw quizError(error.message);
   }
 
-  // 원본 분석에서 사라진 세부 문제 → stale (지우지 않음)
-  const syncedQuestions = [...new Set(rows.map((r) => r.s.id))];
-  const keySet = new Set(keys);
-  for (let i = 0; i < syncedQuestions.length; i += 200) {
-    const { data } = await db.from("quiz_items").select("id, key, status, edited, origin").in("question_id", syncedQuestions.slice(i, i + 200)).eq("origin", "analysis");
-    const gone = (data ?? []).filter((r) => !keySet.has(r.key as string) && r.status !== "stale" && !r.edited).map((r) => r.id as string);
-    if (gone.length) {
-      await db.from("quiz_items").update({ status: "stale", updated_at: now }).in("id", gone);
-      result.stale += gone.length;
-    }
+  // 원본 분석에서 사라진 세부 문제 → stale (지우지 않음, 학습 기록 보존)
+  const synced = new Set(rows.map((r) => r.s.id));
+  const keySet = new Set(planned.map((p) => p.key));
+  const gone = current
+    .filter((r) => r.origin === "analysis" && r.question_id && synced.has(r.question_id) && !keySet.has(r.key) && r.status !== "stale" && !r.edited)
+    .map((r) => r.id);
+  for (const part of chunks(gone)) {
+    const { error } = await db.from("quiz_items").update({ status: "stale", updated_at: now }).in("id", part);
+    if (error) throw quizError(error.message);
   }
+  result.stale = gone.length;
   return result;
 }
 
 /** 분석 저장 직후 그 문항만 반영 (퀴즈 테이블이 없거나 실패해도 분석 저장은 그대로) */
 export async function syncQuestionQuietly(questionId: string) {
   try {
-    await syncQuizBank({ questionIds: [questionId], includePractice: false });
+    await syncQuizBank({ questionIds: [questionId] });
   } catch {
     // 005 마이그레이션 전이거나 일시 오류: 관리자 화면의 '동기화' 로 다시 반영할 수 있다
   }
@@ -311,36 +304,43 @@ export async function syncQuestionQuietly(questionId: string) {
 export interface BankStatus {
   counts: Record<string, number>; // "exam:approved" …
   total: number;
-  unsynced: { id: string; ref: string }[]; // 분석됐지만 문제은행에 없는 기출
+  unsynced: { id: string; ref: string }[]; // 요구 사항별 해설이 있는데 문제은행에 없는 기출
+  needsAnalysis: { id: string; ref: string }[]; // 분석은 됐지만 요구 사항별 해설이 없음 → 재분석 필요
   changed: number; // 원본 분석 변경 (관리자 수정 문제)
   openReports: number;
 }
 
+const refOf = (s: QuestionSummary) => `${s.exam.exam_year} ${s.exam.section ?? ""} ${s.label}번`.replace(/\s+/g, " ");
+
 export async function getBankStatus(): Promise<BankStatus> {
   const db = getAdminClient();
-  const [{ data: items, error }, { data: analyses }, { count: openReports }] = await Promise.all([
-    db.from("quiz_items").select("kind, status, question_id, source_changed").limit(20000),
-    db.from("question_analysis").select("question_id").in("status", ANALYZED).limit(10000),
+  const [items, analyses, { count: openReports, error: re }] = await Promise.all([
+    fetchAll<{ kind: string; status: string; question_id: string | null; source_changed: boolean }>((from, to) =>
+      db.from("quiz_items").select("kind, status, question_id, source_changed").order("created_at").range(from, to),
+    ),
+    fetchAll<{ question_id: string; ie: unknown }>((from, to) =>
+      db.from("question_analysis").select("question_id, ie:details->itemExplanations").in("status", ANALYZED).order("question_id").range(from, to),
+    ),
     db.from("quiz_reports").select("id", { count: "exact", head: true }).eq("status", "open"),
-  ]);
-  if (error) throw quizError(error.message);
+  ]).catch((e: Error) => {
+    throw quizError(e.message);
+  });
+  if (re) throw quizError(re.message);
   const counts: Record<string, number> = {};
   const have = new Set<string>();
   let changed = 0;
-  for (const r of items ?? []) {
+  for (const r of items) {
     counts[`${r.kind}:${r.status}`] = (counts[`${r.kind}:${r.status}`] ?? 0) + 1;
-    if (r.kind === "exam" && r.question_id) have.add(r.question_id as string);
+    if (r.kind === "exam" && r.question_id && r.status !== "stale") have.add(r.question_id);
     if (r.source_changed) changed++;
   }
-  const missing = (analyses ?? []).map((a) => a.question_id as string).filter((id) => !have.has(id));
-  const summaries = missing.length ? await listQuestionSummaries({ ids: missing.slice(0, 200) }) : [];
-  return {
-    counts,
-    total: items?.length ?? 0,
-    unsynced: summaries.map((s) => ({ id: s.id, ref: `${s.exam.exam_year} ${s.exam.section ?? ""} ${s.label}번`.replace(/\s+/g, " ") })),
-    changed,
-    openReports: openReports ?? 0,
-  };
+  const withItems = analyses.filter((a) => Array.isArray(a.ie) && a.ie.length > 0).map((a) => a.question_id);
+  const without = analyses.filter((a) => !(Array.isArray(a.ie) && a.ie.length > 0)).map((a) => a.question_id);
+  const missing = withItems.filter((id) => !have.has(id));
+  const summaries = missing.length || without.length ? await listQuestionSummaries() : [];
+  const byId = new Map(summaries.map((s) => [s.id, s]));
+  const refs = (ids: string[]) => ids.map((id) => byId.get(id)).filter((s): s is QuestionSummary => Boolean(s)).map((s) => ({ id: s.id, ref: refOf(s) }));
+  return { counts, total: items.length, unsynced: refs(missing), needsAnalysis: refs(without), changed, openReports: openReports ?? 0 };
 }
 
 // ---------------------------------------------------------------------
@@ -366,7 +366,7 @@ export async function listQuizItems(f: { status?: string; kind?: string; review?
   const qids = [...new Set(items.map((i) => i.question_id).filter((x): x is string => Boolean(x)))];
   const [summaries, { data: att }] = await Promise.all([
     qids.length ? listQuestionSummaries({ ids: qids }) : Promise.resolve([]),
-    items.length ? db.from("quiz_attempts").select("item_id").in("item_id", items.map((i) => i.id)).limit(20000) : Promise.resolve({ data: [] }),
+    fetchIn<{ item_id: string }>(items.map((i) => i.id), (part) => db.from("quiz_attempts").select("item_id").in("item_id", part)).then((data) => ({ data })),
   ]);
   const byQ = new Map(summaries.map((s) => [s.id, s]));
   const count = new Map<string, number>();
@@ -399,8 +399,10 @@ export async function updateQuizItem(id: string, patch: Partial<Record<(typeof E
 export async function setQuizItemsStatus(ids: string[], status: "approved" | "hidden" | "pending") {
   const row: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
   if (status === "approved") row.review_reasons = [];
-  const { error } = await getAdminClient().from("quiz_items").update(row).in("id", ids);
-  if (error) throw quizError(error.message);
+  for (const part of chunks(ids)) {
+    const { error } = await getAdminClient().from("quiz_items").update(row).in("id", part);
+    if (error) throw quizError(error.message);
+  }
 }
 
 /** 관리자가 직접 추가하는 예상 문제 (승인 대기로 저장) */
@@ -483,9 +485,9 @@ export interface LearnerStat {
 
 export async function listLearnerStats(): Promise<LearnerStat[]> {
   const db = getAdminClient();
-  const [{ data: profiles, error }, { data: attempts }] = await Promise.all([
+  const [{ data: profiles, error }, attempts] = await Promise.all([
     db.from("quiz_profiles").select("*"),
-    db.from("quiz_attempts").select("learner, result, graded_by").limit(50000),
+    fetchAll<{ learner: string; result: string; graded_by: string }>((from, to) => db.from("quiz_attempts").select("learner, result, graded_by").order("created_at").range(from, to)),
   ]);
   if (error) throw quizError(error.message);
   return (profiles ?? []).map((p) => {

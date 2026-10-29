@@ -100,6 +100,13 @@ export function sortSummaries(list: QuestionSummary[]): QuestionSummary[] {
 
 export async function listQuestionSummaries(filter?: { ids?: string[]; examId?: string }): Promise<QuestionSummary[]> {
   if (filter?.ids && filter.ids.length === 0) return [];
+  // id 목록은 URL 에 들어가므로 길면 Supabase 가 400 을 돌려준다 → 나눠서 읽는다
+  if (filter?.ids && filter.ids.length > 60) {
+    const ids = [...new Set(filter.ids)];
+    const parts: QuestionSummary[][] = [];
+    for (let i = 0; i < ids.length; i += 60) parts.push(await listQuestionSummaries({ ...filter, ids: ids.slice(i, i + 60) }));
+    return sortSummaries(parts.flat());
+  }
   const db = getReadClient();
   let q = db.from("questions").select(SUMMARY_SELECT);
   if (filter?.ids) q = q.in("id", filter.ids);
