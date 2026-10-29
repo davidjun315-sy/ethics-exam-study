@@ -53,6 +53,28 @@ export function SyncButton() {
   );
 }
 
+/** 서술형 AI 첨삭 연결 테스트 */
+export function AiTestButton() {
+  const { busy, msg, run } = useAction();
+  return (
+    <>
+      <button
+        className="btn"
+        disabled={Boolean(busy)}
+        onClick={() =>
+          run("ai", async () => {
+            const r = await api<{ ok: boolean; model: string }>("/api/admin/quiz/ai-test", "POST");
+            return `연결 성공 · 모델 ${r.model}`;
+          })
+        }
+      >
+        {busy === "ai" ? "확인 중…" : "연결 테스트"}
+      </button>
+      <Msg msg={msg} />
+    </>
+  );
+}
+
 const STATUS_TONE = { approved: "ok", pending: "warn", hidden: "neutral", stale: "neutral" } as const;
 const STATUS_LABEL = { approved: "공개", pending: "승인 대기", hidden: "비공개", stale: "출제 중지" } as const;
 

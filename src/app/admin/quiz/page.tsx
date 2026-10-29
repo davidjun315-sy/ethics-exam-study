@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
-import { ItemList, ManualItemForm, MemberToggle, ReportList, SettingsForm, SyncButton } from "@/components/admin/QuizAdmin";
+import { AiTestButton, ItemList, ManualItemForm, MemberToggle, ReportList, SettingsForm, SyncButton } from "@/components/admin/QuizAdmin";
 import { listMembers } from "@/lib/members";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { PageTitle } from "@/components/ui";
 import { getBankStatus, getQuizSettings, listLearnerStats, listOpenReports, listQuizItems } from "@/lib/quiz/bank";
 import { LEVEL_NAMES } from "@/lib/quiz/srs";
@@ -105,6 +106,25 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
                 <Link href="/admin/quiz?tab=items&changed=1&status=all" className="underline">확인하기</Link>
               </p>
             )}
+          </section>
+
+          <section className="card space-y-2 p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-[15px] font-bold">서술형 AI 첨삭</h2>
+              {isGeminiConfigured() ? (
+                <>
+                  <span className="rounded bg-ok-soft px-2 py-0.5 text-sm font-semibold text-ok">켜짐 · GEMINI_API_KEY 인식됨</span>
+                  <AiTestButton />
+                </>
+              ) : (
+                <span className="rounded bg-warn-soft px-2 py-0.5 text-sm font-semibold text-warn">꺼짐 · GEMINI_API_KEY 없음</span>
+              )}
+            </div>
+            <p className="text-sm text-muted">
+              {isGeminiConfigured()
+                ? "학습자 화면의 서술형 문제에 'AI 채점 받기 (무료)' 버튼이 나옵니다. 연결 테스트로 키·모델이 실제로 동작하는지 확인하세요."
+                : "지금은 학습자가 '채팅 AI로 채점받기'(프롬프트 복사·붙여넣기)만 쓸 수 있습니다. Vercel → Settings → Environment Variables 에 GEMINI_API_KEY 를 넣고 Redeploy 하면 켜집니다."}
+            </p>
           </section>
 
           <section className="grid gap-3 sm:grid-cols-2">
