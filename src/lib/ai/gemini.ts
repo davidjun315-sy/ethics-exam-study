@@ -58,3 +58,27 @@ export async function geminiJson<S extends z.ZodType>(schema: S, system: string,
     throw new GeminiError("AI 답의 형식이 맞지 않습니다. 다시 시도하세요.", 502);
   }
 }
+
+/**
+ * 연결 확인: 답을 생성하지 않고 모델 정보만 조회한다 (빠르고 무료 한도를 쓰지 않음).
+ * 키가 틀리면 400/403, 모델 이름이 틀리면 404.
+ */
+export async function geminiCheck(): Promise<{ model: string; displayName: string | null }> {
+  const key = serverEnv.geminiApiKey();
+  if (!key) throw new GeminiError("GEMINI_API_KEY 가 설정되지 않았습니다.", 503);
+  const model = serverEnv.geminiModel() ?? "gemini-flash-latest";
+  let res: Response;
+  try {
+    res = await fetch(`${serverEnv.geminiBaseUrl()}/v1beta/models/${encodeURIComponent(model)}`, {
+      headers: { "x-goog-api-key": key },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new GeminiError("AI 서버에 연결하지 못했습니다 (15초 안에 응답 없음).", 502);
+  }
+  const json = (await res.json().catch(() => ({}))) as { displayName?: string; error?: { message?: string } };
+  if (res.status === 404) throw new GeminiError(`AI 모델(${model})을 찾을 수 없습니다. GEMINI_MODEL 환경변수를 확인하세요.`, 503);
+  if (res.status === 400 || res.status === 401 || res.status === 403) throw new GeminiError("GEMINI_API_KEY 가 올바르지 않습니다.", 503);
+  if (!res.ok) throw new GeminiError(`확인 실패 (${res.status}) ${json.error?.message ?? ""}`.trim(), 502);
+  return { model, displayName: json.displayName ?? null };
+}

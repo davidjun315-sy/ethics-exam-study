@@ -63,8 +63,8 @@ export function AiTestButton() {
         disabled={Boolean(busy)}
         onClick={() =>
           run("ai", async () => {
-            const r = await api<{ ok: boolean; model: string }>("/api/admin/quiz/ai-test", "POST");
-            return `연결 성공 · 모델 ${r.model}`;
+            const r = await api<{ model: string; displayName: string | null }>("/api/admin/quiz/ai-test", "POST");
+            return `연결 성공 · 키 정상 · 모델 ${r.displayName ? `${r.displayName} (${r.model})` : r.model}`;
           })
         }
       >
