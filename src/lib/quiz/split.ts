@@ -237,3 +237,14 @@ export function expectedFromAnalysis(questionId: string, ext: ExpectedSource): E
     dedupeKey: dedupeKey(q),
   };
 }
+
+/**
+ * 원문 텍스트 편집 화면용 점검: 퀴즈로 나눌 수 있는지.
+ * labels = 분석의 요구 사항별 해설 레이블 (㉠, ㉡ …)
+ */
+export function checkQuizText(text: string | null, labels: string[]): { hasHeader: boolean; conditions: number; missing: string[]; items: number } {
+  const lines = requirementLines(text);
+  const missing = labels.filter((l, i) => !findPrompt(l, lines, i, labels.length));
+  const prompts = new Set(labels.map((l, i) => findPrompt(l, lines, i, labels.length)).filter(Boolean));
+  return { hasHeader: Boolean(text && lastHeader(text)), conditions: lines.length, missing, items: prompts.size + missing.length };
+}

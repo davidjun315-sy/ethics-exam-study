@@ -354,6 +354,7 @@ export function ExamAdmin({
               {busy === "order" ? "정렬 중…" : "번호순 정렬"}
             </button>
             <span className="text-xs text-faint">▲▼ 로 한 칸씩 옮길 수도 있습니다. 공부 화면의 이전/다음 문항 순서에도 반영됩니다.</span>
+            <Link href={`/admin/texts?exam=${exam.id}`} className="btn !py-1 text-xs">원문 텍스트 편집</Link>
             <ImagesZipButton exam={exam} questions={questions} />
           </div>
           <table className="w-full min-w-[760px] text-sm">
