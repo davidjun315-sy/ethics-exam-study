@@ -9,6 +9,12 @@ export async function quizApi<T = unknown>(url: string, method = "GET", body?: u
     cache: "no-store",
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? `요청 실패 (${res.status})`);
+  if (!res.ok) {
+    const fallback =
+      res.status === 504
+        ? "서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도하세요."
+        : `요청 실패 (${res.status})`;
+    throw new Error((json as { error?: string }).error ?? fallback);
+  }
   return json as T;
 }
