@@ -126,13 +126,76 @@ export interface Session {
   completed: boolean;
 }
 
+type DailyRow = { item_ids: string[]; slots: string[]; results: Record<string, QuizResult> | null; xp: number | null; completed_at: string | null };
+
+function toSession(day: string, d: DailyRow): Session {
+  return { mode: "daily", day, itemIds: d.item_ids, slots: d.slots as Slot[], results: d.results ?? {}, completed: Boolean(d.completed_at) };
+}
+
+/**
+ * 미션을 만든 뒤 관리자가 동기화·비공개로 바꿔 더 이상 공개되지 않은 문제가 생기면,
+ * 아직 안 푼 그 문제를 다른 공개 문제로 바꾼다 (이미 푼 문제와 기록은 그대로).
+ */
+async function repairDaily(learner: string, day: string, d: DailyRow): Promise<Session> {
+  const db = getAdminClient();
+  const results = d.results ?? {};
+  const { data: rows, error } = await db.from("quiz_items").select("id, status, question_id").in("id", d.item_ids);
+  if (error) throw quizError(error.message);
+  const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
+  const bad = d.item_ids.filter((id) => !results[id] && byId.get(id)?.status !== "approved");
+  if (bad.length === 0) return toSession(day, d);
+
+  const keep = d.item_ids.filter((id) => !bad.includes(id));
+  const usedQuestions = new Set(keep.map((id) => byId.get(id)?.question_id).filter(Boolean));
+  const [profile, candidates, progress] = await Promise.all([getProfile(learner), approvedItems(), progressMap(learner)]);
+  const pool = candidates.filter((c) => !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
+  const repl = buildMission({
+    candidates: pool,
+    progress,
+    settings: { total: bad.length, exam: bad.length, expected: 0, review: 0 },
+    today: day,
+    level: profile?.start_level ?? "basic",
+    seed: `${learner}:${day}:repair:${bad.join(",")}`,
+  }).itemIds;
+  const itemIds: string[] = [];
+  const slots: string[] = [];
+  d.item_ids.forEach((id, i) => {
+    if (!bad.includes(id)) {
+      itemIds.push(id);
+      slots.push(d.slots[i] ?? "fill");
+    } else if (repl.length) {
+      itemIds.push(repl.shift()!);
+      slots.push("fill");
+    }
+  });
+  const patch: Record<string, unknown> = { item_ids: itemIds, slots };
+  // 바꿀 문제가 없어 남은 문제를 이미 다 풀었다면 미션 완료로 처리
+  if (itemIds.length && itemIds.every((id) => results[id])) {
+    const p = await getProfile(learner);
+    if (p) {
+      const streak = streakAfterCompletion(p.last_completed_day, p.streak, day);
+      const bonus = missionBonus(streak);
+      const gained = newBadges(streak, p.badges);
+      await db
+        .from("quiz_profiles")
+        .update({ xp: p.xp + bonus, streak, best_streak: Math.max(p.best_streak, streak), last_completed_day: day, badges: [...p.badges, ...gained], updated_at: new Date().toISOString() })
+        .eq("learner", learner);
+      patch.completed_at = new Date().toISOString();
+      patch.xp = (d.xp ?? 0) + bonus;
+    }
+  }
+  const { error: e } = await db.from("quiz_daily").update(patch).eq("learner", learner).eq("day", day);
+  if (e) throw quizError(e.message);
+  return toSession(day, { ...d, item_ids: itemIds, slots, completed_at: (patch.completed_at as string) ?? null });
+}
+
 /** 오늘의 미션 (한국 시간). 없으면 만든다 — 하루 동안 같은 문제 목록이 유지된다 */
 export async function getDailySession(learner: string, create = true): Promise<Session | null> {
   const db = getAdminClient();
   const day = kstDay();
   const { data, error } = await db.from("quiz_daily").select("*").eq("learner", learner).eq("day", day).maybeSingle();
   if (error) throw quizError(error.message);
-  if (data) return { mode: "daily", day, itemIds: data.item_ids, slots: data.slots, results: data.results ?? {}, completed: Boolean(data.completed_at) };
+  if (data) return data.completed_at ? toSession(day, data) : repairDaily(learner, day, data);
   if (!create) return null;
   const [settings, profile, candidates, progress] = await Promise.all([getQuizSettings(), getProfile(learner), approvedItems(), progressMap(learner)]);
   const { itemIds, slots } = buildMission({

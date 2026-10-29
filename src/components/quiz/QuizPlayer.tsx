@@ -140,6 +140,27 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
     }
   }
 
+  /**
+   * 문제를 불러오지 못함 (풀던 중 관리자가 비공개·동기화로 바꾼 경우 등).
+   * 오늘의 미션은 서버가 그 문제를 다른 공개 문제로 바꿔 주므로 세션을 다시 받고, 나머지는 건너뛴다.
+   */
+  async function skipBroken() {
+    if (mode !== "daily") return next();
+    setBusy(true);
+    try {
+      const s = await quizApi<Session>("/api/quiz/session", "POST", { mode, filters });
+      setView(null);
+      setError(null);
+      setSession(s);
+      const first = s.itemIds.findIndex((id) => !s.results[id]);
+      setIndex(first < 0 ? s.itemIds.length : first);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function next() {
     setView(null);
     setSolution(null);
@@ -183,7 +204,16 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
       </div>
 
       {!view ? (
-        error ? <ErrorBox message={error} /> : <p className="py-16 text-center text-muted">불러오는 중…</p>
+        error ? (
+          <div className="space-y-3">
+            <ErrorBox message={error} />
+            <button className="btn-primary w-full py-3" disabled={busy} onClick={skipBroken}>
+              {mode === "daily" ? "다른 문제로 바꿔서 계속" : "건너뛰기"}
+            </button>
+          </div>
+        ) : (
+          <p className="py-16 text-center text-muted">불러오는 중…</p>
+        )
       ) : (
         <article className="space-y-4">
           <header className="flex flex-wrap items-center gap-1.5 text-xs">
