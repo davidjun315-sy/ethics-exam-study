@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { api } from "@/lib/admin-client";
+import { quizApi as api } from "@/lib/quiz/client";
 import { useQuestionRecord } from "@/lib/local-study";
 
 export interface ServerMemo {
@@ -12,10 +12,10 @@ export interface ServerMemo {
 
 /**
  * 내 메모.
- * - 관리자(본인) 로그인: 서버에 저장 → 휴대폰·다른 컴퓨터에서도 같은 메모
+ * - 로그인(회원 또는 관리자): 서버에 계정별로 저장 → 휴대폰·다른 컴퓨터에서도 같은 메모
  * - 로그인 전: 이 브라우저에만 저장
  */
-export function MemoBox({ questionId, refLabel, isAdmin, server }: { questionId: string; refLabel: string; isAdmin: boolean; server: ServerMemo | null }) {
+export function MemoBox({ questionId, refLabel, signedIn, server }: { questionId: string; refLabel: string; signedIn: boolean; server: ServerMemo | null }) {
   const { record, update } = useQuestionRecord(questionId);
   const local = record.memo ?? "";
   const [saved, setSaved] = useState(server?.memo ?? "");
@@ -23,15 +23,15 @@ export function MemoBox({ questionId, refLabel, isAdmin, server }: { questionId:
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const value = draft ?? (isAdmin ? saved : local);
+  const value = draft ?? (signedIn ? saved : local);
   // 로그인 전 이 브라우저에 적어 둔 메모가 있고 서버에는 없을 때
-  const canMove = isAdmin && !saved && Boolean(local.trim()) && draft === null;
+  const canMove = signedIn && !saved && Boolean(local.trim()) && draft === null;
 
   async function saveServer(text: string) {
     setBusy(true);
     setStatus(null);
     try {
-      await api(`/api/admin/memos/${questionId}`, "PUT", { memo: text });
+      await api(`/api/memos/${questionId}`, "PUT", { memo: text });
       setSaved(text);
       setDraft(null);
       if (local) update({ memo: "", ref: refLabel }); // 서버로 옮긴 뒤 브라우저 사본은 비운다
@@ -48,7 +48,7 @@ export function MemoBox({ questionId, refLabel, isAdmin, server }: { questionId:
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-bold text-navy">내 메모</h3>
         <span className="text-xs text-faint">
-          {isAdmin ? "자동 저장 · 모든 기기에서 볼 수 있습니다 · 내 학습 → 메모에서 모아 보기" : "이 브라우저에만 저장됩니다"}
+          {signedIn ? "자동 저장 · 모든 기기에서 볼 수 있습니다 · 내 학습 → 메모에서 모아 보기" : "이 브라우저에만 저장됩니다"}
         </span>
       </div>
       {canMove && (
@@ -69,7 +69,7 @@ export function MemoBox({ questionId, refLabel, isAdmin, server }: { questionId:
         }}
         onBlur={() => {
           if (draft === null) return;
-          if (isAdmin) {
+          if (signedIn) {
             if (draft !== saved) saveServer(draft);
           } else update({ memo: draft, ref: refLabel });
         }}
@@ -77,11 +77,11 @@ export function MemoBox({ questionId, refLabel, isAdmin, server }: { questionId:
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
         {busy && <span className="text-muted">저장 중…</span>}
         {status && <span className={status.ok ? "text-ok" : "text-danger"}>{status.text}</span>}
-        {!isAdmin && (
+        {!signedIn && (
           <span className="text-faint">
             휴대폰·다른 컴퓨터에서도 보려면{" "}
-            <Link href={`/admin/login?next=${encodeURIComponent(`/my?tab=memos`)}`} className="text-navy underline">
-              관리자 로그인
+            <Link href={`/login?next=${encodeURIComponent(`/questions/${questionId}`)}`} className="text-navy underline">
+              로그인
             </Link>{" "}
             후 메모하세요.
           </span>

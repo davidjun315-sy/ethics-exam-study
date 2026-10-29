@@ -368,6 +368,10 @@ export function SettingsForm({ initial }: { initial: QuizSettings }) {
         <input type="checkbox" checked={s.auto_approve_exam} onChange={(e) => setS({ ...s, auto_approve_exam: e.target.checked })} />
         분리가 분명한 실제 기출 세부 문제는 자동 승인 (검수 사유가 있으면 항상 대기)
       </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={s.signup_open} onChange={(e) => setS({ ...s, signup_open: e.target.checked })} />
+        회원가입 받기 (끄면 새 가입만 막히고 기존 회원은 그대로 이용)
+      </label>
       <div className="flex items-center gap-2">
         <button className="btn-primary" disabled={Boolean(busy) || rest < 0} onClick={() => run("save", () => api("/api/admin/quiz/settings", "PUT", s).then(() => "저장했습니다. 내일 미션부터 적용됩니다."))}>
           저장
@@ -424,5 +428,23 @@ export function ManualItemForm() {
         <Msg msg={msg} />
       </div>
     </div>
+  );
+}
+
+export function MemberToggle({ id, disabled }: { id: string; disabled: boolean }) {
+  const { busy, msg, run } = useAction();
+  return (
+    <span className="flex items-center gap-1">
+      <button
+        className={`btn !py-0.5 text-xs ${disabled ? "text-ok" : "text-danger"}`}
+        disabled={Boolean(busy)}
+        onClick={() =>
+          run("m", () => api(`/api/admin/members/${id}`, "PATCH", { disabled: !disabled }).then(() => (disabled ? "정지를 풀었습니다." : "이용을 정지했습니다.")))
+        }
+      >
+        {disabled ? "정지 해제" : "이용 정지"}
+      </button>
+      <Msg msg={msg} />
+    </span>
   );
 }

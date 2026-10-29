@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { api } from "@/lib/admin-client";
+import { quizApi as api } from "@/lib/quiz/client";
 import { useStudyState } from "@/lib/local-study";
 
 /** 로그인 전에 이 브라우저에 적어 둔 메모를 한 번에 서버로 옮긴다 */
@@ -27,7 +27,7 @@ export function MoveLocalMemos() {
             onClick={async () => {
               setBusy(true);
               try {
-                const r = await api<{ saved: number; skipped: number }>("/api/admin/memos", "POST", { items });
+                const r = await api<{ saved: number; skipped: number }>("/api/memos", "POST", { items });
                 setMsg(`${r.saved}개를 옮겼습니다.${r.skipped ? ` (${r.skipped}개는 서버에 이미 메모가 있어 건너뜀 — 브라우저에 남겨 둡니다)` : ""}`);
                 startTransition(() => router.refresh());
               } catch (e) {

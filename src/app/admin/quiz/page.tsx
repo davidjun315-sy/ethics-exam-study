@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
-import { ItemList, ManualItemForm, ReportList, SettingsForm, SyncButton } from "@/components/admin/QuizAdmin";
+import { ItemList, ManualItemForm, MemberToggle, ReportList, SettingsForm, SyncButton } from "@/components/admin/QuizAdmin";
+import { listMembers } from "@/lib/members";
 import { PageTitle } from "@/components/ui";
 import { getBankStatus, getQuizSettings, listLearnerStats, listOpenReports, listQuizItems } from "@/lib/quiz/bank";
 import { LEVEL_NAMES } from "@/lib/quiz/srs";
@@ -35,6 +36,7 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
       items: tab === "items" ? await listQuizItems({ ...filter, status: filter.status === "all" ? undefined : filter.status }) : [],
       reports: tab === "reports" ? await listOpenReports() : [],
       learners: tab === "overview" ? await listLearnerStats() : [],
+      members: tab === "overview" ? await listMembers().catch(() => null) : [],
     };
   });
 
@@ -136,7 +138,7 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
                   <tbody>
                     {data.learners.map((l) => (
                       <tr key={l.learner} className="border-t border-line">
-                        <td className="py-1.5">{l.learner === "owner" ? "본인" : l.learner}</td>
+                        <td className="py-1.5">{l.name}</td>
                         <td>{LEVEL_NAMES[l.start_level as keyof typeof LEVEL_NAMES] ?? l.start_level}</td>
                         <td>{l.xp}</td>
                         <td>{l.streak}일</td>
@@ -150,6 +152,26 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
                   </tbody>
                 </table>
               </div>
+            )}
+          </section>
+
+          <section className="card p-4">
+            <h2 className="mb-2 text-[15px] font-bold">회원 {data.members ? `${data.members.length}명` : ""}</h2>
+            {data.members === null ? (
+              <p className="text-sm text-warn">회원 테이블이 없습니다. Supabase SQL Editor 에서 supabase/migrations/006_members.sql 을 실행하세요.</p>
+            ) : data.members.length === 0 ? (
+              <p className="text-sm text-faint">아직 가입한 회원이 없습니다. 회원가입 주소: /signup</p>
+            ) : (
+              <ul className="divide-y divide-line text-sm">
+                {data.members.map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                    <span className={`font-semibold ${m.disabled ? "text-faint line-through" : ""}`}>{m.display_name}</span>
+                    <span className="text-xs text-muted">{m.username}</span>
+                    <span className="text-xs text-faint">가입 {new Date(m.created_at).toLocaleDateString("ko-KR")}{m.last_login_at ? ` · 최근 ${new Date(m.last_login_at).toLocaleDateString("ko-KR")}` : ""}</span>
+                    <span className="ml-auto"><MemberToggle id={m.id} disabled={m.disabled} /></span>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
         </div>

@@ -53,9 +53,10 @@ export interface QuizSettings {
   daily_expected: number;
   daily_review: number;
   auto_approve_exam: boolean;
+  signup_open: boolean;
 }
 
-export const DEFAULT_SETTINGS: QuizSettings = { daily_total: 10, daily_exam: 6, daily_expected: 2, daily_review: 2, auto_approve_exam: true };
+export const DEFAULT_SETTINGS: QuizSettings = { daily_total: 10, daily_exam: 6, daily_expected: 2, daily_review: 2, auto_approve_exam: true, signup_open: true };
 export const MIGRATION_HINT = "퀴즈 테이블이 없습니다. Supabase SQL Editor 에서 supabase/migrations/005_quiz.sql 을 실행하세요.";
 
 export function quizError(message: string): Error {
@@ -473,6 +474,7 @@ export async function resolveReport(id: string, action: "accept" | "reject") {
 
 export interface LearnerStat {
   learner: string;
+  name: string; // 회원 닉네임(아이디) / 관리자
   xp: number;
   streak: number;
   best_streak: number;
@@ -490,11 +492,15 @@ export async function listLearnerStats(): Promise<LearnerStat[]> {
     fetchAll<{ learner: string; result: string; graded_by: string }>((from, to) => db.from("quiz_attempts").select("learner, result, graded_by").order("created_at").range(from, to)),
   ]);
   if (error) throw quizError(error.message);
+  // 학습자 키 "m:<회원 id>" → 회원 이름
+  const { data: members } = await db.from("members").select("id, username, display_name");
+  const nameOf = new Map((members ?? []).map((m) => [`m:${m.id}`, `${m.display_name} (${m.username})`]));
   return (profiles ?? []).map((p) => {
     const mine = (attempts ?? []).filter((a) => a.learner === p.learner);
     const auto = mine.filter((a) => a.graded_by === "auto");
     return {
       learner: p.learner,
+      name: p.learner === "owner" ? "관리자" : (nameOf.get(p.learner) ?? p.learner),
       xp: p.xp,
       streak: p.streak,
       best_streak: p.best_streak,

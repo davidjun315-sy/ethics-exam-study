@@ -24,13 +24,16 @@ export function QuestionStudy({
   isAdmin,
   extensionMatches,
   memo,
+  signedIn,
 }: {
   detail: QuestionDetail;
   related: (QuestionSummary & { score: number; reasons: string[] })[];
   isAdmin: boolean;
   extensionMatches: MatchedQuestion[][];
-  /** 관리자 로그인 시 서버에 저장된 메모 (없으면 null) */
+  /** 로그인한 학습자의 서버 메모 (없으면 null) */
   memo: ServerMemo | null;
+  /** 회원 또는 관리자로 로그인 → 메모를 서버에 저장 */
+  signedIn: boolean;
 }) {
   const { question: q, exam, analysis: a } = detail;
   const refLabel = questionRef(exam, q.label);
@@ -91,7 +94,7 @@ export function QuestionStudy({
       case "관련 기출":
         return showAnalysis ? <RelatedTab related={related} /> : locked("AI 분석 보기", "analysis");
       case "내 메모":
-        return <MemoBox questionId={q.id} refLabel={refLabel} isAdmin={isAdmin} server={memo} />;
+        return <MemoBox questionId={q.id} refLabel={refLabel} signedIn={signedIn} server={memo} />;
     }
   }
 

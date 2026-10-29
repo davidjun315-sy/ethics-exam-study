@@ -15,11 +15,12 @@ export default async function QuizPage() {
         <p className="text-muted">
           실제 기출을 답 하나 단위로 나눈 문제를 매일 조금씩 풉니다. 틀린 문제는 알맞은 때에 다시 나오고, 정답 확인 후에는 기존 기출 분석으로 해설을 봅니다.
         </p>
-        <div className="card p-5">
-          <p className="text-sm text-muted">학습 기록은 본인 확인 후 서버에 저장되어 휴대폰·다른 컴퓨터에서도 이어집니다.</p>
-          <Link href="/admin/login?next=/quiz" className="btn-primary mt-3 inline-block px-6 py-2.5">
-            로그인하고 시작하기
-          </Link>
+        <div className="card space-y-3 p-5">
+          <p className="text-sm text-muted">계정을 만들면 푼 문제·복습 일정·경험치·연속 학습이 계정에 쌓여 휴대폰·다른 컴퓨터에서도 이어집니다.</p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link href="/signup?next=/quiz" className="btn-primary px-6 py-2.5">회원가입하고 시작하기</Link>
+            <Link href="/login?next=/quiz" className="btn px-6 py-2.5">로그인</Link>
+          </div>
         </div>
       </div>
     );

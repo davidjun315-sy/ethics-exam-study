@@ -3,8 +3,8 @@ import { DataError, load } from "@/components/DataError";
 import { MemoCollection } from "@/components/study/MemoCollection";
 import { MyStudy } from "@/components/study/MyStudy";
 import { PageTitle } from "@/components/ui";
-import { isAdmin } from "@/lib/admin-guard";
 import { listMemos } from "@/lib/data/memos";
+import { currentLearner } from "@/lib/quiz/learn";
 
 export const metadata = { title: "내 학습" };
 
@@ -16,7 +16,7 @@ const TABS = [
 export default async function MyPage({ searchParams }: PageProps<"/my">) {
   const sp = await searchParams;
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "memos";
-  const admin = await isAdmin();
+  const learner = await currentLearner();
   return (
     <div className="space-y-4">
       <PageTitle title="내 학습" subtitle="문항마다 적은 메모를 섹터별로 모아 보고, 북마크·오답 등 학습 기록을 확인합니다." />
@@ -36,27 +36,28 @@ export default async function MyPage({ searchParams }: PageProps<"/my">) {
           <p className="text-xs text-faint">북마크·오답·답안 기록은 이 브라우저에만 저장됩니다. 다른 기기로 옮기려면 내보내기 / 가져오기를 사용하세요.</p>
           <MyStudy />
         </>
-      ) : admin ? (
-        <Memos />
+      ) : learner ? (
+        <Memos learner={learner} />
       ) : (
         <div className="card space-y-2 p-6 text-center">
-          <p className="text-sm text-muted">메모는 본인 확인 후 서버에 저장되어 휴대폰·다른 컴퓨터에서도 볼 수 있습니다.</p>
-          <Link href="/admin/login?next=/my?tab=memos" className="btn-primary inline-block">
-            관리자 로그인
-          </Link>
+          <p className="text-sm text-muted">로그인하면 메모가 계정에 저장되어 휴대폰·다른 컴퓨터에서도 볼 수 있습니다.</p>
+          <div className="flex justify-center gap-2">
+            <Link href="/login?next=/my?tab=memos" className="btn-primary inline-block">로그인</Link>
+            <Link href="/signup?next=/my?tab=memos" className="btn inline-block">회원가입</Link>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-async function Memos() {
-  const { data, error } = await load(listMemos);
+async function Memos({ learner }: { learner: string }) {
+  const { data, error } = await load(() => listMemos(learner));
   if (error) return <DataError error={error} />;
   if (data === null)
     return (
       <p className="rounded bg-danger-soft p-3 text-sm text-danger">
-        study_memos 테이블이 없습니다. Supabase SQL Editor 에서 supabase/migrations/004_answer_commentary_and_memos.sql 을 실행하세요.
+        메모 테이블이 최신이 아닙니다. Supabase SQL Editor 에서 supabase/migrations/004_answer_commentary_and_memos.sql 과 006_members.sql 을 실행하세요.
       </p>
     );
   return <MemoCollection memos={data ?? []} />;

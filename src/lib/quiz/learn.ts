@@ -1,5 +1,6 @@
 import "server-only";
 import { isAdmin } from "@/lib/admin-guard";
+import { getCurrentMember } from "@/lib/members";
 import { findRelatedQuestions } from "@/lib/data/related";
 import { getAdminClient } from "@/lib/supabase/server";
 import { questionRef } from "@/lib/format";
@@ -25,10 +26,12 @@ import {
 } from "./srs.ts";
 
 /**
- * 학습자 = 지금은 관리자 비밀번호로 로그인한 본인 한 명('owner').
- * 나중에 계정 기능을 붙이면 이 함수만 바꾸면 된다. (모든 기록은 learner 키로 저장)
+ * 학습자 키: 회원은 "m:<회원 id>", 회원 로그인 없이 관리자로만 들어온 경우 "owner".
+ * 모든 퀴즈 기록(진도·XP·미션)은 이 키로 따로 저장된다.
  */
 export async function currentLearner(): Promise<string | null> {
+  const member = await getCurrentMember();
+  if (member) return `m:${member.id}`;
   return (await isAdmin()) ? "owner" : null;
 }
 

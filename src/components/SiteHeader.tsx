@@ -16,7 +16,7 @@ const NAV = [
   { href: "/search", label: "통합검색" },
 ];
 
-export function SiteHeader() {
+export function SiteHeader({ member }: { member: string | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -61,6 +61,15 @@ export function SiteHeader() {
           <Link href="/my" className={`rounded-md px-2.5 py-1.5 text-sm ${isActive("/my") ? "text-navy" : "text-muted hover:text-ink"}`}>
             내 학습
           </Link>
+          {member ? (
+            <Link href="/account" className={`max-w-[7rem] truncate rounded-md px-2.5 py-1.5 text-sm ${isActive("/account") ? "text-navy" : "text-muted hover:text-ink"}`} title="내 계정">
+              {member}
+            </Link>
+          ) : (
+            <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="rounded-md px-2.5 py-1.5 text-sm text-muted hover:text-ink">
+              로그인
+            </Link>
+          )}
           <ThemeToggle />
           <button className="btn lg:hidden" onClick={() => setOpen((v) => !v)} aria-label="메뉴">
             ☰
