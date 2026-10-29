@@ -27,6 +27,10 @@ export const serverEnv = {
   anthropicApiKey: () => read("ANTHROPIC_API_KEY"),
   openaiApiKey: () => read("OPENAI_API_KEY"),
   publicAiGrading: () => read("PUBLIC_AI_GRADING") !== "false",
+  // 퀴즈 서술형 첨삭 (Google AI Studio 무료 등급 키)
+  geminiApiKey: () => read("GEMINI_API_KEY") ?? read("GOOGLE_API_KEY"),
+  geminiModel: () => read("GEMINI_MODEL"),
+  geminiBaseUrl: () => read("GEMINI_API_BASE") ?? "https://generativelanguage.googleapis.com",
 };
 
 /** 설정되지 않은 Supabase 환경변수 이름 목록 (오류 메시지용) */

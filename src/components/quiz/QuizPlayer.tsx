@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AttemptResult, Filters, ItemView, Session, Solution } from "@/lib/quiz/learn";
 import { quizApi } from "@/lib/quiz/client";
 import type { QuizResult } from "@/lib/quiz/srs";
+import type { EssayGrading } from "@/lib/quiz/essay";
+import { ChatGrader, EssayFeedback } from "./EssayFeedback";
 import { SolutionView } from "./SolutionView";
 
 type Mode = Session["mode"];
@@ -47,6 +49,8 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reported, setReported] = useState(false);
+  const [grading, setGrading] = useState<EssayGrading | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const [tally, setTally] = useState({ correct: 0, partial: 0, wrong: 0, xp: 0 });
   const [finish, setFinish] = useState<AttemptResult | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
@@ -127,6 +131,30 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
     }
   }
 
+  // 서술형: 쓴 답안을 AI 가 첨삭한 뒤 정답·해설과 함께 보여 준다 (판정은 제안, 최종은 자기평가)
+  async function showGraded(g: EssayGrading) {
+    if (!itemId) return;
+    await fetchSolution(itemId);
+    setGrading(g);
+    setChatOpen(false);
+    setRevealed(true);
+  }
+
+  async function gradeWithAi() {
+    if (!itemId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { grading: g } = await quizApi<{ grading: EssayGrading }>(`/api/quiz/items/${itemId}/grade`, "POST", { action: "ai", answer });
+      await showGraded(g);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setChatOpen(true); // 무료 한도 초과 등 → 채팅 AI 로 이어서
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function selfRate(result: QuizResult) {
     if (!itemId) return;
     setBusy(true);
@@ -168,6 +196,8 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
     setRevealed(false);
     setOutcome(null);
     setReported(false);
+    setGrading(null);
+    setChatOpen(false);
     setError(null);
     setIndex((i) => i + 1);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -280,10 +310,43 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
                 </button>
               </form>
             ) : (
-              <div className="space-y-2">
-                <p className="text-center text-sm text-muted">{isFill ? "답을 떠올린 뒤 확인하세요." : "머릿속으로 답안을 구성한 뒤 확인하세요."}</p>
-                <button className="btn-primary w-full py-3 text-base font-semibold" disabled={busy} onClick={reveal}>
-                  {busy ? "불러오는 중…" : "정답 및 해설 확인"}
+              <div className="space-y-3">
+                <section className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <label htmlFor="essay-answer" className="text-sm font-semibold">
+                      내 답안 <span className="font-normal text-faint">(선택)</span>
+                    </label>
+                    <span className="text-xs tabular-nums text-faint">{answer.length}/3000</span>
+                  </div>
+                  <textarea
+                    id="essay-answer"
+                    className="input min-h-36 text-[16px] leading-7"
+                    placeholder={isFill ? "답을 적어 보세요." : "답안을 써 보세요. 쓰고 나면 AI 첨삭을 받을 수 있습니다."}
+                    value={answer}
+                    maxLength={3000}
+                    onChange={(e) => setAnswer(e.target.value)}
+                  />
+                </section>
+                {view.aiGrading && (
+                  <button className="btn-primary w-full py-3 text-base font-semibold" disabled={busy || answer.trim().length < 5} onClick={gradeWithAi}>
+                    {busy ? "AI가 첨삭하는 중…" : "AI 채점 받기 (무료)"}
+                  </button>
+                )}
+                {chatOpen ? (
+                  <ChatGrader itemId={view.id} answer={answer} onGraded={showGraded} />
+                ) : (
+                  <button
+                    type="button"
+                    className={`${view.aiGrading ? "btn" : "btn-primary font-semibold"} w-full py-2.5`}
+                    disabled={busy || answer.trim().length < 5}
+                    onClick={() => setChatOpen(true)}
+                  >
+                    채팅 AI로 채점받기 (Claude · ChatGPT · Gemini)
+                  </button>
+                )}
+                {answer.trim().length > 0 && answer.trim().length < 5 && <p className="text-center text-xs text-faint">AI 첨삭은 5자 이상 쓰면 받을 수 있습니다.</p>}
+                <button className="btn w-full py-3" disabled={busy} onClick={reveal}>
+                  {answer.trim() ? "채점 없이 정답 보기 (자기평가)" : "건너뛰고 정답 보기 (자기평가)"}
                 </button>
               </div>
             )
@@ -315,19 +378,42 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
                 </section>
               )}
 
+              {/* 서술형: 내가 쓴 답안 + AI 첨삭 */}
+              {!auto && answer.trim() && (
+                <section className="rounded-lg border border-line bg-surface-2/60 p-4">
+                  <div className="mb-1 text-xs font-bold text-muted">내 답안</div>
+                  <p className="whitespace-pre-wrap text-[15px] leading-7">{answer}</p>
+                </section>
+              )}
+              {grading && <EssayFeedback g={grading} />}
+
               {solution && <SolutionView s={solution} kind={view.kind} />}
 
               {/* 자기평가 */}
               {!auto && !outcome && (
                 <section className="sticky bottom-3 z-10 rounded-xl border border-line bg-surface p-3 shadow-lg">
-                  <div className="mb-2 text-center text-sm font-semibold">내 답안을 평가해 주세요</div>
+                  <div className="mb-2 text-center text-sm font-semibold">
+                    {grading ? "AI 제안을 참고해 최종 평가를 골라 주세요" : "내 답안을 평가해 주세요"}
+                  </div>
                   <div className="grid gap-2 sm:grid-cols-3">
-                    {SELF.map((o) => (
-                      <button key={o.value} type="button" disabled={busy} onClick={() => selfRate(o.value)} className={`rounded-lg border-2 p-2.5 text-left transition-colors ${o.tone}`}>
-                        <div className="font-bold">{o.title}</div>
-                        <div className="text-[11px] text-muted">{o.help}</div>
-                      </button>
-                    ))}
+                    {SELF.map((o) => {
+                      const suggested = grading?.verdict === o.value;
+                      return (
+                        <button
+                          key={o.value}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => selfRate(o.value)}
+                          className={`rounded-lg border-2 p-2.5 text-left transition-colors ${o.tone} ${suggested ? "ring-2 ring-navy ring-offset-1 ring-offset-surface" : ""}`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold">
+                            {o.title}
+                            {suggested && <span className="rounded bg-navy px-1 text-[10px] font-semibold text-white dark:text-[#0f141c]">AI 제안</span>}
+                          </div>
+                          <div className="text-[11px] text-muted">{o.help}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </section>
               )}

@@ -9,6 +9,8 @@ import { getQuizSettings, quizError, type QuizItemRow } from "./bank.ts";
 import { isCorrectFill } from "./grade.ts";
 import { fetchAll } from "./paged.ts";
 import { focusRequirement } from "./split.ts";
+import type { EssayContext } from "./essay.ts";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
 import {
   answerXp,
@@ -263,6 +265,8 @@ export interface ItemView {
   area: string | null;
   philosophers: string[];
   difficulty: 1 | 2 | 3;
+  /** 서술형 AI 첨삭을 서버에서 바로 할 수 있는지 (아니면 채팅 AI 붙여넣기만) */
+  aiGrading: boolean;
 }
 
 /** 풀이 화면용. 정답·해설·원본 링크는 넣지 않는다 */
@@ -286,6 +290,7 @@ export async function getItemView(id: string): Promise<ItemView> {
     area: it.area,
     philosophers: it.philosopher_names,
     difficulty: it.difficulty,
+    aiGrading: it.grading === "self" && isGeminiConfigured(),
   };
 }
 
@@ -335,6 +340,23 @@ export async function getSolution(id: string): Promise<Solution> {
     expectedExplanation: it.kind === "expected" ? it.explanation : null,
     origin: src ? { questionId: src.id, ref: questionRef(src.exam, src.label) } : null,
     related: related.map((r) => ({ id: r.id, ref: questionRef(r.exam, r.label), philosophers: r.philosophers.filter((p) => p.role === "main").map((p) => p.name).join(" · ") })),
+  };
+}
+
+/** 서술형 첨삭 기준: 이 문제의 원문·요구 사항·정답·해설 (기존 분석 그대로) */
+export async function getEssayContext(id: string): Promise<EssayContext> {
+  const [view, s] = await Promise.all([getItemView(id), getSolution(id)]);
+  if (view.grading !== "self") throw new Error("서술형(자기평가) 문제만 AI 첨삭을 받을 수 있습니다.");
+  return {
+    kind: view.kind,
+    ref: view.ref,
+    label: view.label,
+    prompt: view.prompt,
+    passage: view.passage,
+    answer: s.answer,
+    explanations: view.kind === "exam" ? s.itemExplanations.map((x) => (s.itemExplanations.length > 1 ? `${x.label} ${x.explanation}` : x.explanation)) : s.expectedExplanation ? [s.expectedExplanation] : [],
+    modelAnswer: view.kind === "expected" ? s.modelAnswer : null,
+    accepted: s.accepted,
   };
 }
 
