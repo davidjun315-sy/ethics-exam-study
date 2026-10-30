@@ -16,7 +16,8 @@
     "test:traditions": "node --experimental-strip-types --no-warnings scripts/test-traditions.ts",
     "test:zip": "node --experimental-strip-types --no-warnings scripts/test-zip.ts",
     "test:quiz": "node --experimental-strip-types --no-warnings scripts/test-quiz.ts",
-    "test:tidy": "node --experimental-strip-types --no-warnings scripts/test-tidy.ts"
+    "test:tidy": "node --experimental-strip-types --no-warnings scripts/test-tidy.ts",
+    "test:export": "node --experimental-strip-types --no-warnings scripts/test-export.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
