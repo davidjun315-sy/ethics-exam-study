@@ -329,7 +329,7 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
                 </section>
                 {view.aiGrading && (
                   <button className="btn-primary w-full py-3 text-base font-semibold" disabled={busy || answer.trim().length < 5} onClick={gradeWithAi}>
-                    {busy ? "AI가 첨삭하는 중…" : "AI 채점 받기 (무료)"}
+                    {busy ? "AI가 첨삭하는 중… (길면 1~2분)" : "AI 채점 받기 (무료)"}
                   </button>
                 )}
                 {chatOpen ? (

@@ -30,6 +30,7 @@ export const serverEnv = {
   // 퀴즈 서술형 첨삭 (Google AI Studio 무료 등급 키)
   geminiApiKey: () => read("GEMINI_API_KEY") ?? read("GOOGLE_API_KEY"),
   geminiModel: () => read("GEMINI_MODEL"),
+  geminiFallbackModel: () => read("GEMINI_FALLBACK_MODEL"),
   geminiBaseUrl: () => read("GEMINI_API_BASE") ?? "https://generativelanguage.googleapis.com",
 };
 

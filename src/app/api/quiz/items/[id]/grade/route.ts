@@ -8,7 +8,8 @@ import { requireLearner } from "@/lib/quiz/api";
 import { buildChatPrompt, buildEssayPrompt, ESSAY_GRADING_SYSTEM, ESSAY_MAX, ESSAY_MIN, EssayGradingSchema, tidyGrading } from "@/lib/quiz/essay";
 import { getEssayContext } from "@/lib/quiz/learn";
 
-export const maxDuration = 60;
+// 무료 등급 응답이 느릴 때 예비 모델로 다시 시도할 시간까지 (Gemini 호출 전체 제한은 105초)
+export const maxDuration = 120;
 
 const Body = z.discriminatedUnion("action", [
   // 서버에서 바로 첨삭 (GEMINI_API_KEY 가 있을 때)
@@ -44,8 +45,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/quiz/items/[id]
     if (!rateLimit(`essay:${learner}`, 30, 60 * 60 * 1000) || !rateLimit(`essay-ip:${clientKey(req)}`, 60, 60 * 60 * 1000)) {
       return NextResponse.json({ error: "AI 채점 요청이 너무 많습니다. 잠시 후 다시 하거나 '채팅 AI로 채점받기'를 이용하세요." }, { status: 429 });
     }
-    const { data: g, model } = await geminiJson(EssayGradingSchema, ESSAY_GRADING_SYSTEM, buildEssayPrompt(context, data.answer));
-    return NextResponse.json({ grading: tidyGrading(g), model });
+    const { data: g, model, ms } = await geminiJson(EssayGradingSchema, ESSAY_GRADING_SYSTEM, buildEssayPrompt(context, data.answer));
+    return NextResponse.json({ grading: tidyGrading(g), model, ms });
   } catch (e) {
     if (e instanceof GeminiError) return NextResponse.json({ error: e.message }, { status: e.status });
     return jsonError(e, 400);

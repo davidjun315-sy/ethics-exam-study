@@ -70,6 +70,19 @@ export function AiTestButton() {
       >
         {busy === "ai" ? "확인 중…" : "연결 테스트"}
       </button>
+      <button
+        className="btn"
+        disabled={Boolean(busy)}
+        title="아주 짧은 답을 실제로 만들어 응답 시간을 잽니다 (무료 한도 1회 사용)"
+        onClick={() =>
+          run("gen", async () => {
+            const r = await api<{ model: string; ms: number }>("/api/admin/quiz/ai-test?mode=generate", "POST");
+            return `생성 성공 · ${(r.ms / 1000).toFixed(1)}초 · 모델 ${r.model}`;
+          })
+        }
+      >
+        {busy === "gen" ? "생성 중… (최대 2분)" : "응답 속도 테스트"}
+      </button>
       <Msg msg={msg} />
     </>
   );
