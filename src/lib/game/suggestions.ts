@@ -99,17 +99,91 @@ export function suggestFor(name: string, aliases: string[], tradition: string): 
   return { ...f, basis: "reconstruction", look: "시대·지역에 맞는 학자 복식, 사상을 상징하는 배경 (확인된 초상이 없으면 재구성)" };
 }
 
+/**
+ * 얼굴 참고 (이미지 생성 AI 용, 영어).
+ * - en: 참고 초상을 찾을 때 쓰는 이름
+ * - ref: 널리 알려진 대표 초상·흉상·영정
+ * - face: 그 초상에서 잘 알려진 얼굴 특징만 (불확실한 세부는 쓰지 않음 → 참고 초상을 첨부하는 것이 가장 정확)
+ * 생존 인물은 얼굴을 묘사하지 않는다.
+ */
+export const FACES: Record<string, { en: string; ref: string; face: string }> = {
+  공자: { en: "Confucius", ref: "traditional Chinese portrait attributed to Wu Daozi (Tang-dynasty stone rubbing)", face: "elderly East Asian sage, long flowing grey beard, broad calm face, hands clasped in a wide-sleeved ceremonial robe" },
+  맹자: { en: "Mencius", ref: "traditional Chinese portraits of Mencius (Ming–Qing)", face: "dignified East Asian scholar, neat long dark beard, composed face" },
+  순자: { en: "Xunzi", ref: "traditional Chinese portraits of Xunzi", face: "stern East Asian scholar, firm jaw, short beard" },
+  노자: { en: "Laozi", ref: "traditional Chinese depictions of Laozi (e.g. riding an ox)", face: "very old East Asian sage, long white beard and long white eyebrows, high forehead, serene gentle face" },
+  장자: { en: "Zhuangzi", ref: "traditional Chinese paintings of Zhuangzi's butterfly dream", face: "East Asian recluse with a relaxed half-smile, loosely tied hair, thin beard" },
+  묵자: { en: "Mozi", ref: "traditional Chinese portraits of Mozi", face: "weathered face of an artisan-thinker, short beard, plain coarse robe" },
+  한비자: { en: "Han Feizi", ref: "traditional Chinese portraits of Han Feizi", face: "lean serious face, thin beard" },
+  주희: { en: "Zhu Xi", ref: "Ming-dynasty portrait of Zhu Xi", face: "dignified scholar with a long thin beard and a cluster of small moles on the right side of the face as in traditional portraits, black scholar's cap" },
+  왕수인: { en: "Wang Yangming", ref: "Ming-dynasty portrait of Wang Shouren (Wang Yangming)", face: "slender face, thin long mustache and goatee, sharp intent eyes, Ming official's hat" },
+  석가모니: { en: "Gautama Buddha", ref: "classical Buddhist iconography (Gandhara / East Asian Buddha images)", face: "serene face with half-closed eyes, elongated earlobes, usnisa — respectful devotional iconography" },
+  이황: { en: "Yi Hwang (Toegye)", ref: "Korean standard portrait of Yi Hwang (as on the 1,000-won note)", face: "elderly Korean Confucian scholar, white beard, gentle calm face, traditional scholar's hat and robe as in the standard portrait" },
+  이이: { en: "Yi I (Yulgok)", ref: "Korean standard portrait of Yi I (as on the 5,000-won note)", face: "middle-aged Korean scholar, black mustache and beard, composed face, traditional hat and robe as in the standard portrait" },
+  정약용: { en: "Jeong Yak-yong (Dasan)", ref: "Korean standard portrait of Jeong Yak-yong", face: "Korean scholar with a dark beard, gat hat, scholarly robe" },
+  원효: { en: "Wonhyo", ref: "traditional Korean Buddhist monk portrait (jinyeong) of Wonhyo", face: "shaved head, Buddhist monk's robes, energetic expression" },
+  지눌: { en: "Jinul", ref: "traditional Korean Buddhist monk portrait (jinyeong) of Jinul", face: "shaved head, serene elderly monk, kasaya robe" },
+  소크라테스: { en: "Socrates", ref: "Roman marble copies of Greek portrait busts of Socrates (Louvre, Naples)", face: "broad face, short upturned snub nose, wide-set bulging eyes, balding head, full curly beard" },
+  플라톤: { en: "Plato", ref: "Roman copy of the Silanion portrait bust of Plato", face: "long full beard, furrowed brow, straight nose, receding hair with a short fringe" },
+  아리스토텔레스: { en: "Aristotle", ref: "Roman copy of the bust after Lysippos (Palazzo Altemps)", face: "short neat beard, receding hairline, thoughtful narrow eyes" },
+  에피쿠로스: { en: "Epicurus", ref: "Roman copies of the portrait bust of Epicurus", face: "long beard, high forehead, calm contemplative look" },
+  아퀴나스: { en: "Thomas Aquinas", ref: "Renaissance paintings of Thomas Aquinas (e.g. Carlo Crivelli)", face: "tonsured head, round full face, black-and-white Dominican habit" },
+  홉스: { en: "Thomas Hobbes", ref: "portrait by John Michael Wright (c. 1669–70)", face: "elderly, long white hair, white mustache and small chin beard" },
+  로크: { en: "John Locke", ref: "portrait by Godfrey Kneller (1697)", face: "long thin face, prominent nose, shoulder-length natural hair" },
+  루소: { en: "Jean-Jacques Rousseau", ref: "pastel portrait by Maurice Quentin de La Tour (1753)", face: "soft oval face, gentle slight smile, dark eyes, powdered wig" },
+  흄: { en: "David Hume", ref: "portrait by Allan Ramsay (1766)", face: "full round face, double chin, heavy-lidded eyes, powdered wig" },
+  칸트: { en: "Immanuel Kant", ref: "portrait by Johann Gottlieb Becker (1768)", face: "slender face, high forehead, thin lips, light powdered hair tied back, 18th-century coat and white cravat" },
+  벤담: { en: "Jeremy Bentham", ref: "portrait by Henry William Pickersgill", face: "elderly, long white hair falling to the shoulders, soft rounded face" },
+  밀: { en: "John Stuart Mill", ref: "portrait by George Frederic Watts (1873)", face: "high bald forehead, grey hair at the temples, long face, serious steady gaze, dark Victorian coat" },
+  헤겔: { en: "G. W. F. Hegel", ref: "portrait by Jakob Schlesinger (1831)", face: "older man with deep-set tired eyes, furrowed brow, high collar and cravat" },
+  마르크스: { en: "Karl Marx", ref: "photographic portraits by John Mayall (1875)", face: "full bushy white beard and swept-back white hair, broad face, dark eyebrows" },
+  니체: { en: "Friedrich Nietzsche", ref: "photographic portraits (c. 1882)", face: "large drooping walrus mustache, deep-set intense eyes, swept-back hair" },
+  키르케고르: { en: "Søren Kierkegaard", ref: "sketch by Niels Christian Kierkegaard (c. 1840)", face: "thin face, tall swept-up hair, faint ironic smile" },
+  사르트르: { en: "Jean-Paul Sartre", ref: "photographic portraits (1950s–60s)", face: "round thick-rimmed glasses, short combed-back hair, pipe-smoker's intellectual look (no pipe needed)" },
+  데카르트: { en: "René Descartes", ref: "portrait after Frans Hals (Louvre)", face: "shoulder-length dark hair, thin mustache and small tuft beard, heavy-lidded eyes, prominent nose" },
+  스피노자: { en: "Baruch Spinoza", ref: "17th-century portraits of Spinoza", face: "long dark curly hair, dark eyes, oval face" },
+  아렌트: { en: "Hannah Arendt", ref: "photographic portraits (1950s–60s)", face: "short dark wavy hair, strong brows, thoughtful intense expression" },
+  롤스: { en: "John Rawls", ref: "photographic portraits (1970s)", face: "mid-20th-century American academic, short side-parted hair, modest suit" },
+  노직: { en: "Robert Nozick", ref: "photographic portraits (1970s)", face: "curly dark hair, lively expression, casual academic jacket" },
+  콜버그: { en: "Lawrence Kohlberg", ref: "photographic portraits", face: "American psychologist of the 1970s, short dark hair, suit" },
+  피아제: { en: "Jean Piaget", ref: "photographic portraits (1960s–70s)", face: "elderly, white hair, round glasses, beret" },
+  듀이: { en: "John Dewey", ref: "photographic portraits (1900s–1930s)", face: "mustache, round glasses, parted grey hair" },
+  뒤르켐: { en: "Émile Durkheim", ref: "photographic portraits (c. 1900)", face: "full dark beard, balding high forehead, intense eyes" },
+  레스트: { en: "James Rest", ref: "photographic portraits", face: "American psychologist, short hair, suit" },
+  나딩스: { en: "Nel Noddings", ref: "photographic portraits", face: "warm expression, short grey hair" },
+};
+
+export function faceFor(name: string, aliases: string[] = []) {
+  for (const n of [name, ...aliases]) {
+    const hit = FACES[norm(n)];
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** 참고 초상 찾기 (위키미디어 공용: 퍼블릭 도메인 초상·흉상이 많음) */
+export function portraitSearchUrl(name: string, originalName: string | null, aliases: string[] = []): string {
+  const q = faceFor(name, aliases)?.en ?? originalName ?? name;
+  return `https://commons.wikimedia.org/w/index.php?search=${encodeURIComponent(`${q} portrait`)}&title=Special:MediaSearch&type=image`;
+}
+
 /** 카드 일러스트 프롬프트 (모든 카드 같은 화풍·비율) */
-export function artPrompt(p: { name: string; originalName: string | null; era: string | null; tradition: string; look: string; living?: boolean }): string {
+export function artPrompt(p: { name: string; originalName: string | null; era: string | null; tradition: string; look: string; living?: boolean; aliases?: string[] }): string {
+  const f = p.living ? null : faceFor(p.name, p.aliases ?? []);
+  const who = f ? `${f.en} (${p.name})` : p.originalName ? `${p.originalName} (${p.name})` : p.name;
   return [
-    `Premium collectible trading-card character illustration of the philosopher ${p.originalName ? `${p.originalName} (${p.name})` : p.name}.`,
-    `Appearance & setting reference: ${p.look}${p.era ? ` · era: ${p.era}` : ""}.`,
+    `Premium collectible trading-card character illustration of the philosopher ${who}.`,
     p.living
-      ? "This is a living person: do NOT depict a realistic likeness of the face; use a stylized silhouette / three-quarter back view or symbolic composition instead."
-      : "Respect historically recorded likeness (portraits / busts / traditional iconography). Dignified and serious, not a caricature, not comedic.",
+      ? "This is a living person: do NOT depict a realistic likeness of the face; use a stylized silhouette / three-quarter back view or symbolic composition instead. Ignore any attached photo for the face."
+      : [
+          "FACIAL LIKENESS IS THE TOP PRIORITY: the face must be clearly recognizable as this historical person.",
+          "If a reference portrait image is attached, faithfully match its facial features — face shape, nose, eyes, brows, hairline, hairstyle, beard/mustache and age — while repainting it in the style below (do not copy the painting's background or composition).",
+          f ? `Reference likeness: ${f.ref}. Known features: ${f.face}.` : "No reliable historical likeness is known: base the face on traditional iconography for this figure and keep it dignified (this card will be marked as a reconstruction).",
+        ].join("\n"),
+    `Costume & setting: ${p.look}${p.era ? ` · era: ${p.era}` : ""}.`,
+    "Dignified and serious, not a caricature, not comedic, not idealized into a different person.",
     "Style: unified high-end 2D digital painting, realistic human proportions, refined painterly rendering, cinematic rim light, rich but harmonious colors.",
     "Composition: vertical 3:4, half-body (chest-up) portrait centered, face and costume details sharp, symbolic background elements of their philosophy softly blurred, leave the bottom 25% calmer (card text overlays there).",
-    "No text, no letters, no logos, no frame, no watermark, no photo, no modern objects unless historically appropriate.",
+    "No text, no letters, no logos, no frame, no watermark, not a photograph, no modern objects unless historically appropriate.",
     "Output: 1200x1600 px.",
   ].join("\n");
 }

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { CandidateRow, CardInput, GameSettings } from "@/lib/game/data";
 import { RARITIES, RARITY_BASE, RARITY_NAMES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
-import { artPrompt } from "@/lib/game/suggestions";
+import { artPrompt, faceFor, portraitSearchUrl } from "@/lib/game/suggestions";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
 import { PhilosopherCard } from "@/components/game/PhilosopherCard";
@@ -118,7 +118,8 @@ function CardEditor({ c }: { c: CandidateRow }) {
   const [copied, setCopied] = useState(false);
   const set = <K extends keyof CardInput>(k: K, v: CardInput[K]) => setD((x) => ({ ...x, [k]: v }));
   const canPublish = Boolean(d.art_url && d.skill_name.trim());
-  const prompt = artPrompt({ name: c.name, originalName: c.originalName, era: c.era, tradition: c.tradition, look: s.look, living: s.living });
+  const prompt = artPrompt({ name: c.name, originalName: c.originalName, era: c.era, tradition: c.tradition, look: s.look, living: s.living, aliases: c.aliases });
+  const face = s.living ? null : faceFor(c.name, c.aliases);
 
   async function save(next: CardInput) {
     setBusy("save");
@@ -263,8 +264,25 @@ function CardEditor({ c }: { c: CandidateRow }) {
           </label>
         </div>
         <details className="rounded-lg border border-line bg-surface-2/50 p-3 text-sm">
-          <summary className="cursor-pointer font-semibold">일러스트 생성 프롬프트 (모든 카드 같은 화풍)</summary>
-          <pre className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted">{prompt}</pre>
+          <summary className="cursor-pointer font-semibold">일러스트 만들기 (실제 얼굴 반영 · 모든 카드 같은 화풍)</summary>
+          {s.living ? (
+            <p className="mt-2 rounded bg-warn-soft p-2 text-xs text-warn">
+              생존 인물입니다. 초상권과 오해를 피하려고 실제 얼굴 대신 실루엣·뒷모습·상징 중심으로 그리도록 프롬프트가 구성되어 있습니다. 참고 사진은 첨부하지 마세요.
+            </p>
+          ) : (
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-muted">
+              <li>
+                <a href={portraitSearchUrl(c.name, c.originalName, c.aliases)} target="_blank" rel="noreferrer" className="font-semibold text-navy underline">
+                  참고 초상 찾기 (위키미디어 공용)
+                </a>
+                {face ? <> — 대표 초상: <span className="text-ink">{face.ref}</span></> : " — 확인된 초상이 없으면 전통 도상을 찾아 참고하세요 (카드에 '재구성' 표시)"}
+                . 얼굴이 잘 보이는 퍼블릭 도메인 초상·흉상·영정을 내려받으세요.
+              </li>
+              <li>아래 프롬프트를 복사합니다.</li>
+              <li>이미지 생성 AI(ChatGPT·Gemini 등)에 <b>참고 초상 이미지를 첨부하고</b> 프롬프트를 붙여넣습니다. 얼굴은 초상을 따르고, 화풍·구도는 프롬프트를 따릅니다.</li>
+            </ol>
+          )}
+          <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded bg-surface p-2 text-xs leading-5 text-muted">{prompt}</pre>
           <button
             type="button"
             className="btn mt-2 !py-1 text-xs"
@@ -276,7 +294,9 @@ function CardEditor({ c }: { c: CandidateRow }) {
           >
             {copied ? "✓ 복사됨" : "프롬프트 복사"}
           </button>
-          <p className="mt-1 text-[11px] text-faint">이미지 생성 AI(ChatGPT·Gemini 등)에 붙여넣어 만든 뒤 위에서 올리세요. 실제 사진이나 다른 화풍 이미지를 섞지 마세요.</p>
+          <p className="mt-1 text-[11px] text-faint">
+            실제 사진을 그대로 쓰거나 다른 화풍 이미지를 섞지 마세요. 참고 초상의 저작권(퍼블릭 도메인 여부)을 확인하고, 근거는 &apos;일러스트 메모&apos;에 적어 두면 카드 상세에 표시됩니다.
+          </p>
         </details>
         <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
           <label className={`flex items-center gap-2 text-sm ${canPublish ? "" : "text-faint"}`}>
