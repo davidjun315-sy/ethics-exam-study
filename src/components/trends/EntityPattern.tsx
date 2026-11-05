@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui";
-import { getPatterns } from "@/lib/data/trends";
+import { cachedPatterns as getPatterns } from "@/lib/data/cached";
 
 /** 사상가 / 개념 / 원전 상세 페이지의 "출제 패턴" 요약 (DB 계산) */
 export async function EntityPattern({ kind, id }: { kind: "philosopher" | "concept" | "source"; id: string }) {

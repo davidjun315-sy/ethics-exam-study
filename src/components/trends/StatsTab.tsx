@@ -2,7 +2,7 @@ import { BarList } from "@/components/charts";
 import { PhilosopherHeatmap } from "./PhilosopherHeatmap";
 import { DataError, load } from "@/components/DataError";
 import { Empty, SectionTitle, StatCard } from "@/components/ui";
-import { getTrends } from "@/lib/data/queries";
+import { cachedTrends as getTrends } from "@/lib/data/cached";
 
 export function Panel({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
   return (

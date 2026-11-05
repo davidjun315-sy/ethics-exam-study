@@ -3,6 +3,7 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { BUCKETS, getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Patch = z
   .object({
@@ -15,7 +16,7 @@ const Patch = z
   })
   .partial();
 
-export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/exams/[id]">) {
+export const PATCH = invalidating(async function PATCH(req: Request, ctx: RouteContext<"/api/admin/exams/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -29,7 +30,7 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/exams/[i
   } catch (e) {
     return jsonError(e);
   }
-}
+});
 
 async function removeFolder(bucket: string, prefix: string) {
   const db = getAdminClient();
@@ -48,7 +49,7 @@ async function removeFolder(bucket: string, prefix: string) {
 }
 
 /** 시험 삭제 (문항, 분석, 페이지, Storage 파일 모두 삭제) */
-export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/exams/[id]">) {
+export const DELETE = invalidating(async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/exams/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -61,4 +62,4 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/exams/
   } catch (e) {
     return jsonError(e);
   }
-}
+});

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Empty, PageTitle } from "@/components/ui";
-import { listPhilosophers } from "@/lib/data/queries";
+import { cachedPhilosophers as listPhilosophers } from "@/lib/data/cached";
 import { groupByTradition } from "@/lib/traditions";
 
 export const metadata = { title: "사상가" };

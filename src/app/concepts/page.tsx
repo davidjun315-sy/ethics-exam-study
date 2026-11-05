@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Empty, PageTitle } from "@/components/ui";
-import { listConcepts } from "@/lib/data/queries";
-import { listConceptsByPhilosopher } from "@/lib/data/study";
+import { cachedConcepts as listConcepts, cachedConceptsByPhilosopher as listConceptsByPhilosopher } from "@/lib/data/cached";
 
 export const metadata = { title: "개념" };
 

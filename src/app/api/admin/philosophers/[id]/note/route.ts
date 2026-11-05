@@ -3,11 +3,12 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { deletePhilosopherNote, updatePhilosopherNote } from "@/lib/data/notes";
 import { parseBody } from "@/lib/http";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({ content: z.unknown() });
 
 /** 관리자가 직접 수정한 개념 정리 노트 저장 */
-export async function PUT(req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note">) {
+export const PUT = invalidating(async function PUT(req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -18,9 +19,9 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/philosophe
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});
 
-export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note">) {
+export const DELETE = invalidating(async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -30,4 +31,4 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/philos
   } catch (e) {
     return jsonError(e);
   }
-}
+});

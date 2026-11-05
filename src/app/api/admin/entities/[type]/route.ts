@@ -3,8 +3,9 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { ENTITY_SCHEMAS, isEntityType } from "@/lib/entities";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/entities/[type]">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/entities/[type]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { type } = await ctx.params;
@@ -18,4 +19,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/entities/
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});

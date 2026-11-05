@@ -3,6 +3,7 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { buildInterpretationManualPrompt, importInterpretation } from "@/lib/data/predictions";
 import { parseBody } from "@/lib/http";
+import { invalidating } from "@/lib/cache";
 
 /** 채팅 AI 에 붙여넣을 출제 예측 해석 프롬프트 */
 export async function GET(_req: Request, ctx: RouteContext<"/api/admin/predictions/[runId]/manual">) {
@@ -18,7 +19,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/admin/predictio
 
 const Body = z.object({ text: z.string().min(2).max(300000), source: z.string().max(50).optional() });
 
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/predictions/[runId]/manual">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/predictions/[runId]/manual">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { runId } = await ctx.params;
@@ -29,4 +30,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/predictio
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});

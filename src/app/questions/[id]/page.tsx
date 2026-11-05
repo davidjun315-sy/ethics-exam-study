@@ -4,8 +4,7 @@ import { QuestionStudy } from "@/components/study/QuestionStudy";
 import { isAdmin } from "@/lib/admin-guard";
 import { currentLearner } from "@/lib/quiz/learn";
 import { getMemo } from "@/lib/data/memos";
-import { getQuestionDetail } from "@/lib/data/queries";
-import { findQuestionsForTopics, findRelatedQuestions } from "@/lib/data/related";
+import { cachedQuestionDetail as getQuestionDetail, cachedQuestionsForTopics as findQuestionsForTopics, cachedRelatedQuestions as findRelatedQuestions } from "@/lib/data/cached";
 
 export default async function QuestionPage({ params }: PageProps<"/questions/[id]">) {
   const { id } = await params;

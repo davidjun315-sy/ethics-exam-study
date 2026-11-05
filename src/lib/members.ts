@@ -1,9 +1,12 @@
 import "server-only";
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { cookies } from "next/headers";
 import { MEMBER_COOKIE, verifyMemberToken } from "@/lib/auth";
 import { getAdminClient } from "@/lib/supabase/server";
+
+const MEMBERS_TAG = "members";
 
 /**
  * 회원: 아이디 + 비밀번호. 비밀번호는 scrypt(무작위 salt) 해시로만 저장한다.
@@ -49,6 +52,34 @@ export async function getCurrentMember(): Promise<Member | null> {
   const { data, error } = await getAdminClient().from("members").select("id, username, display_name, created_at, last_login_at, disabled").eq("id", id).maybeSingle();
   if (error || !data || data.disabled) return null;
   return data as Member;
+}
+
+/**
+ * 머리글에 보여 줄 회원 이름. 페이지를 옮길 때마다 DB 를 읽지 않도록 회원별로 5분간 저장해 둔다.
+ * (로그인 확인·권한 판단은 getCurrentMember 가 매번 DB 로 한다. 이 값은 표시용)
+ */
+const memberName = unstable_cache(
+  async (id: string): Promise<string | null> => {
+    const { data } = await getAdminClient().from("members").select("display_name, disabled").eq("id", id).maybeSingle();
+    return data && !data.disabled ? (data.display_name as string) : null;
+  },
+  ["member-name"],
+  { tags: [MEMBERS_TAG], revalidate: 300 },
+);
+
+export async function getCurrentMemberName(): Promise<string | null> {
+  const store = await cookies();
+  const id = await verifyMemberToken(store.get(MEMBER_COOKIE)?.value);
+  return id ? memberName(id) : null;
+}
+
+/** 회원 정지·해제 등 이름 표시가 바뀌어야 할 때 */
+export function invalidateMemberNames() {
+  try {
+    revalidateTag(MEMBERS_TAG, { expire: 0 });
+  } catch (e) {
+    console.error("[cache] member invalidate failed", e);
+  }
 }
 
 export async function isSignupOpen(): Promise<boolean> {

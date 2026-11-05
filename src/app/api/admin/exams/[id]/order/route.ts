@@ -4,6 +4,7 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { applyOrder, sortByNumber } from "@/lib/data/ordering";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.union([
   z.object({ mode: z.literal("manual"), order: z.array(z.string().uuid()).min(1).max(500) }),
@@ -11,7 +12,7 @@ const Body = z.union([
 ]);
 
 /** 문항 순서 바꾸기: 직접 지정한 순서(manual) 또는 문항 번호순(byNumber) */
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id]/order">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id]/order">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -25,4 +26,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});

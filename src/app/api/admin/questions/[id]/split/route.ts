@@ -4,6 +4,7 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
 import type { Question, Region } from "@/lib/types";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({
   regionIndex: z.number().int().min(0),
@@ -17,7 +18,7 @@ const Body = z.object({
 });
 
 /** 문항 나누기: regions[regionIndex] 를 y 에서 잘라 뒤쪽을 새 문항으로 만든다. */
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/split">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/split">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -86,4 +87,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions
   } catch (e) {
     return jsonError(e);
   }
-}
+});

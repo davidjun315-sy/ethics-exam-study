@@ -2,7 +2,7 @@ import { DataError, load } from "@/components/DataError";
 import { PageTitle } from "@/components/ui";
 import { ComparePanel } from "@/components/study/ComparePanel";
 import { getReadClient } from "@/lib/supabase/server";
-import { listQuestionSummaries } from "@/lib/data/queries";
+import { cachedQuestionSummaries as listQuestionSummaries } from "@/lib/data/cached";
 
 export const metadata = { title: "사상가 비교" };
 

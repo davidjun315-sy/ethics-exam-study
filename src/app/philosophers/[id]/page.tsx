@@ -7,9 +7,7 @@ import { Badge, Empty, PageTitle, SectionTitle, StatCard, Tag } from "@/componen
 import { PhilosopherNotebook } from "@/components/study/PhilosopherNotebook";
 import { PhilosopherStudyNote } from "@/components/study/PhilosopherStudyNote";
 import { isAdmin } from "@/lib/admin-guard";
-import { getPhilosopherNote } from "@/lib/data/notes";
-import { getPhilosopher } from "@/lib/data/queries";
-import { getPhilosopherNotebook } from "@/lib/data/study";
+import { cachedPhilosopher as getPhilosopher, cachedPhilosopherNote as getPhilosopherNote, cachedPhilosopherNotebook as getPhilosopherNotebook } from "@/lib/data/cached";
 import { formatDate } from "@/lib/format";
 import { noteFreshness } from "@/lib/study/notes";
 

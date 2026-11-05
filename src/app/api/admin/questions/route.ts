@@ -5,6 +5,7 @@ import { placeByNumber } from "@/lib/data/ordering";
 import { parseBody } from "@/lib/http";
 import { QuestionFieldsSchema } from "@/lib/schemas-admin";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Body = QuestionFieldsSchema.partial().extend({
   exam_id: z.string().uuid(),
@@ -13,7 +14,7 @@ const Body = QuestionFieldsSchema.partial().extend({
 });
 
 /** 문항 직접 추가 (자동 분리 실패 시 / 하위 문항 추가) */
-export async function POST(req: Request) {
+export const POST = invalidating(async function POST(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { data, error } = await parseBody(req, Body);
@@ -38,4 +39,4 @@ export async function POST(req: Request) {
   } catch (e) {
     return jsonError(e);
   }
-}
+});

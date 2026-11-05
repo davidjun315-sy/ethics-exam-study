@@ -3,8 +3,9 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { ENTITY_SCHEMAS, isEntityType } from "@/lib/entities";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
-export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/entities/[type]/[id]">) {
+export const PATCH = invalidating(async function PATCH(req: Request, ctx: RouteContext<"/api/admin/entities/[type]/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { type, id } = await ctx.params;
@@ -18,9 +19,9 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/entities
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});
 
-export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/entities/[type]/[id]">) {
+export const DELETE = invalidating(async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/entities/[type]/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { type, id } = await ctx.params;
@@ -32,4 +33,4 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/entiti
   } catch (e) {
     return jsonError(e);
   }
-}
+});

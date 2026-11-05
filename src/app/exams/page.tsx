@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Badge, Empty, PageTitle } from "@/components/ui";
 import { ExamsByPhilosopher } from "@/components/ExamsByPhilosopher";
-import { listExams } from "@/lib/data/queries";
+import { cachedExams as listExams } from "@/lib/data/cached";
 
 export const metadata = { title: "기출문제" };
 

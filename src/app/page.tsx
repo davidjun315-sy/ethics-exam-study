@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Empty, SectionTitle, StatCard } from "@/components/ui";
-import { getDashboard } from "@/lib/data/queries";
+import { cachedDashboard as getDashboard } from "@/lib/data/cached";
 import { examShortLabel, formatDate } from "@/lib/format";
 
 export default async function Home() {

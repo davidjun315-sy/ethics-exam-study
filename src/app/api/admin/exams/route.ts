@@ -3,6 +3,7 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { BUCKETS, getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({
   exam_year: z.number().int().min(1990).max(2100),
@@ -19,7 +20,7 @@ const Body = z.object({
  * 시험 등록 + PDF 업로드용 signed URL 발급.
  * PDF 는 브라우저가 Supabase Storage 로 직접 업로드한다. (Vercel 요청 크기 제한 회피)
  */
-export async function POST(req: Request) {
+export const POST = invalidating(async function POST(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { data, error } = await parseBody(req, Body);
@@ -49,4 +50,4 @@ export async function POST(req: Request) {
   } catch (e) {
     return jsonError(e);
   }
-}
+});

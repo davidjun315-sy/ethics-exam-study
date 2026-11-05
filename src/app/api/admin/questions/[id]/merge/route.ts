@@ -4,11 +4,12 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
 import type { Question } from "@/lib/types";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({ otherId: z.string().uuid() });
 
 /** 문항 합치기: other 문항의 영역과 텍스트를 이 문항 뒤에 붙이고 other 를 삭제한다. */
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/merge">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/merge">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -42,4 +43,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions
   } catch (e) {
     return jsonError(e);
   }
-}
+});

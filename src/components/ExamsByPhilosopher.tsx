@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Badge, Empty } from "@/components/ui";
-import { listQuestionsByPhilosopher } from "@/lib/data/queries";
+import { cachedQuestionsByPhilosopher as listQuestionsByPhilosopher } from "@/lib/data/cached";
 import { groupByTradition } from "@/lib/traditions";
 import { ROLE_LABEL } from "@/lib/types";
 

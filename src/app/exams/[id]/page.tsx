@@ -4,7 +4,7 @@ import { DataError, load } from "@/components/DataError";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Empty, PageTitle } from "@/components/ui";
 import { isAdmin } from "@/lib/admin-guard";
-import { getExam, listQuestionSummaries } from "@/lib/data/queries";
+import { cachedExam as getExam, cachedQuestionSummaries as listQuestionSummaries } from "@/lib/data/cached";
 import { examFullLabel } from "@/lib/format";
 
 export default async function ExamPage({ params, searchParams }: PageProps<"/exams/[id]">) {

@@ -5,6 +5,7 @@ import { upsertConcept, upsertPhilosopher, upsertSource } from "@/lib/data/tags"
 import { normalizeTitle } from "@/lib/format";
 import { parseBody } from "@/lib/http";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({
   philosophers: z
@@ -34,7 +35,7 @@ const Body = z.object({
  * 사상가 / 개념 / 원전 연결을 관리자가 직접 수정한다.
  * 수정된 연결은 is_manual=true 로 저장되어 AI 재분석 시에도 지워지지 않는다.
  */
-export async function PUT(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/tags">) {
+export const PUT = invalidating(async function PUT(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/tags">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -122,4 +123,4 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/questions/
   } catch (e) {
     return jsonError(e);
   }
-}
+});

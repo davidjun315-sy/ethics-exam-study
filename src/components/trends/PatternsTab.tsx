@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { DataError, load } from "@/components/DataError";
 import { Badge, Empty, SectionTitle } from "@/components/ui";
-import { getPatterns } from "@/lib/data/trends";
+import { cachedPatterns as getPatterns } from "@/lib/data/cached";
 import type { Appearance, CountItem } from "@/lib/trends/patterns";
 
 function Panel({ title, note, children }: { title: string; note?: string; children: ReactNode }) {

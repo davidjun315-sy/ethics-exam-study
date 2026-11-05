@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { Empty, PageTitle } from "@/components/ui";
-import { listSources } from "@/lib/data/queries";
+import { cachedSources as listSources } from "@/lib/data/cached";
 
 export const metadata = { title: "원전" };
 

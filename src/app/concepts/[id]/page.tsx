@@ -4,8 +4,7 @@ import { DataError, load } from "@/components/DataError";
 import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Badge, Empty, PageTitle, SectionTitle, StatCard, Tag } from "@/components/ui";
-import { getConcept } from "@/lib/data/queries";
-import { getConceptNotes } from "@/lib/data/study";
+import { cachedConcept as getConcept, cachedConceptNotes as getConceptNotes } from "@/lib/data/cached";
 
 export default async function ConceptPage({ params }: PageProps<"/concepts/[id]">) {
   const { id } = await params;

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
-import { setMemberDisabled } from "@/lib/members";
+import { invalidateMemberNames, setMemberDisabled } from "@/lib/members";
 
 const Body = z.object({ disabled: z.boolean() });
 
@@ -15,6 +15,7 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/members/
   if (error) return error;
   try {
     await setMemberDisabled(id, data.disabled);
+    invalidateMemberNames();
     return NextResponse.json({ ok: true });
   } catch (e) {
     return jsonError(e, 400);

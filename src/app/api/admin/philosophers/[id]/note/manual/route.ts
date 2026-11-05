@@ -3,6 +3,7 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { buildNoteManualPrompt, importPhilosopherNote } from "@/lib/data/notes";
 import { parseBody } from "@/lib/http";
+import { invalidating } from "@/lib/cache";
 
 /** 채팅 AI 에 붙여넣을 사상가 개념 정리 프롬프트 (이 사상가의 기출 분석 모음 포함) */
 export async function GET(_req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note/manual">) {
@@ -18,7 +19,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/admin/philosoph
 
 const Body = z.object({ text: z.string().min(2).max(400000), source: z.string().max(50).optional() });
 
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note/manual">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/philosophers/[id]/note/manual">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -29,4 +30,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/philosoph
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});

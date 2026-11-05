@@ -4,6 +4,7 @@ import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { RegionSchema } from "@/lib/schemas-admin";
 import { getAdminClient } from "@/lib/supabase/server";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({
   replace: z.boolean(),
@@ -38,7 +39,7 @@ const Body = z.object({
 });
 
 /** 브라우저에서 수행한 페이지 렌더링 / 문항 분리 결과를 저장한다. */
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id]/segmentation">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id]/segmentation">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -68,4 +69,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/exams/[id
   } catch (e) {
     return jsonError(e);
   }
-}
+});

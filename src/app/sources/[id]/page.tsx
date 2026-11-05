@@ -4,7 +4,7 @@ import { DataError, load } from "@/components/DataError";
 import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Empty, PageTitle, SectionTitle, StatCard, Tag, VerificationBadge, ConfidenceBadge } from "@/components/ui";
-import { getSource } from "@/lib/data/queries";
+import { cachedSource as getSource } from "@/lib/data/cached";
 import { questionRef } from "@/lib/format";
 
 export default async function SourcePage({ params }: PageProps<"/sources/[id]">) {

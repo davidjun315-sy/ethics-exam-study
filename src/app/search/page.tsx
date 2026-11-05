@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { QuestionCard } from "@/components/QuestionCard";
 import { Empty, PageTitle, SectionTitle } from "@/components/ui";
-import { searchAll } from "@/lib/data/queries";
+import { cachedSearch as searchAll } from "@/lib/data/cached";
 import { examShortLabel } from "@/lib/format";
 
 export const metadata = { title: "통합검색" };

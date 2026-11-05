@@ -3,6 +3,7 @@ import { z } from "zod";
 import { jsonError, requireAdmin } from "@/lib/admin-guard";
 import { buildManualPrompt, importManualAnalysis } from "@/lib/data/manual";
 import { parseBody } from "@/lib/http";
+import { invalidating } from "@/lib/cache";
 
 /** 채팅 AI 에 붙여넣을 분석 프롬프트 */
 export async function GET(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/manual">) {
@@ -24,7 +25,7 @@ const Body = z.object({
 });
 
 /** 채팅 AI 결과(JSON) 붙여넣기 → 검증 후 저장 */
-export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/manual">) {
+export const POST = invalidating(async function POST(req: Request, ctx: RouteContext<"/api/admin/questions/[id]/manual">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -36,4 +37,4 @@ export async function POST(req: Request, ctx: RouteContext<"/api/admin/questions
   } catch (e) {
     return jsonError(e, 400);
   }
-}
+});

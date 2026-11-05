@@ -5,6 +5,7 @@ import { parseBody } from "@/lib/http";
 import { AnalysisEditSchema, QuestionFieldsSchema } from "@/lib/schemas-admin";
 import { getAdminClient } from "@/lib/supabase/server";
 import { syncQuestionQuietly } from "@/lib/quiz/bank";
+import { invalidating } from "@/lib/cache";
 
 const Body = z.object({
   question: QuestionFieldsSchema.partial().optional(),
@@ -15,7 +16,7 @@ const Body = z.object({
  * 문항 / 분석 수정.
  * 분석을 수정하면 edited_fields 에 기록되고, ai_original(AI 원본)은 그대로 보존된다.
  */
-export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/questions/[id]">) {
+export const PATCH = invalidating(async function PATCH(req: Request, ctx: RouteContext<"/api/admin/questions/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -51,9 +52,9 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/admin/question
   } catch (e) {
     return jsonError(e);
   }
-}
+});
 
-export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/questions/[id]">) {
+export const DELETE = invalidating(async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/questions/[id]">) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { id } = await ctx.params;
@@ -67,4 +68,4 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/admin/questi
   } catch (e) {
     return jsonError(e);
   }
-}
+});
