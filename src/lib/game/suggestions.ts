@@ -167,17 +167,44 @@ export function portraitSearchUrl(name: string, originalName: string | null, ali
 }
 
 /** 카드 일러스트 프롬프트 (모든 카드 같은 화풍·비율) */
-export function artPrompt(p: { name: string; originalName: string | null; era: string | null; tradition: string; look: string; living?: boolean; aliases?: string[] }): string {
+export function artPrompt(p: {
+  name: string;
+  originalName: string | null;
+  era: string | null;
+  tradition: string;
+  look: string;
+  living?: boolean;
+  aliases?: string[];
+  /** 채팅 AI(ChatGPT 등)용: 그리기 전에 실제 초상을 스스로 찾아보게 한다. 서버가 찾은 위키백과 대표 이미지가 있으면 함께 */
+  research?: { imageUrl?: string | null; pageUrl?: string | null } | null;
+}): string {
   const f = p.living ? null : faceFor(p.name, p.aliases ?? []);
+  const en = f?.en ?? p.originalName ?? p.name;
   const who = f ? `${f.en} (${p.name})` : p.originalName ? `${p.originalName} (${p.name})` : p.name;
+  const research =
+    p.research && !p.living
+      ? [
+          "STEP 1 — FIND THE REAL FACE FIRST (do this before drawing):",
+          `- Search the web for authentic historical portraits, busts or standard portraits of ${en}${f ? ` — especially: ${f.ref}` : ""}.`,
+          p.research.imageUrl ? `- Reference image found on Wikipedia: ${p.research.imageUrl}` : "",
+          p.research.pageUrl ? `- Wikipedia page: ${p.research.pageUrl}` : "",
+          "- Open/look at them and write down the key facial features you see: face shape, nose, eyes, brows, hairline, hairstyle, beard/mustache, age, typical clothing.",
+          "- If sources disagree, prefer the most widely reproduced portrait. If no authentic likeness exists, say so and use traditional iconography.",
+          "STEP 2 — DRAW the card illustration using exactly those facial features, following the rules below.",
+          "",
+        ]
+          .filter((x) => x !== "")
+          .concat([""])
+      : [];
   return [
+    ...research,
     `Premium collectible trading-card character illustration of the philosopher ${who}.`,
     p.living
       ? "This is a living person: do NOT depict a realistic likeness of the face; use a stylized silhouette / three-quarter back view or symbolic composition instead. Ignore any attached photo for the face."
       : [
           "FACIAL LIKENESS IS THE TOP PRIORITY: the face must be clearly recognizable as this historical person.",
-          "If a reference portrait image is attached, faithfully match its facial features — face shape, nose, eyes, brows, hairline, hairstyle, beard/mustache and age — while repainting it in the style below (do not copy the painting's background or composition).",
-          f ? `Reference likeness: ${f.ref}. Known features: ${f.face}.` : "No reliable historical likeness is known: base the face on traditional iconography for this figure and keep it dignified (this card will be marked as a reconstruction).",
+          "Faithfully match the facial features of the real portraits (face shape, nose, eyes, brows, hairline, hairstyle, beard/mustache and age) while repainting them in the style below — do not copy the old painting's background or composition.",
+          f ? `Reference likeness: ${f.ref}. Known features: ${f.face}.` : "If no reliable historical likeness is known, base the face on traditional iconography for this figure and keep it dignified (this card will be marked as a reconstruction).",
         ].join("\n"),
     `Costume & setting: ${p.look}${p.era ? ` · era: ${p.era}` : ""}.`,
     "Dignified and serious, not a caricature, not comedic, not idealized into a different person.",

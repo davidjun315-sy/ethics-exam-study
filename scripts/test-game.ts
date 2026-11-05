@@ -67,11 +67,14 @@ check("상대 레벨: 평균 기준 쉬움 -1 · 어려움 +1 (1~최대)", oppon
 check("이름·별칭으로 제안 찾기", suggestFor("왕양명", ["왕수인"], "동양윤리").skill === "치양지" && suggestFor("칸트", [], "서양윤리").quote === "오늘의 의무는 다했는가?");
 check("모르는 사상가는 분류별 기본값 + 재구성 표시", suggestFor("가상인물", [], "사회사상").effect === "guard" && suggestFor("가상인물", [], "사회사상").basis === "reconstruction");
 check("생존 인물 프롬프트: 사실적 얼굴 금지", artPrompt({ name: "싱어", originalName: "Peter Singer", era: null, tradition: "서양윤리", look: "x", living: true }).includes("do NOT depict a realistic likeness"));
-check("실제 얼굴 반영: 프롬프트에 대표 초상과 얼굴 특징", (() => { const t = artPrompt({ name: "칸트", originalName: null, era: null, tradition: "서양윤리", look: "x" }); return t.includes("FACIAL LIKENESS") && t.includes("Johann Gottlieb Becker") && t.includes("Immanuel Kant (칸트)") && t.includes("reference portrait image is attached"); })());
+check("실제 얼굴 반영: 프롬프트에 대표 초상과 얼굴 특징", (() => { const t = artPrompt({ name: "칸트", originalName: null, era: null, tradition: "서양윤리", look: "x" }); return t.includes("FACIAL LIKENESS") && t.includes("Johann Gottlieb Becker") && t.includes("Immanuel Kant (칸트)") && t.includes("Faithfully match the facial features of the real portraits"); })());
 check("별칭으로도 얼굴 참고 찾기", faceFor("왕양명", ["왕수인"])?.en === "Wang Yangming");
-check("초상 없는 사상가: 재구성 안내", artPrompt({ name: "가상인물", originalName: null, era: null, tradition: "동양윤리", look: "x" }).includes("No reliable historical likeness"));
+check("초상 없는 사상가: 재구성 안내", artPrompt({ name: "가상인물", originalName: null, era: null, tradition: "동양윤리", look: "x" }).includes("If no reliable historical likeness is known"));
 check("생존 인물: 얼굴 묘사·첨부 사진 무시", (() => { const t = artPrompt({ name: "싱어", originalName: "Peter Singer", era: null, tradition: "서양윤리", look: "x", living: true }); return t.includes("do NOT depict a realistic likeness") && !t.includes("FACIAL LIKENESS"); })());
 check("참고 초상 찾기 링크 (영문 이름)", portraitSearchUrl("칸트", null).includes(encodeURIComponent("Immanuel Kant portrait")) && portraitSearchUrl("가상인물", "Someone").includes("Someone"));
+check("ChatGPT용: 그리기 전에 실제 초상을 찾아보게 함 + 찾은 위키백과 이미지 포함", (() => { const t = artPrompt({ name: "칸트", originalName: null, era: null, tradition: "서양윤리", look: "x", research: { imageUrl: "https://upload.wikimedia.org/k.jpg", pageUrl: "https://en.wikipedia.org/wiki/Immanuel_Kant" } }); return t.startsWith("STEP 1 — FIND THE REAL FACE FIRST") && t.includes("Search the web for authentic historical portraits") && t.includes("https://upload.wikimedia.org/k.jpg") && t.includes("STEP 2 — DRAW"); })());
+check("ChatGPT용: 초상을 못 찾아도 웹 검색 단계는 포함", (() => { const t = artPrompt({ name: "가상인물", originalName: null, era: null, tradition: "동양윤리", look: "x", research: {} }); return t.includes("STEP 1") && !t.includes("Reference image found"); })());
+check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", originalName: "Peter Singer", era: null, tradition: "서양윤리", look: "x", living: true, research: {} }).includes("STEP 1"));
 
 if (failed) {
   console.log(`\n${failed}개 실패`);

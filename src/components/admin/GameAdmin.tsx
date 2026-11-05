@@ -17,7 +17,7 @@ const STATUS: Record<CandidateRow["status"], { label: string; tone: string }> = 
 };
 
 /** 업로드 전 3:4 로 가운데를 잘라 1200×1600 WebP 로 (카드마다 같은 비율·가벼운 용량) */
-async function toCardArt(file: File): Promise<Blob> {
+async function toCardArt(file: Blob): Promise<Blob> {
   const bmp = await createImageBitmap(file);
   const W = 1200;
   const H = 1600;
@@ -116,9 +116,13 @@ function CardEditor({ c }: { c: CandidateRow }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [found, setFound] = useState<{ imageUrl: string; pageUrl: string; title: string } | null | "none">(null);
+  const [gen, setGen] = useState<{ dataUrl: string; reference: { imageUrl: string; pageUrl: string; title: string; description: string | null } | null; basis: CardInput["art_basis"]; note: string } | null>(null);
   const set = <K extends keyof CardInput>(k: K, v: CardInput[K]) => setD((x) => ({ ...x, [k]: v }));
   const canPublish = Boolean(d.art_url && d.skill_name.trim());
-  const prompt = artPrompt({ name: c.name, originalName: c.originalName, era: c.era, tradition: c.tradition, look: s.look, living: s.living, aliases: c.aliases });
+  const promptWith = (ref: { imageUrl: string; pageUrl: string } | null) =>
+    artPrompt({ name: c.name, originalName: c.originalName, era: c.era, tradition: c.tradition, look: s.look, living: s.living, aliases: c.aliases, research: s.living ? null : { imageUrl: ref?.imageUrl, pageUrl: ref?.pageUrl } });
+  const prompt = promptWith(found && found !== "none" ? found : null);
   const face = s.living ? null : faceFor(c.name, c.aliases);
 
   async function save(next: CardInput) {
@@ -136,7 +140,51 @@ function CardEditor({ c }: { c: CandidateRow }) {
     }
   }
 
-  async function upload(file: File) {
+  /** ChatGPT 용: 위키백과 대표 초상을 자동으로 찾아 프롬프트에 넣고 복사 (ChatGPT 가 먼저 실제 얼굴을 조사한 뒤 그림) */
+  async function copyForChat() {
+    setBusy("copy");
+    setMsg(null);
+    try {
+      let ref = found && found !== "none" ? found : null;
+      if (!found && !s.living) {
+        const r = await api<{ reference: { imageUrl: string; pageUrl: string; title: string } | null }>(`/api/admin/game/cards/${c.philosopherId}/reference`).catch(() => ({ reference: null }));
+        ref = r.reference;
+        setFound(r.reference ?? "none");
+        if (r.reference && !d.art_note) setD((x) => ({ ...x, art_basis: "portrait", art_note: `참고 초상: ${r.reference!.title} (위키백과)`.slice(0, 200) }));
+      }
+      await navigator.clipboard.writeText(promptWith(ref));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 4000);
+      setMsg({ ok: true, text: "복사했습니다. ChatGPT 에 붙여넣으면 먼저 실제 초상을 찾아본 뒤 그 얼굴로 그립니다. 완성된 그림을 '직접 올리기'로 올리세요." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** 참고 초상을 자동으로 찾아 AI 로 일러스트 생성 → 미리보기 (저장은 '이 그림 사용') */
+  async function generate() {
+    setBusy("gen");
+    setMsg(null);
+    setGen(null);
+    try {
+      setGen(await api(`/api/admin/game/cards/${c.philosopherId}/generate`, "POST", {}));
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function useGenerated() {
+    if (!gen) return;
+    const blob = await (await fetch(gen.dataUrl)).blob();
+    await upload(blob, { basis: gen.basis, note: gen.note });
+    setGen(null);
+  }
+
+  async function upload(file: Blob, meta?: { basis: CardInput["art_basis"]; note: string }) {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return setMsg({ ok: false, text: "PNG · JPG · WebP 이미지만 올릴 수 있습니다." });
     if (file.size > 15 * 1024 * 1024) return setMsg({ ok: false, text: "15MB 이하 이미지를 올려 주세요." });
     setBusy("art");
@@ -147,6 +195,7 @@ function CardEditor({ c }: { c: CandidateRow }) {
       const { error } = await getBrowserClient().storage.from("question-images").uploadToSignedUrl(u.path, u.token, blob, { contentType: "image/webp", upsert: true });
       if (error) throw new Error(error.message);
       set("art_url", u.publicUrl);
+      if (meta) setD((x) => ({ ...x, art_basis: meta.basis, art_note: meta.note }));
       setMsg({ ok: true, text: "일러스트를 올렸습니다 (1200×1600 WebP). 저장해야 반영됩니다." });
     } catch (e) {
       console.error("[card art upload]", e);
@@ -179,12 +228,61 @@ function CardEditor({ c }: { c: CandidateRow }) {
       <div className="space-y-2">
         <PhilosopherCard card={preview} level={1} tilt={false} />
         {!d.art_url && <p className="text-center text-xs text-warn">일러스트가 없어 공개할 수 없습니다</p>}
+        <button type="button" className="btn-primary w-full py-2 text-sm font-semibold" disabled={busy !== null} onClick={copyForChat}>
+          {busy === "copy" ? "실제 초상 찾는 중…" : copied ? "✓ 복사됨 · ChatGPT 에 붙여넣기" : "ChatGPT용 프롬프트 복사"}
+        </button>
+        {found && found !== "none" && (
+          <a href={found.pageUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded border border-line p-1.5 text-[11px] text-muted hover:border-navy/40">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={found.imageUrl} alt="" className="h-12 w-9 rounded object-cover" />
+            <span>프롬프트에 넣은 참고 초상: <b className="text-ink">{found.title}</b></span>
+          </a>
+        )}
+        {found === "none" && <p className="text-[11px] text-warn">위키백과에서 초상을 찾지 못했습니다. ChatGPT 가 웹에서 직접 찾도록 프롬프트에 넣었습니다.</p>}
         <label className="btn w-full cursor-pointer py-2 text-sm">
-          {busy === "art" ? "올리는 중…" : d.art_url ? "일러스트 바꾸기" : "일러스트 올리기"}
+          {busy === "art" ? "올리는 중…" : d.art_url ? "완성 그림 올려 바꾸기" : "완성 그림 올리기"}
           <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={busy !== null} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         </label>
-        <p className="text-[11px] leading-4 text-faint">3:4 세로 이미지 권장 · 올리면 가운데 기준 3:4 로 잘라 1200×1600 WebP 로 저장합니다.</p>
+        <button type="button" className="w-full text-[11px] text-muted underline disabled:opacity-50" disabled={busy !== null} onClick={generate}>
+          {busy === "gen" ? "Gemini 로 그리는 중… (최대 1~2분)" : "또는 Gemini 로 바로 생성 (실험 · 키 한도에 따라)"}
+        </button>
+        <p className="text-[11px] leading-4 text-faint">올린 그림은 가운데 기준 3:4 로 잘라 1200×1600 WebP 로 저장합니다.</p>
       </div>
+      {gen && (
+        <div className="quiz-rise rounded-xl border border-navy/30 bg-navy-soft/30 p-3 md:col-span-2">
+          <div className="grid gap-3 sm:grid-cols-[9rem_12rem_1fr]">
+            <figure>
+              {gen.reference ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={gen.reference.imageUrl} alt="참고 초상" className="aspect-[3/4] w-full rounded object-cover" />
+              ) : (
+                <div className="flex aspect-[3/4] items-center justify-center rounded bg-surface-2 p-2 text-center text-[11px] text-muted">참고 초상 없음</div>
+              )}
+              <figcaption className="mt-1 text-[11px] text-muted">
+                {gen.reference ? (
+                  <a href={gen.reference.pageUrl} target="_blank" rel="noreferrer" className="underline">참고: {gen.reference.title}</a>
+                ) : (
+                  "재구성 (상징·도상 기반)"
+                )}
+              </figcaption>
+            </figure>
+            <figure>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={gen.dataUrl} alt="생성된 일러스트" className="aspect-[3/4] w-full rounded object-cover ring-2 ring-navy" />
+              <figcaption className="mt-1 text-[11px] text-muted">생성된 일러스트</figcaption>
+            </figure>
+            <div className="flex flex-col gap-2 text-sm">
+              <p className="text-muted">얼굴이 참고 초상과 닮았는지, 화풍이 다른 카드와 맞는지 확인하세요.</p>
+              <p className="text-[11px] text-faint">{gen.note}</p>
+              <div className="mt-auto flex flex-wrap gap-2">
+                <button type="button" className="btn-primary px-4 py-2" disabled={busy !== null} onClick={useGenerated}>{busy === "art" ? "올리는 중…" : "이 그림 사용"}</button>
+                <button type="button" className="btn px-4 py-2" disabled={busy !== null} onClick={generate}>다시 생성</button>
+                <button type="button" className="btn px-4 py-2" onClick={() => setGen(null)}>닫기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -264,38 +362,28 @@ function CardEditor({ c }: { c: CandidateRow }) {
           </label>
         </div>
         <details className="rounded-lg border border-line bg-surface-2/50 p-3 text-sm">
-          <summary className="cursor-pointer font-semibold">일러스트 만들기 (실제 얼굴 반영 · 모든 카드 같은 화풍)</summary>
+          <summary className="cursor-pointer font-semibold">프롬프트 내용 보기</summary>
           {s.living ? (
             <p className="mt-2 rounded bg-warn-soft p-2 text-xs text-warn">
               생존 인물입니다. 초상권과 오해를 피하려고 실제 얼굴 대신 실루엣·뒷모습·상징 중심으로 그리도록 프롬프트가 구성되어 있습니다. 참고 사진은 첨부하지 마세요.
             </p>
           ) : (
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-muted">
-              <li>
-                <a href={portraitSearchUrl(c.name, c.originalName, c.aliases)} target="_blank" rel="noreferrer" className="font-semibold text-navy underline">
-                  참고 초상 찾기 (위키미디어 공용)
-                </a>
-                {face ? <> — 대표 초상: <span className="text-ink">{face.ref}</span></> : " — 확인된 초상이 없으면 전통 도상을 찾아 참고하세요 (카드에 '재구성' 표시)"}
-                . 얼굴이 잘 보이는 퍼블릭 도메인 초상·흉상·영정을 내려받으세요.
+              <li><b>ChatGPT용 프롬프트 복사</b>를 누르면 위키백과에서 실제 초상을 찾아 프롬프트에 넣습니다{face ? <> (대표 초상: <span className="text-ink">{face.ref}</span>)</> : ""}.</li>
+              <li>ChatGPT 에 붙여넣기만 하면 됩니다. 프롬프트가 ChatGPT 에게 먼저 웹에서 실제 초상·흉상을 찾아 얼굴 특징을 확인한 뒤 그 얼굴로 그리라고 지시합니다 (사진 첨부 필요 없음).</li>
+              <li>완성된 그림을 <b>완성 그림 올리기</b>로 올리고 공개합니다.</li>
+              <li className="list-none text-faint">
+                초상을 직접 확인하고 싶으면:{" "}
+                <a href={portraitSearchUrl(c.name, c.originalName, c.aliases)} target="_blank" rel="noreferrer" className="text-navy underline">위키미디어 공용에서 보기</a>
               </li>
-              <li>아래 프롬프트를 복사합니다.</li>
-              <li>이미지 생성 AI(ChatGPT·Gemini 등)에 <b>참고 초상 이미지를 첨부하고</b> 프롬프트를 붙여넣습니다. 얼굴은 초상을 따르고, 화풍·구도는 프롬프트를 따릅니다.</li>
             </ol>
           )}
           <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded bg-surface p-2 text-xs leading-5 text-muted">{prompt}</pre>
-          <button
-            type="button"
-            className="btn mt-2 !py-1 text-xs"
-            onClick={async () => {
-              await navigator.clipboard.writeText(prompt);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2500);
-            }}
-          >
+          <button type="button" className="btn mt-2 !py-1 text-xs" disabled={busy !== null} onClick={copyForChat}>
             {copied ? "✓ 복사됨" : "프롬프트 복사"}
           </button>
           <p className="mt-1 text-[11px] text-faint">
-            실제 사진을 그대로 쓰거나 다른 화풍 이미지를 섞지 마세요. 참고 초상의 저작권(퍼블릭 도메인 여부)을 확인하고, 근거는 &apos;일러스트 메모&apos;에 적어 두면 카드 상세에 표시됩니다.
+            ChatGPT 가 실제 사진을 그대로 쓰거나 다른 화풍으로 그리면 다시 요청하세요. 참고한 초상은 &apos;일러스트 메모&apos;에 자동으로 적히고 카드 상세에 표시됩니다.
           </p>
         </details>
         <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
