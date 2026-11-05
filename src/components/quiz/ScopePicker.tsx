@@ -3,34 +3,36 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { quizApi as api } from "@/lib/quiz/client";
-import { LEVEL_NAMES, type StartLevel } from "@/lib/quiz/srs";
+import { SCOPE_NAMES, type QuestionScope } from "@/lib/quiz/srs";
 
-const HELP: Record<StartLevel, string> = {
-  basic: "쉬운 문제부터",
-  advanced: "중간 난이도 중심",
-  expert: "어려운 문제 위주",
-};
+const ORDER: QuestionScope[] = ["exam", "expected", "both"];
 
-/** 시작 난이도 선택 · 변경 */
-export function StartLevelPicker({ current }: { current: StartLevel | null }) {
+/** 출제 범위 선택 · 변경: 오늘의 미션과 오답 복습에 낼 문제 종류 */
+export function ScopePicker({ current, counts }: { current: QuestionScope | null; counts?: { exam: number; expected: number } }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<StartLevel | null>(null);
+  const [busy, setBusy] = useState<QuestionScope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const help: Record<QuestionScope, string> = {
+    exam: counts ? `실제 기출 ${counts.exam}문제` : "실제 기출만",
+    expected: counts ? `AI 예상 ${counts.expected}문제` : "AI 예상 문제만",
+    both: counts ? `${counts.exam + counts.expected}문제 섞어서` : "둘 다 섞어서",
+  };
   return (
     <div>
-      <div className="grid grid-cols-3 gap-2">
-        {(Object.keys(LEVEL_NAMES) as StartLevel[]).map((k) => (
+      <div className="grid gap-2 sm:grid-cols-3">
+        {ORDER.map((k) => (
           <button
             key={k}
             type="button"
             disabled={busy !== null}
             aria-pressed={current === k}
             onClick={async () => {
+              if (current === k) return;
               setBusy(k);
               setError(null);
               try {
-                await api("/api/quiz/profile", "POST", { startLevel: k });
+                await api("/api/quiz/profile", "POST", { scope: k });
                 startTransition(() => router.refresh());
               } catch (e) {
                 setError(e instanceof Error ? e.message : String(e));
@@ -40,8 +42,8 @@ export function StartLevelPicker({ current }: { current: StartLevel | null }) {
             }}
             className={`rounded-lg border p-3 text-left transition-colors ${current === k ? "border-navy bg-navy-soft" : "border-line hover:border-navy/50"}`}
           >
-            <div className={`font-bold ${current === k ? "text-navy" : ""}`}>{busy === k ? "…" : LEVEL_NAMES[k]}</div>
-            <div className="text-[11px] text-muted">{HELP[k]}</div>
+            <div className={`font-bold ${current === k ? "text-navy" : ""}`}>{busy === k ? "…" : SCOPE_NAMES[k]}</div>
+            <div className="text-[11px] text-muted">{help[k]}</div>
           </button>
         ))}
       </div>

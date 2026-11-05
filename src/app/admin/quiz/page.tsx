@@ -5,7 +5,7 @@ import { listMembers } from "@/lib/members";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { PageTitle } from "@/components/ui";
 import { getBankStatus, getQuizSettings, listLearnerStats, listOpenReports, listQuizItems } from "@/lib/quiz/bank";
-import { LEVEL_NAMES } from "@/lib/quiz/srs";
+import { SCOPE_NAMES } from "@/lib/quiz/srs";
 
 export const metadata = { title: "윤리 퀴즈 관리" };
 
@@ -192,14 +192,14 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
                 <table className="w-full min-w-[560px] text-sm">
                   <thead className="text-left text-muted">
                     <tr>
-                      <th className="py-1">학습자</th><th>과정</th><th>XP</th><th>연속</th><th>최고</th><th>푼 문제</th><th>기입형 정답률</th><th>자기평가</th><th>마지막 미션</th>
+                      <th className="py-1">학습자</th><th>출제 범위</th><th>XP</th><th>연속</th><th>최고</th><th>푼 문제</th><th>기입형 정답률</th><th>자기평가</th><th>마지막 미션</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.learners.map((l) => (
                       <tr key={l.learner} className="border-t border-line">
                         <td className="py-1.5">{l.name}</td>
-                        <td>{LEVEL_NAMES[l.start_level as keyof typeof LEVEL_NAMES] ?? l.start_level}</td>
+                        <td>{SCOPE_NAMES[(l.question_scope ?? "both") as keyof typeof SCOPE_NAMES]}</td>
                         <td>{l.xp}</td>
                         <td>{l.streak}일</td>
                         <td>{l.best_streak}일</td>

@@ -535,6 +535,7 @@ export interface LearnerStat {
   total_answered: number;
   last_completed_day: string | null;
   start_level: string;
+  question_scope?: string;
   accuracy: number | null;
   selfRated: number;
 }
@@ -561,6 +562,7 @@ export async function listLearnerStats(): Promise<LearnerStat[]> {
       total_answered: p.total_answered,
       last_completed_day: p.last_completed_day,
       start_level: p.start_level,
+      question_scope: p.question_scope,
       accuracy: auto.length ? auto.filter((a) => a.result === "correct").length / auto.length : null,
       selfRated: mine.length - auto.length,
     };

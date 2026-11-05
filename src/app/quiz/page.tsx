@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DataError, load } from "@/components/DataError";
 import { QuizHome } from "@/components/quiz/QuizHome";
-import { StartLevelPicker } from "@/components/quiz/StartLevelPicker";
+import { ScopePicker } from "@/components/quiz/ScopePicker";
 import { currentLearner, getDashboard } from "@/lib/quiz/learn";
 
 export const metadata = { title: "윤리 퀴즈" };
@@ -35,9 +35,9 @@ export default async function QuizPage() {
       </div>
       {!data.profile ? (
         <section className="card mx-auto max-w-3xl p-5">
-          <h2 className="text-lg font-bold">어디서부터 시작할까요?</h2>
-          <p className="mb-4 mt-1 text-sm text-muted">기출을 이미 충분히 공부했다면 전문가로 시작하세요. 언제든 바꿀 수 있습니다.</p>
-          <StartLevelPicker current={null} />
+          <h2 className="text-lg font-bold">어떤 문제로 공부할까요?</h2>
+          <p className="mb-4 mt-1 text-sm text-muted">오늘의 미션과 오답 복습에 낼 문제 종류를 고르세요. 언제든 바꿀 수 있습니다.</p>
+          <ScopePicker current={null} counts={data.kindCount} />
         </section>
       ) : (
         <QuizHome d={data} />

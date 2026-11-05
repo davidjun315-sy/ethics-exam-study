@@ -4,6 +4,7 @@ import { buildMission, buildPractice, spaceOut, type Candidate, type ProgressLit
 import { expectedFromAnalysis, focusRequirement, requirementLines, splitQuestion, type SplitInput } from "../src/lib/quiz/split.ts";
 import { buildChatPrompt, buildEssayPrompt, EssayGradingSchema, tidyGrading } from "../src/lib/quiz/essay.ts";
 import { validatePasted } from "../src/lib/ai/lenient.ts";
+import { inScope } from "../src/lib/quiz/srs.ts";
 import { addDays, answerXp, currentStreak, kstDay, levelForXp, newBadges, NEW_PROGRESS, nextReview, streakAfterCompletion } from "../src/lib/quiz/srs.ts";
 
 let failed = 0;
@@ -151,6 +152,14 @@ check("오답 복습은 틀림·일부만 문제만", wrongs.length === 2 && wro
 const fresh = buildPractice({ candidates: cands, progress: prog, today, n: 5, seed: "f", which: "new" });
 check("자유 학습 '새 문제'는 안 푼 문제만", fresh.length === 5 && fresh.every((id) => !prog.has(id)));
 check("간격 띄우기: 같은 원문 연속 방지", spaceOut([{ area: "a", questionId: "1" }, { area: "a", questionId: "1" }, { area: "b", questionId: "2" }]).map((x) => x.questionId).join() === "1,2,1");
+
+// ---------------- 출제 범위 ----------------
+check("출제 범위: 기출만 / 예상만 / 둘 다", inScope("exam", "exam") && !inScope("expected", "exam") && inScope("expected", "expected") && !inScope("exam", "expected") && inScope("exam", "both") && inScope("expected", "both"));
+{
+  const pool: Candidate[] = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, kind: "expected" as const, questionId: `sq${i}`, area: i % 2 ? "동양윤리" : "서양윤리", philosophers: [], difficulty: ((i % 3) + 1) as 1 | 2 | 3 }));
+  const m = buildMission({ candidates: pool, progress: new Map(), settings: { total: 10, exam: 0, expected: 8, review: 2 }, today: "2026-11-05", seed: "scope" });
+  check("난이도 과정 없이 예상 문제만으로 미션 10문제", m.itemIds.length === 10 && m.itemIds.every((id) => id.startsWith("s")), String(m.itemIds.length));
+}
 
 // ---------------- 서술형 AI 첨삭 ----------------
 const ectx = {

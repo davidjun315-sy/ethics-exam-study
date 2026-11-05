@@ -3,18 +3,18 @@ import { z } from "zod";
 import { jsonError } from "@/lib/admin-guard";
 import { parseBody } from "@/lib/http";
 import { requireLearner } from "@/lib/quiz/api";
-import { setStartLevel } from "@/lib/quiz/learn";
+import { setQuestionScope } from "@/lib/quiz/learn";
 
-const Body = z.object({ startLevel: z.enum(["basic", "advanced", "expert"]) });
+const Body = z.object({ scope: z.enum(["exam", "expected", "both"]) });
 
-/** 시작 난이도 설정·변경 */
+/** 출제 범위 설정·변경 (기출문제 / AI 예상문제 / 기출문제+AI 예상문제) */
 export async function POST(req: Request) {
   const { learner, denied } = await requireLearner();
   if (denied) return denied;
   const { data, error } = await parseBody(req, Body);
   if (error) return error;
   try {
-    await setStartLevel(learner, data.startLevel);
+    await setQuestionScope(learner, data.scope);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return jsonError(e, 400);

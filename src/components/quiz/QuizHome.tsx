@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Dashboard } from "@/lib/quiz/learn";
-import { LEVEL_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
-import { StartLevelPicker } from "./StartLevelPicker";
+import { SCOPE_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
+import { ScopePicker } from "./ScopePicker";
 
 function Flame({ on }: { on: boolean }) {
   return (
@@ -26,7 +26,7 @@ export function QuizHome({ d }: { d: Dashboard }) {
   const { level, today } = d;
   const xp = d.profile?.xp ?? 0;
   const lvProgress = (xp - level.current) / (level.next - level.current);
-  const startLabel = d.profile ? LEVEL_NAMES[d.profile.start_level] : null;
+  const scopeLabel = SCOPE_NAMES[d.scope];
   // 달력 첫 날의 요일 (날짜 문자열 기준이라 시간대와 무관)
   const [y, mo, da] = d.calendar[0].day.split("-").map(Number);
   const dow0 = new Date(Date.UTC(y, mo - 1, da)).getUTCDay();
@@ -41,7 +41,7 @@ export function QuizHome({ d }: { d: Dashboard }) {
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-navy">Lv.{level.level}</span>
             <span className="text-sm text-muted">{xp} XP</span>
-            {startLabel && <span className="ml-auto rounded bg-surface-2 px-2 py-0.5 text-xs text-muted">{startLabel} 과정</span>}
+            <span className="ml-auto rounded bg-surface-2 px-2 py-0.5 text-xs text-muted">{scopeLabel}</span>
           </div>
           <div className="mt-2">
             <Bar value={lvProgress} />
@@ -190,10 +190,16 @@ export function QuizHome({ d }: { d: Dashboard }) {
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-1 text-[15px] font-bold">학습 난이도</h2>
-        <p className="mb-3 text-xs text-muted">새 문제를 고를 때 난이도 비중이 달라집니다. 전문가 과정은 이미 익힌 쉬운 문제를 덜 냅니다.</p>
-        <StartLevelPicker current={d.profile?.start_level ?? null} />
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs text-muted">
+        <h2 className="mb-1 text-[15px] font-bold">출제 범위</h2>
+        <p className="mb-3 text-xs text-muted">
+          오늘의 미션과 오답 복습에 낼 문제 종류입니다. 바꾸면 오늘 미션에서 아직 안 푼 문제도 바로 바뀝니다 (푼 문제와 기록은 그대로).
+        </p>
+        <ScopePicker current={d.scope} counts={d.kindCount} />
+        {d.scope !== "exam" && d.kindCount.expected < 10 && (
+          <p className="mt-2 text-xs text-warn">공개된 AI 예상 문제가 {d.kindCount.expected}개뿐이라 미션 문제 수가 줄어들 수 있습니다.</p>
+        )}
+        <h3 className="mt-4 text-xs font-semibold text-muted">난이도별 정답률</h3>
+        <div className="mt-1 grid grid-cols-3 gap-2 text-center text-xs text-muted">
           {([1, 2, 3] as const).map((k) => {
             const s = d.levelStats[k];
             return (

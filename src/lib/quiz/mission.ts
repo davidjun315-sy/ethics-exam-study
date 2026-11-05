@@ -73,7 +73,8 @@ export function buildMission(opts: {
   progress: Map<string, ProgressLite>;
   settings: MissionSettings;
   today: string;
-  level: StartLevel;
+  /** 예전 시작 난이도. 없으면 난이도 가중치 없이 고른다 */
+  level?: StartLevel;
   seed: string;
 }): { itemIds: string[]; slots: Slot[] } {
   const { candidates, progress, settings, today, level } = opts;
@@ -120,7 +121,7 @@ export function buildMission(opts: {
   const seenLater: { c: Candidate; score: number }[] = [];
   for (const c of candidates) {
     const p = progress.get(c.id);
-    const fit = FIT[level][c.difficulty];
+    const fit = level ? FIT[level][c.difficulty] : 0.5;
     const j = jitter.get(c.id)!;
     if (!p || !p.lastResult) {
       const score = fit + j + 0.5 * (areaStale.get(c.area) ?? 0);

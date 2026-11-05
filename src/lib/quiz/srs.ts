@@ -136,4 +136,8 @@ export function newBadges(streak: number, have: string[]): string[] {
 }
 
 export const LEVEL_NAMES = { basic: "입문", advanced: "심화", expert: "전문가" } as const;
+/** 출제 범위: 오늘의 미션·오답 복습에 낼 문제 종류 */
+export const SCOPE_NAMES = { exam: "기출문제", expected: "AI 예상문제", both: "기출문제+AI 예상문제" } as const;
+export type QuestionScope = keyof typeof SCOPE_NAMES;
+export const inScope = (kind: "exam" | "expected", scope: QuestionScope) => scope === "both" || kind === scope;
 export type StartLevel = keyof typeof LEVEL_NAMES;

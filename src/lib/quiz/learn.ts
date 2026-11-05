@@ -25,6 +25,8 @@ import {
   type ProgressState,
   type QuizResult,
   type StartLevel,
+  inScope,
+  type QuestionScope,
 } from "./srs.ts";
 
 /**
@@ -39,7 +41,9 @@ export async function currentLearner(): Promise<string | null> {
 
 export interface Profile {
   learner: string;
-  start_level: StartLevel;
+  start_level: StartLevel; // 예전 시작 난이도 (지금은 쓰지 않음, 기록 보존)
+  question_scope?: QuestionScope; // 007 이후
+
   xp: number;
   streak: number;
   best_streak: number;
@@ -54,11 +58,30 @@ export async function getProfile(learner: string): Promise<Profile | null> {
   return (data as Profile | null) ?? null;
 }
 
-export async function setStartLevel(learner: string, level: StartLevel) {
+/** 출제 범위. 007 을 실행하기 전이거나 정하지 않았으면 기출+예상 */
+export const scopeOf = (p: Profile | null): QuestionScope => p?.question_scope ?? "both";
+
+/** 출제 범위 설정·변경 (처음이면 학습 프로필을 만든다) */
+export async function setQuestionScope(learner: string, scope: QuestionScope) {
   const { error } = await getAdminClient()
     .from("quiz_profiles")
-    .upsert({ learner, start_level: level, updated_at: new Date().toISOString() }, { onConflict: "learner" });
-  if (error) throw quizError(error.message);
+    .upsert({ learner, question_scope: scope, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  if (error) {
+    if (/question_scope/.test(error.message))
+      throw new Error("출제 범위를 저장할 열이 없습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/007_quiz_scope.sql 을 실행하세요.");
+    throw quizError(error.message);
+  }
+}
+
+/** 출제 범위에 맞춰 미션 구성: 한쪽만 고르면 다른 쪽 자리도 그 종류로 채운다 */
+function missionSettings(s: { daily_total: number; daily_exam: number; daily_expected: number; daily_review: number }, scope: QuestionScope) {
+  const fresh = s.daily_exam + s.daily_expected;
+  return {
+    total: s.daily_total,
+    exam: scope === "both" ? s.daily_exam : scope === "exam" ? fresh : 0,
+    expected: scope === "both" ? s.daily_expected : scope === "expected" ? fresh : 0,
+    review: s.daily_review,
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -144,22 +167,27 @@ function toSession(day: string, d: DailyRow): Session {
 async function repairDaily(learner: string, day: string, d: DailyRow): Promise<Session> {
   const db = getAdminClient();
   const results = d.results ?? {};
-  const { data: rows, error } = await db.from("quiz_items").select("id, status, question_id").in("id", d.item_ids);
+  const [{ data: rows, error }, profile] = await Promise.all([db.from("quiz_items").select("id, status, question_id, kind").in("id", d.item_ids), getProfile(learner)]);
   if (error) throw quizError(error.message);
+  const scope = scopeOf(profile);
   const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
-  const bad = d.item_ids.filter((id) => !results[id] && byId.get(id)?.status !== "approved");
+  // 아직 안 푼 문제 중: 공개가 내려갔거나, 출제 범위를 바꿔 범위 밖이 된 문제
+  const bad = d.item_ids.filter((id) => {
+    if (results[id]) return false;
+    const r = byId.get(id);
+    return r?.status !== "approved" || !inScope(r.kind as "exam" | "expected", scope);
+  });
   if (bad.length === 0) return toSession(day, d);
 
   const keep = d.item_ids.filter((id) => !bad.includes(id));
   const usedQuestions = new Set(keep.map((id) => byId.get(id)?.question_id).filter(Boolean));
-  const [profile, candidates, progress] = await Promise.all([getProfile(learner), approvedItems(), progressMap(learner)]);
-  const pool = candidates.filter((c) => !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
+  const [candidates, progress] = await Promise.all([approvedItems(), progressMap(learner)]);
+  const pool = candidates.filter((c) => inScope(c.kind, scope) && !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
   const repl = buildMission({
     candidates: pool,
     progress,
-    settings: { total: bad.length, exam: bad.length, expected: 0, review: 0 },
+    settings: { total: bad.length, exam: scope === "expected" ? 0 : bad.length, expected: scope === "expected" ? bad.length : 0, review: 0 },
     today: day,
-    level: profile?.start_level ?? "basic",
     seed: `${learner}:${day}:repair:${bad.join(",")}`,
   }).itemIds;
   const itemIds: string[] = [];
@@ -203,12 +231,12 @@ export async function getDailySession(learner: string, create = true): Promise<S
   if (data) return data.completed_at ? toSession(day, data) : repairDaily(learner, day, data);
   if (!create) return null;
   const [settings, profile, candidates, progress] = await Promise.all([getQuizSettings(), getProfile(learner), approvedItems(), progressMap(learner)]);
+  const scope = scopeOf(profile);
   const { itemIds, slots } = buildMission({
-    candidates,
+    candidates: candidates.filter((c) => inScope(c.kind, scope)),
     progress,
-    settings: { total: settings.daily_total, exam: settings.daily_exam, expected: settings.daily_expected, review: settings.daily_review },
+    settings: missionSettings(settings, scope),
     today: day,
-    level: profile?.start_level ?? "basic",
     seed: `${learner}:${day}`,
   });
   if (itemIds.length === 0) return { mode: "daily", day, itemIds: [], slots: [], results: {}, completed: false };
@@ -220,7 +248,12 @@ export async function getDailySession(learner: string, create = true): Promise<S
 
 export async function getPracticeSession(learner: string, mode: "free" | "review", f: Filters, n = 10): Promise<Session> {
   const day = kstDay();
-  const [candidates, progress] = await Promise.all([approvedItems(mode === "review" ? {} : f), progressMap(learner)]);
+  // 문제 종류를 따로 고르지 않았으면 출제 범위를 따른다
+  const profile = await getProfile(learner);
+  const scope = scopeOf(profile);
+  const base = mode === "review" ? {} : f;
+  const kind = base.kind ?? (scope === "both" ? undefined : scope);
+  const [candidates, progress] = await Promise.all([approvedItems({ ...base, kind }), progressMap(learner)]);
   const itemIds = buildPractice({
     candidates,
     progress,
@@ -525,6 +558,8 @@ export interface Dashboard {
   dueCount: number;
   wrongCount: number;
   bankSize: number;
+  scope: QuestionScope;
+  kindCount: { exam: number; expected: number }; // 공개된 문제 수
   mastery: { name: string; seen: number; total: number; score: number }[]; // 영역별
   philosophers: { name: string; seen: number; score: number }[];
   calendar: { day: string; answered: number; completed: boolean }[];
@@ -539,8 +574,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     getProfile(learner),
     getDailySession(learner, false),
     progressMap(learner),
-    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 }>((a, b) =>
-      db.from("quiz_items").select("id, area, philosopher_names, difficulty").eq("status", "approved").order("id").range(a, b),
+    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: "exam" | "expected" }>((a, b) =>
+      db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind").eq("status", "approved").order("id").range(a, b),
     ).then((data) => ({ data })),
     fetchAll<{ day: string; result: string; item_id: string }>((a, b) =>
       db.from("quiz_attempts").select("day, result, item_id").eq("learner", learner).gte("created_at", from.toISOString()).order("created_at").range(a, b),
@@ -553,7 +588,10 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
   const diffOf = new Map<string, 1 | 2 | 3>();
   let dueCount = 0;
   let wrongCount = 0;
+  const scope = scopeOf(profile);
+  const kindCount = { exam: 0, expected: 0 };
   for (const it of items.data ?? []) {
+    kindCount[it.kind]++;
     diffOf.set(it.id, it.difficulty);
     const area = it.area ?? "미분류";
     const a = byArea.get(area) ?? { seen: 0, total: 0, sum: 0 };
@@ -568,8 +606,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
         ph.sum += p.mastery / 5;
         byPh.set(n, ph);
       }
-      if (p.dueOn && p.dueOn <= today) dueCount++;
-      if (p.lastResult === "wrong" || p.lastResult === "partial") wrongCount++;
+      if (inScope(it.kind, scope) && p.dueOn && p.dueOn <= today) dueCount++;
+      if (inScope(it.kind, scope) && (p.lastResult === "wrong" || p.lastResult === "partial")) wrongCount++;
     }
     byArea.set(area, a);
   }
@@ -602,6 +640,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     dueCount,
     wrongCount,
     bankSize: items.data?.length ?? 0,
+    scope,
+    kindCount,
     mastery: [...byArea.entries()].map(([name, v]) => ({ name, seen: v.seen, total: v.total, score: v.seen ? v.sum / v.seen : 0 })),
     philosophers: [...byPh.entries()]
       .map(([name, v]) => ({ name, seen: v.seen, score: v.sum / v.seen }))
