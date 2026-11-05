@@ -329,6 +329,18 @@ export interface BankStatus {
   needsAnalysis: { id: string; ref: string }[]; // 분석은 됐지만 요구 사항별 해설이 없음 → 재분석 필요
   changed: number; // 원본 분석 변경 (관리자 수정 문제)
   openReports: number;
+  /** 연도별 반영 현황 (최근 연도 먼저) */
+  years: YearCoverage[];
+}
+
+export interface YearCoverage {
+  year: number;
+  questions: number; // 등록된 문항
+  analyzed: number; // AI 분석 완료
+  ready: number; // 요구 사항별 해설이 있어 퀴즈로 만들 수 있는 문항
+  inBank: number; // 그중 문제은행에 들어간 문항
+  approved: number; // 공개된 퀴즈 문제 (기출 + 예상)
+  pending: number; // 승인 대기 퀴즈 문제
 }
 
 const refOf = (s: QuestionSummary) => `${s.exam.exam_year} ${s.exam.section ?? ""} ${s.label}번`.replace(/\s+/g, " ");
@@ -358,10 +370,32 @@ export async function getBankStatus(): Promise<BankStatus> {
   const withItems = analyses.filter((a) => Array.isArray(a.ie) && a.ie.length > 0).map((a) => a.question_id);
   const without = analyses.filter((a) => !(Array.isArray(a.ie) && a.ie.length > 0)).map((a) => a.question_id);
   const missing = withItems.filter((id) => !have.has(id));
-  const summaries = missing.length || without.length ? await listQuestionSummaries() : [];
+  const summaries = await listQuestionSummaries();
   const byId = new Map(summaries.map((s) => [s.id, s]));
   const refs = (ids: string[]) => ids.map((id) => byId.get(id)).filter((s): s is QuestionSummary => Boolean(s)).map((s) => ({ id: s.id, ref: refOf(s) }));
-  return { counts, total: items.length, unsynced: refs(missing), needsAnalysis: refs(without), changed, openReports: openReports ?? 0 };
+
+  const ready = new Set(withItems);
+  const analyzedIds = new Set(analyses.map((a) => a.question_id));
+  const year = new Map<number, YearCoverage>();
+  const row = (y: number) => {
+    if (!year.has(y)) year.set(y, { year: y, questions: 0, analyzed: 0, ready: 0, inBank: 0, approved: 0, pending: 0 });
+    return year.get(y)!;
+  };
+  for (const s of summaries) {
+    const r = row(s.exam.exam_year);
+    r.questions++;
+    if (analyzedIds.has(s.id)) r.analyzed++;
+    if (ready.has(s.id)) r.ready++;
+    if (have.has(s.id)) r.inBank++;
+  }
+  for (const it of items) {
+    const s = it.question_id ? byId.get(it.question_id) : undefined;
+    if (!s) continue;
+    if (it.status === "approved") row(s.exam.exam_year).approved++;
+    if (it.status === "pending") row(s.exam.exam_year).pending++;
+  }
+  const years = [...year.values()].sort((a, b) => b.year - a.year);
+  return { counts, total: items.length, unsynced: refs(missing), needsAnalysis: refs(without), changed, openReports: openReports ?? 0, years };
 }
 
 // ---------------------------------------------------------------------

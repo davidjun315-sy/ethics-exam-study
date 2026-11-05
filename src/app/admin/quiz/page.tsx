@@ -109,6 +109,46 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
           </section>
 
           <section className="card space-y-2 p-4">
+            <h2 className="text-[15px] font-bold">연도별 반영 현황</h2>
+            <p className="text-sm text-muted">
+              AI 분석을 저장하면 그 문항은 바로 문제은행에 들어갑니다 (그래서 동기화를 눌러도 &apos;새 문제 0&apos;일 수 있습니다).
+              새로 들어간 문제는 <b>승인 대기</b>로 들어오므로 문제 검수에서 승인해야 퀴즈에 나옵니다.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm tabular-nums">
+                <thead className="text-left text-muted">
+                  <tr>
+                    <th className="py-1">연도</th><th>문항</th><th>AI 분석</th><th>퀴즈로 만들 수 있음</th><th>문제은행 반영</th><th>공개 문제</th><th>승인 대기</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.status.years.map((y) => {
+                    const gap = y.ready - y.inBank;
+                    return (
+                      <tr key={y.year} className="border-t border-line">
+                        <td className="py-1.5 font-semibold">{y.year}</td>
+                        <td>{y.questions}</td>
+                        <td className={y.analyzed < y.questions ? "text-warn" : ""}>{y.analyzed}{y.analyzed < y.questions ? ` (분석 전 ${y.questions - y.analyzed})` : ""}</td>
+                        <td>{y.ready}{y.analyzed > y.ready ? <span className="text-faint"> (해설 없음 {y.analyzed - y.ready})</span> : null}</td>
+                        <td className={gap > 0 ? "font-semibold text-danger" : "text-ok"}>{y.inBank}{gap > 0 ? ` (빠짐 ${gap})` : " ✓"}</td>
+                        <td>{y.approved}</td>
+                        <td>
+                          {y.pending > 0 ? (
+                            <Link href="/admin/quiz?tab=items&status=pending" className="font-semibold text-warn underline">{y.pending}</Link>
+                          ) : (
+                            0
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {data.status.years.length === 0 && <p className="text-sm text-faint">등록된 기출이 없습니다.</p>}
+          </section>
+
+          <section className="card space-y-2 p-4">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-[15px] font-bold">서술형 AI 첨삭</h2>
               {isGeminiConfigured() ? (
