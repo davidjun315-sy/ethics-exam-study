@@ -4,6 +4,7 @@ import { CHALLENGES, checkpoints, missionStatus, type ChallengeType } from "@/li
 import { SCOPE_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
 import { Bar, CheckpointTrack, ComboChip } from "./GameBits";
 import { ScopePicker } from "./ScopePicker";
+import { MyPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
 
 function Flame({ on }: { on: boolean }) {
   return (
@@ -34,7 +35,7 @@ function Fold({ title, summary, children, id }: { title: string; summary: React.
  * 윤리 퀴즈 홈. 순서: 프로필 → 오늘의 미션 → 실전 도전 → 자유 학습·오답 복습 → 성장 요약 → 숙련도 → 달력·배지 → 출제 범위
  * 게임 지표(체크포인트·콤보)와 실제 학습 지표(정답률·고난도 정답·숙련도)를 구분해서 보여 준다.
  */
-export function QuizHome({ d }: { d: Dashboard }) {
+export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSummary | null }) {
   const { level, today, todayStats: ts, week } = d;
   const xp = d.profile?.xp ?? 0;
   const lvProgress = (xp - level.current) / (level.next - level.current);
@@ -59,10 +60,8 @@ export function QuizHome({ d }: { d: Dashboard }) {
     revenge: { count: d.challenges.revenge, note: d.challenges.revenge ? `재도전할 문제 ${d.challenges.revenge}개` : "" },
   };
 
-  return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      {/* 1. 프로필 요약 */}
-      <section className="card flex flex-wrap items-center gap-x-6 gap-y-3 p-4">
+  const profile = (
+    <>
         <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-navy/30 bg-navy-soft">
           <span className="text-[9px] font-semibold uppercase tracking-wider text-navy/80">Lv</span>
           <span className="-mt-1 text-xl font-bold leading-none text-navy">{level.level}</span>
@@ -84,7 +83,19 @@ export function QuizHome({ d }: { d: Dashboard }) {
         <a href="#settings" className="rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy">
           {SCOPE_NAMES[d.scope]}
         </a>
-      </section>
+      </>
+  );
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      {/* 1. 나의 철학자 (대표 카드) + 프로필 요약 */}
+      {game ? (
+        <MyPhilosopher game={game}>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">{profile}</div>
+        </MyPhilosopher>
+      ) : (
+        <section className="card flex flex-wrap items-center gap-x-6 gap-y-3 p-4">{profile}</section>
+      )}
 
       {/* 2. 오늘의 미션 (메인) */}
       <section className={`card overflow-hidden ${today.completed ? "border-ok/50" : "border-navy/40"}`}>

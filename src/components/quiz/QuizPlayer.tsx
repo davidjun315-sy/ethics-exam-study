@@ -540,13 +540,19 @@ function OutcomePanel({ r, auto, prevCombo, cp, children }: { r: AttemptResult; 
         <span className="ml-auto flex items-center gap-2">
           {r.result === "correct" && <ComboChip count={r.combo} animate />}
           {r.xp > 0 && <span className="text-sm font-semibold tabular-nums text-warn">+{r.xp} XP</span>}
+          {r.coins > 0 && (
+            <span className="quiz-pop inline-flex items-center gap-1 rounded-full border border-warn/40 bg-warn-soft px-2 py-0.5 text-xs font-bold tabular-nums text-warn" title="철학자 대난투 코인">
+              +{r.coins} 코인
+            </span>
+          )}
         </span>
       </div>
       {hint && <p className="mt-1 text-sm text-muted">{hint}</p>}
       <p className="mt-1 text-xs text-faint">
         {r.hardBonus > 0 && `난이도 '상' 보너스 +${r.hardBonus} 포함. `}
         {r.xp === 0 && "오늘 이미 경험치를 받은 문제라 기록만 남깁니다. "}
-        {r.result !== "correct" && prevCombo >= 2 && `콤보 ×${prevCombo}는 여기서 멈추지만 경험치와 학습 기록은 그대로입니다.`}
+        {r.result !== "correct" && prevCombo >= 2 && `콤보 ×${prevCombo}는 여기서 멈추지만 경험치와 학습 기록은 그대로입니다. `}
+        {r.coinNote && `코인: ${r.coinNote}.`}
       </p>
       {children}
       {cp && <div className="mt-3"><CheckpointRibbon cp={cp} /></div>}
@@ -588,6 +594,7 @@ function Finished({
   const growth = new Map<string, number>();
   for (const r of log) if (r.area && r.masteryAfter > r.masteryBefore) growth.set(r.area, (growth.get(r.area) ?? 0) + (r.masteryAfter - r.masteryBefore));
   const levelUp = log.reduce<number | null>((m, r) => (r.levelUp ? Math.max(m ?? 0, r.levelUp) : m), null);
+  const coins = log.reduce((n, r) => n + (r.coins ?? 0), 0);
   const title = challenge ? `${CHALLENGES[challenge].title} 완료` : mode === "daily" ? (finish ? "오늘의 미션 완수" : "미션 완료") : "학습 완료";
   return (
     <div className="mx-auto max-w-md space-y-4 py-6">
@@ -623,6 +630,12 @@ function Finished({
         <ul className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
           <li className="flex justify-between"><span className="text-muted">획득 경험치</span><b className="tabular-nums text-warn">+{tally.xp} XP</b></li>
           {hardXp > 0 && <li className="flex justify-between text-xs"><span className="text-faint">└ 난이도 &apos;상&apos; 보너스</span><span className="tabular-nums text-faint">+{hardXp}</span></li>}
+          {coins > 0 && (
+            <li className="flex justify-between">
+              <span className="text-muted">철학자 대난투 코인</span>
+              <Link href="/quiz/game" className="font-bold tabular-nums text-warn hover:underline">+{coins} 코인 →</Link>
+            </li>
+          )}
           {hardCorrect > 0 && <li className="flex justify-between"><span className="text-muted">난이도 &apos;상&apos; 정답</span><b className="tabular-nums">{hardCorrect}문제</b></li>}
           {reconquered > 0 && <li className="flex justify-between"><span className="text-muted">재정복 (틀렸던 문제를 맞힘)</span><b className="tabular-nums text-ok">{reconquered}문제</b></li>}
           {best >= 2 && <li className="flex justify-between"><span className="text-muted">최고 콤보</span><span className="flex items-center gap-2"><ComboChip count={best} /></span></li>}

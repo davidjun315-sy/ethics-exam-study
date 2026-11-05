@@ -29,6 +29,7 @@ export default async function AdminHome() {
           <>
             <Link href="/admin/upload" className="btn-primary">PDF 업로드</Link>
             <Link href="/admin/quiz" className="btn">윤리 퀴즈 관리</Link>
+            <Link href="/admin/game" className="btn">철학자 카드 관리</Link>
             <Link href="/admin/texts" className="btn">원문 텍스트 편집</Link>
             <Link href="/admin/export" className="btn">분석 자료 내보내기</Link>
             <Link href="/admin/philosophers" className="btn">사상가 페이지 편집</Link>

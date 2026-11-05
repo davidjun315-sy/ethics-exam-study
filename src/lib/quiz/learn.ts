@@ -9,6 +9,7 @@ import { getQuizSettings, quizError, type QuizItemRow } from "./bank.ts";
 import { isCorrectFill } from "./grade.ts";
 import { fetchAll } from "./paged.ts";
 import { focusRequirement } from "./split.ts";
+import { grantQuizCoins } from "@/lib/game/data";
 import type { EssayContext } from "./essay.ts";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
@@ -463,6 +464,9 @@ export interface AttemptResult {
   masteryBefore: number;
   masteryAfter: number;
   difficulty: 1 | 2 | 3;
+  /** 철학자 대난투 코인 (학습 보상, 게임 테이블이 없으면 0) */
+  coins: number;
+  coinNote: string;
 }
 
 function toState(raw: Record<string, unknown> | undefined): ProgressState {
@@ -525,16 +529,20 @@ export async function recordAttempt(
     { onConflict: "learner,item_id" },
   );
   if (e1) throw quizError(e1.message);
-  await db.from("quiz_attempts").insert({
-    learner,
-    item_id: it.id,
-    mode: input.mode,
-    result,
-    graded_by: gradedBy,
-    answer_text: input.answer?.slice(0, 5000) ?? null,
-    xp,
-    day: today,
-  });
+  const { data: attemptRow } = await db
+    .from("quiz_attempts")
+    .insert({
+      learner,
+      item_id: it.id,
+      mode: input.mode,
+      result,
+      graded_by: gradedBy,
+      answer_text: input.answer?.slice(0, 5000) ?? null,
+      xp,
+      day: today,
+    })
+    .select("id")
+    .single();
 
   // 일일 미션 진행
   let missionCompleted = false;
@@ -593,6 +601,19 @@ export async function recordAttempt(
   // 콤보: 오늘의 최종 판정 순서 (방금 기록 포함)
   const { data: todays } = await db.from("quiz_attempts").select("result").eq("learner", learner).eq("day", today).order("created_at").limit(1000);
   const seq = ((todays ?? []) as { result: QuizResult }[]).map((r) => r.result);
+  // 코인: 이 풀이 기록 id 로 한 번만 (같은 요청이 다시 와도 중복 지급 없음)
+  const coin = attemptRow
+    ? await grantQuizCoins(learner, {
+        attemptId: attemptRow.id as string,
+        format: it.format,
+        selfGraded: gradedBy === "self",
+        result,
+        answerLength: (input.answer ?? "").trim().length,
+        xpAwarded: xp > 0,
+        reconquered: isReconquest(prev.lastResult, result),
+        missionDay: missionCompleted ? today : null,
+      })
+    : { coins: 0, note: "" };
   return {
     result,
     gradedBy,
@@ -611,6 +632,8 @@ export async function recordAttempt(
     masteryBefore: prev.mastery,
     masteryAfter: next.mastery,
     difficulty: it.difficulty,
+    coins: coin.coins,
+    coinNote: coin.note,
   };
 }
 

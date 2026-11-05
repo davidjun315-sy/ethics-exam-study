@@ -3,6 +3,7 @@ import { DataError, load } from "@/components/DataError";
 import { QuizHome } from "@/components/quiz/QuizHome";
 import { ScopePicker } from "@/components/quiz/ScopePicker";
 import { currentLearner, getDashboard } from "@/lib/quiz/learn";
+import { getFeatured } from "@/lib/game/data";
 
 export const metadata = { title: "윤리 퀴즈" };
 
@@ -25,7 +26,7 @@ export default async function QuizPage() {
       </div>
     );
   }
-  const { data, error } = await load(() => getDashboard(learner));
+  const [{ data, error }, game] = await Promise.all([load(() => getDashboard(learner)), getFeatured(learner)]);
   if (error || !data) return <DataError error={error} />;
   return (
     <div className="space-y-4">
@@ -40,7 +41,7 @@ export default async function QuizPage() {
           <ScopePicker current={null} counts={data.kindCount} />
         </section>
       ) : (
-        <QuizHome d={data} />
+        <QuizHome d={data} game={game} />
       )}
     </div>
   );
