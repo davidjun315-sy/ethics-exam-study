@@ -7,10 +7,11 @@ import { quizApi } from "@/lib/quiz/client";
 import type { QuizResult } from "@/lib/quiz/srs";
 import type { EssayGrading } from "@/lib/quiz/essay";
 import { ChatGrader, EssayFeedback } from "./EssayFeedback";
+import { CHALLENGES, checkpointReached, missionStatus, type ChallengeType, type Checkpoint } from "@/lib/quiz/game";
+import { Celebration, CheckpointRibbon, CheckpointTrack, ComboChip } from "./GameBits";
 import { SolutionView } from "./SolutionView";
 
 type Mode = Session["mode"];
-const RESULT_LABEL: Record<QuizResult, string> = { correct: "정답", partial: "일부만 맞힘", wrong: "오답" };
 const SELF: { value: QuizResult; title: string; help: string; tone: string }[] = [
   { value: "correct", title: "완벽하게 맞힘", help: "핵심 채점 요소를 모두 알고 있었음", tone: "border-ok/50 hover:bg-ok-soft" },
   { value: "partial", title: "일부만 맞힘", help: "일부 개념이나 핵심 요소가 부족했음", tone: "border-warn/50 hover:bg-warn-soft" },
@@ -37,7 +38,7 @@ function Passage({ text, label }: { text: string; label: string }) {
   );
 }
 
-export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) {
+export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: Filters; challenge?: ChallengeType }) {
   const [session, setSession] = useState<Session | null>(null);
   const [index, setIndex] = useState(0);
   const [view, setView] = useState<ItemView | null>(null);
@@ -53,11 +54,18 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
   const [chatOpen, setChatOpen] = useState(false);
   const [tally, setTally] = useState({ correct: 0, partial: 0, wrong: 0, xp: 0 });
   const [finish, setFinish] = useState<AttemptResult | null>(null);
+  // 이번 세션의 풀이 결과 (완료 화면의 성과 요약용)
+  const [log, setLog] = useState<AttemptResult[]>([]);
+  const [combo, setCombo] = useState(0);
+  const [cpNow, setCpNow] = useState<Checkpoint | null>(null);
+  const [celebrate, setCelebrate] = useState<{ title: string; lines: string[] } | null>(null);
+  const [exitOpen, setExitOpen] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   // 세션 시작 (오늘의 미션은 이어 풀기)
   useEffect(() => {
-    quizApi<Session>("/api/quiz/session", "POST", { mode, filters })
+    quizApi<Session>("/api/quiz/session", "POST", { mode, filters, challenge })
       .then((s) => {
         setSession(s);
         const first = s.itemIds.findIndex((id) => !s.results[id]);
@@ -96,9 +104,26 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
   function applyOutcome(r: AttemptResult) {
     setOutcome(r);
     setTally((t) => ({ ...t, [r.result]: t[r.result] + 1, xp: t.xp + r.xp + r.missionXp }));
+    setLog((l) => [...l, r]);
+    setCombo(r.combo);
+    // 오늘의 미션: 체크포인트 달성 (10문제 완료 보상은 기존 규칙 그대로)
+    if (mode === "daily" && session) {
+      const before = session.itemIds.filter((id) => session.results[id]).length;
+      setCpNow(checkpointReached(before, before + 1, session.itemIds.length));
+    }
     setSession((s) => (s ? { ...s, results: { ...s.results, [itemId!]: r.result } } : s));
     if (r.missionCompleted) setFinish(r);
+    // 레벨업 · 새 배지: 문제를 끝낸 뒤에만 축하 화면
+    const lines: string[] = [];
+    if (r.levelUp) lines.push(`레벨 ${r.levelUp}에 올랐습니다. 누적 ${r.profile.xp} XP`);
+    for (const b of r.newBadges) lines.push(`새 배지: ${b.replace("streak-", "")}일 연속 학습`);
+    if (lines.length) setCelebrate({ title: r.levelUp ? `Lv.${r.levelUp} 달성!` : "새 배지 획득!", lines });
   }
+
+  // 한 문제를 끝내면 '다음 문제' 버튼에 초점 (Enter 로 바로 넘어가기). 축하·나가기 창이 열려 있으면 그 창이 먼저
+  useEffect(() => {
+    if (outcome && !celebrate && !exitOpen) nextRef.current?.focus({ preventScroll: true });
+  }, [outcome, celebrate, exitOpen]);
 
   // 기입형: 서버 채점 + 해설
   async function submitFill() {
@@ -198,6 +223,7 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
     setReported(false);
     setGrading(null);
     setChatOpen(false);
+    setCpNow(null);
     setError(null);
     setIndex((i) => i + 1);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -209,29 +235,50 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
   if (session.itemIds.length === 0)
     return (
       <div className="mx-auto max-w-xl py-12 text-center">
-        <p className="text-muted">{mode === "review" ? "다시 볼 오답이 없습니다." : "조건에 맞는 공개 문제가 없습니다."}</p>
+        <p className="text-muted">
+          {challenge === "revenge" || mode === "review"
+            ? "다시 도전할 오답이 없습니다. 지금까지 틀린 문제를 모두 정복했어요."
+            : challenge
+              ? "출제 범위 안에 이 도전에 맞는 공개 문제가 아직 없습니다. 퀴즈 홈에서 출제 범위를 바꾸거나 관리자 화면에서 문제를 승인해 주세요."
+              : "조건에 맞는 공개 문제가 없습니다."}
+        </p>
         <Link href="/quiz" className="btn mt-4 inline-block">퀴즈 홈</Link>
       </div>
     );
-  if (index >= total) return <Finished mode={mode} session={session} tally={tally} finish={finish} />;
+  if (index >= total) return <Finished mode={mode} challenge={challenge} session={session} tally={tally} finish={finish} log={log} />;
 
   const isFill = view?.format === "fill";
   const auto = view?.grading === "auto";
   const lastStep = index === total - 1;
+  const status = mode === "daily" ? missionStatus(done, total) : null;
+  const prevCombo = log.length >= 2 ? log[log.length - 2].combo : 0;
 
   return (
     <div ref={topRef} className="mx-auto max-w-2xl scroll-mt-16 pb-24">
-      {/* 진행률 */}
-      <div className="sticky top-14 z-10 -mx-4 mb-4 bg-bg/95 px-4 py-3 backdrop-blur">
+      {/* 진행률 · 콤보 · 경험치 */}
+      <div className="sticky top-14 z-10 -mx-4 mb-4 bg-bg/95 px-4 pb-2 pt-3 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Link href="/quiz" className="text-xl leading-none text-faint hover:text-ink" aria-label="그만 풀기">×</Link>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-            <div className="h-full rounded-full bg-navy transition-[width] duration-300" style={{ width: `${(done / total) * 100}%` }} />
+          <button type="button" onClick={() => setExitOpen(true)} className="text-xl leading-none text-faint hover:text-ink" aria-label="그만 풀기">×</button>
+          <div className="flex-1">
+            {mode === "daily" ? (
+              <CheckpointTrack done={done} total={total} labels={false} size="sm" />
+            ) : (
+              <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+                <div className="h-full rounded-full bg-navy transition-[width] duration-300" style={{ width: `${(done / total) * 100}%` }} />
+              </div>
+            )}
           </div>
-          <span className="text-sm tabular-nums text-muted">{index + 1}/{total}</span>
-          {tally.xp > 0 && <span className="text-sm font-semibold text-warn">+{tally.xp} XP</span>}
+          <span className="text-sm tabular-nums text-muted">{Math.min(index + 1, total)}/{total}</span>
+          {tally.xp > 0 && <span className="text-sm font-semibold tabular-nums text-warn">+{tally.xp} XP</span>}
+        </div>
+        <div className="mt-1.5 flex min-h-5 items-center gap-2 pl-7 text-[11px] text-muted">
+          {challenge ? <span className="font-semibold text-navy">{CHALLENGES[challenge].title}</span> : status && !status.completed && status.next ? <span>다음 목표 &apos;{status.next.title}&apos;까지 {status.remaining}문제</span> : null}
+          <span className="ml-auto">
+            <ComboChip count={combo} animate />
+          </span>
         </div>
       </div>
+      {session.notice && index === 0 && !outcome && <p className="mb-3 rounded-lg bg-surface-2 p-2.5 text-xs text-muted">{session.notice}</p>}
 
       {!view ? (
         error ? (
@@ -354,11 +401,7 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
             <div className="space-y-4">
               {/* 채점 결과 (자동 채점) */}
               {auto && outcome && (
-                <section className={`rounded-lg p-4 ${outcome.result === "correct" ? "bg-ok-soft" : "bg-danger-soft"}`}>
-                  <div className={`text-lg font-bold ${outcome.result === "correct" ? "text-ok" : "text-danger"}`}>
-                    {outcome.result === "correct" ? "정답입니다" : "오답입니다"}
-                    {outcome.xp > 0 && <span className="ml-2 text-sm font-semibold text-warn">+{outcome.xp} XP</span>}
-                  </div>
+                <OutcomePanel r={outcome} auto prevCombo={prevCombo} cp={cpNow}>
                   <p className="mt-1 text-sm">
                     내 답: <b>{answer}</b>
                   </p>
@@ -375,7 +418,7 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
                     </button>
                   )}
                   {reported && <p className="mt-2 text-xs text-muted">검수 요청을 보냈습니다. 관리자가 확인하면 다음부터 정답으로 인정됩니다.</p>}
-                </section>
+                </OutcomePanel>
               )}
 
               {/* 서술형: 내가 쓴 답안 + AI 첨삭 */}
@@ -417,17 +460,12 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
                   </div>
                 </section>
               )}
-              {!auto && outcome && (
-                <p className="text-center text-sm text-muted">
-                  자기평가: <b>{RESULT_LABEL[outcome.result]}</b>
-                  {outcome.xp > 0 && <span className="ml-1 font-semibold text-warn">+{outcome.xp} XP</span>}
-                </p>
-              )}
+              {!auto && outcome && <OutcomePanel r={outcome} auto={false} prevCombo={prevCombo} cp={cpNow} />}
 
               {outcome && (
-                <div className="sticky bottom-3 z-10">
-                  <button className="btn-primary w-full py-3 text-base font-semibold shadow-lg" onClick={next}>
-                    {lastStep ? "결과 보기" : "다음 문제"}
+                <div className="quiz-rise sticky bottom-3 z-10">
+                  <button ref={nextRef} className="btn-primary quiz-nudge w-full py-3.5 text-base font-semibold shadow-lg focus-visible:ring-4 focus-visible:ring-navy/30" onClick={next}>
+                    {lastStep ? "결과 보기" : "다음 문제 →"}
                   </button>
                 </div>
               )}
@@ -436,7 +474,83 @@ export function QuizPlayer({ mode, filters }: { mode: Mode; filters: Filters }) 
           {error && <ErrorBox message={error} />}
         </article>
       )}
+      {celebrate && <Celebration title={celebrate.title} lines={celebrate.lines} onClose={() => setCelebrate(null)} />}
+      {exitOpen && <ExitDialog mode={mode} done={done} total={total} solved={log.length} onStay={() => setExitOpen(false)} />}
     </div>
+  );
+}
+
+/** 그만 풀기: 진행이 저장되었음을 분명히 알려 준다 */
+function ExitDialog({ mode, done, total, solved, onStay }: { mode: Mode; done: number; total: number; solved: number; onStay: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="exit-title" onClick={onStay}>
+      <div className="quiz-rise w-full max-w-sm rounded-2xl border border-line bg-surface p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 id="exit-title" className="text-lg font-bold">
+          {mode === "daily" ? "진행 상황이 저장되었습니다" : "푼 문제는 저장되었습니다"}
+        </h2>
+        <p className="mt-1 text-sm text-muted">
+          {mode === "daily"
+            ? `오늘의 미션 ${done}/${total} — 퀴즈 홈에서 언제든 이어 풀 수 있어요. 한국 시간 자정까지 끝내면 연속 학습이 이어집니다.`
+            : `이번에 푼 ${solved}문제의 결과와 경험치는 기록되었습니다. 남은 문제는 다음에 새로 골라 드립니다.`}
+        </p>
+        {mode === "daily" && <div className="mt-4"><CheckpointTrack done={done} total={total} /></div>}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button type="button" className="btn py-2.5" onClick={onStay}>계속 풀기</button>
+          <Link href="/quiz" className="btn-primary py-2.5">나가기</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 판정 결과: 정답은 짧은 성공 연출, 오답·부분 정답은 과장 없이 다음 행동(해설 확인·복습)으로 안내.
+ * 서술형은 학습자의 최종 자기평가가 판정이다 (AI 제안과 구분).
+ */
+function OutcomePanel({ r, auto, prevCombo, cp, children }: { r: AttemptResult; auto: boolean; prevCombo: number; cp: Checkpoint | null; children?: React.ReactNode }) {
+  const tone = r.result === "correct" ? "border-ok/40 bg-ok-soft" : r.result === "partial" ? "border-warn/40 bg-warn-soft/60" : "border-line bg-surface-2";
+  const title =
+    r.result === "correct"
+      ? auto
+        ? "정답입니다"
+        : "정답으로 확정했습니다"
+      : r.result === "partial"
+        ? "일부만 맞힘으로 기록했습니다"
+        : auto
+          ? "이번엔 놓쳤어요"
+          : "다시 볼 문제로 기록했습니다";
+  const hint =
+    r.result === "correct"
+      ? r.reconquered
+        ? "지난번에 놓친 문제를 이번엔 정확히 맞혔습니다."
+        : null
+      : r.result === "partial"
+        ? "해설에서 빠진 채점 요소를 확인하세요. 이틀 뒤 복습에 다시 나옵니다."
+        : "해설을 읽어 두면 다음 학습에서 다시 만날 때 맞힐 수 있어요.";
+  return (
+    <section className={`quiz-rise rounded-lg border p-4 ${tone}`} aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2">
+        {r.result === "correct" && (
+          <span className="quiz-pop quiz-ring flex h-7 w-7 items-center justify-center rounded-full bg-ok text-sm font-bold text-white dark:text-[#0f141c]" aria-hidden>
+            ✓
+          </span>
+        )}
+        <span className={`text-lg font-bold ${r.result === "correct" ? "text-ok" : r.result === "partial" ? "text-warn" : "text-ink"}`}>{title}</span>
+        {r.reconquered && <span className="quiz-pop rounded-full bg-ok px-2 py-0.5 text-xs font-bold text-white dark:text-[#0f141c]">재정복 성공</span>}
+        <span className="ml-auto flex items-center gap-2">
+          {r.result === "correct" && <ComboChip count={r.combo} animate />}
+          {r.xp > 0 && <span className="text-sm font-semibold tabular-nums text-warn">+{r.xp} XP</span>}
+        </span>
+      </div>
+      {hint && <p className="mt-1 text-sm text-muted">{hint}</p>}
+      <p className="mt-1 text-xs text-faint">
+        {r.hardBonus > 0 && `난이도 '상' 보너스 +${r.hardBonus} 포함. `}
+        {r.xp === 0 && "오늘 이미 경험치를 받은 문제라 기록만 남깁니다. "}
+        {r.result !== "correct" && prevCombo >= 2 && `콤보 ×${prevCombo}는 여기서 멈추지만 경험치와 학습 기록은 그대로입니다.`}
+      </p>
+      {children}
+      {cp && <div className="mt-3"><CheckpointRibbon cp={cp} /></div>}
+    </section>
   );
 }
 
@@ -444,33 +558,94 @@ function ErrorBox({ message }: { message: string }) {
   return <p className="rounded bg-danger-soft p-3 text-sm text-danger">{message}</p>;
 }
 
-function Finished({ mode, session, tally, finish }: { mode: Mode; session: Session; tally: { correct: number; partial: number; wrong: number; xp: number }; finish: AttemptResult | null }) {
+function Finished({
+  mode,
+  challenge,
+  session,
+  tally,
+  finish,
+  log,
+}: {
+  mode: Mode;
+  challenge?: ChallengeType;
+  session: Session;
+  tally: { correct: number; partial: number; wrong: number; xp: number };
+  finish: AttemptResult | null;
+  log: AttemptResult[];
+}) {
   const results = Object.values(session.results);
   const count = (r: QuizResult) => results.filter((x) => x === r).length;
+  // 이번 세션 성과 (게임 지표와 실제 학습 지표를 나눠서)
+  const reconquered = log.filter((r) => r.reconquered).length;
+  const hardCorrect = log.filter((r) => r.result === "correct" && r.difficulty === 3).length;
+  const hardXp = log.reduce((n, r) => n + r.hardBonus, 0);
+  let best = 0;
+  let cur = 0;
+  for (const r of log) {
+    cur = r.result === "correct" ? cur + 1 : 0;
+    best = Math.max(best, cur);
+  }
+  const growth = new Map<string, number>();
+  for (const r of log) if (r.area && r.masteryAfter > r.masteryBefore) growth.set(r.area, (growth.get(r.area) ?? 0) + (r.masteryAfter - r.masteryBefore));
+  const levelUp = log.reduce<number | null>((m, r) => (r.levelUp ? Math.max(m ?? 0, r.levelUp) : m), null);
+  const title = challenge ? `${CHALLENGES[challenge].title} 완료` : mode === "daily" ? (finish ? "오늘의 미션 완수" : "미션 완료") : "학습 완료";
   return (
-    <div className="mx-auto max-w-md space-y-4 py-8 text-center">
-      <div className="text-5xl font-bold text-navy">{mode === "daily" ? "미션 완료" : "학습 완료"}</div>
-      {mode === "daily" && finish && (
-        <p className="text-muted">
-          연속 학습 <b className="text-warn">{finish.streak}일</b> · 미션 보너스 <b className="text-warn">+{finish.missionXp} XP</b>
-        </p>
-      )}
-      {finish?.newBadges.map((b) => (
-        <p key={b} className="rounded-lg bg-warn-soft p-3 font-semibold text-warn">
-          새 배지: {b.replace("streak-", "")}일 연속 학습
-        </p>
-      ))}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="card p-3"><div className="text-2xl font-bold text-ok">{count("correct")}</div><div className="text-xs text-muted">정답</div></div>
-        <div className="card p-3"><div className="text-2xl font-bold text-warn">{count("partial")}</div><div className="text-xs text-muted">일부만</div></div>
-        <div className="card p-3"><div className="text-2xl font-bold text-danger">{count("wrong")}</div><div className="text-xs text-muted">오답</div></div>
+    <div className="mx-auto max-w-md space-y-4 py-6">
+      <div className="quiz-rise text-center">
+        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-ok-soft text-2xl font-bold text-ok quiz-pop">✓</div>
+        <h1 className="text-3xl font-bold text-navy">{title}</h1>
+        {mode === "daily" && finish && (
+          <p className="mt-1 text-muted">
+            연속 학습 <b className="text-warn">{finish.streak}일</b> · 미션 보너스 <b className="text-warn">+{finish.missionXp} XP</b>
+          </p>
+        )}
+        {mode === "daily" && !finish && results.length === session.itemIds.length && <p className="mt-1 text-sm text-muted">오늘 미션은 이미 완료했습니다.</p>}
       </div>
-      {tally.xp > 0 && <p className="text-lg font-semibold text-warn">이번에 +{tally.xp} XP</p>}
-      {mode === "daily" && !finish && results.length === session.itemIds.length && <p className="text-sm text-muted">오늘 미션은 이미 완료했습니다.</p>}
+
+      {(levelUp !== null || (finish?.newBadges.length ?? 0) > 0) && (
+        <div className="space-y-2">
+          {levelUp && <p className="quiz-rise rounded-lg border border-warn/40 bg-warn-soft p-3 text-center font-semibold text-warn">레벨 업! 이제 Lv.{levelUp}입니다</p>}
+          {finish?.newBadges.map((b) => (
+            <p key={b} className="quiz-rise rounded-lg border border-warn/40 bg-warn-soft p-3 text-center font-semibold text-warn">
+              새 배지: {b.replace("streak-", "")}일 연속 학습
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* 학습 결과 */}
+      <section className="card p-4">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div><div className="text-2xl font-bold text-ok">{count("correct")}</div><div className="text-xs text-muted">정답</div></div>
+          <div><div className="text-2xl font-bold text-warn">{count("partial")}</div><div className="text-xs text-muted">일부만</div></div>
+          <div><div className="text-2xl font-bold text-danger">{count("wrong")}</div><div className="text-xs text-muted">오답</div></div>
+        </div>
+        <ul className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
+          <li className="flex justify-between"><span className="text-muted">획득 경험치</span><b className="tabular-nums text-warn">+{tally.xp} XP</b></li>
+          {hardXp > 0 && <li className="flex justify-between text-xs"><span className="text-faint">└ 난이도 &apos;상&apos; 보너스</span><span className="tabular-nums text-faint">+{hardXp}</span></li>}
+          {hardCorrect > 0 && <li className="flex justify-between"><span className="text-muted">난이도 &apos;상&apos; 정답</span><b className="tabular-nums">{hardCorrect}문제</b></li>}
+          {reconquered > 0 && <li className="flex justify-between"><span className="text-muted">재정복 (틀렸던 문제를 맞힘)</span><b className="tabular-nums text-ok">{reconquered}문제</b></li>}
+          {best >= 2 && <li className="flex justify-between"><span className="text-muted">최고 콤보</span><span className="flex items-center gap-2"><ComboChip count={best} /></span></li>}
+        </ul>
+      </section>
+
+      {growth.size > 0 && (
+        <section className="card p-4">
+          <h2 className="mb-1 text-sm font-bold">성장한 영역</h2>
+          <ul className="space-y-0.5 text-sm">
+            {[...growth.entries()].sort((a, b) => b[1] - a[1]).map(([area, n]) => (
+              <li key={area}>
+                <b>{area}</b> <span className="text-muted">숙련도 단계 +{n}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="flex flex-col gap-2">
         <Link href="/quiz" className="btn-primary py-3">퀴즈 홈</Link>
+        {count("wrong") + count("partial") > 0 && challenge !== "revenge" && <Link href="/quiz/play?challenge=revenge" className="btn py-3">오답 복수전으로 바로 재도전</Link>}
         <Link href="/quiz/free" className="btn py-3">자유 학습 더 하기</Link>
-        {count("wrong") + count("partial") > 0 && <Link href="/quiz/play?mode=review" className="btn py-3">틀린 문제 다시 풀기</Link>}
       </div>
     </div>
   );

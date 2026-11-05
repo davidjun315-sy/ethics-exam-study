@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Dashboard } from "@/lib/quiz/learn";
+import { CHALLENGES, checkpoints, missionStatus, type ChallengeType } from "@/lib/quiz/game";
 import { SCOPE_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
+import { Bar, CheckpointTrack, ComboChip } from "./GameBits";
 import { ScopePicker } from "./ScopePicker";
 
 function Flame({ on }: { on: boolean }) {
@@ -11,92 +13,167 @@ function Flame({ on }: { on: boolean }) {
   );
 }
 
-function Bar({ value, tone = "navy" }: { value: number; tone?: "navy" | "ok" | "warn" }) {
-  const color = { navy: "bg-navy", ok: "bg-ok", warn: "bg-warn" }[tone];
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const pct = (v: number | null) => (v === null ? "-" : `${Math.round(v * 100)}%`);
+
+/** 접기/펼치기 카드 (숙련도·달력처럼 자주 보지 않는 정보) */
+function Fold({ title, summary, children, id }: { title: string; summary: React.ReactNode; children: React.ReactNode; id?: string }) {
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
-      <div className={`h-full rounded-full ${color} transition-[width]`} style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` }} />
-    </div>
+    <details id={id} className="card group">
+      <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
+        <span className="text-[15px] font-bold">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
+        <span className="text-faint transition-transform group-open:rotate-90" aria-hidden>›</span>
+      </summary>
+      <div className="border-t border-line p-4">{children}</div>
+    </details>
   );
 }
 
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
+/**
+ * 윤리 퀴즈 홈. 순서: 프로필 → 오늘의 미션 → 실전 도전 → 자유 학습·오답 복습 → 성장 요약 → 숙련도 → 달력·배지 → 출제 범위
+ * 게임 지표(체크포인트·콤보)와 실제 학습 지표(정답률·고난도 정답·숙련도)를 구분해서 보여 준다.
+ */
 export function QuizHome({ d }: { d: Dashboard }) {
-  const { level, today } = d;
+  const { level, today, todayStats: ts, week } = d;
   const xp = d.profile?.xp ?? 0;
   const lvProgress = (xp - level.current) / (level.next - level.current);
-  const scopeLabel = SCOPE_NAMES[d.scope];
-  // 달력 첫 날의 요일 (날짜 문자열 기준이라 시간대와 무관)
+  const mission = missionStatus(today.done, today.size);
+  const cps = checkpoints(today.size);
   const [y, mo, da] = d.calendar[0].day.split("-").map(Number);
   const dow0 = new Date(Date.UTC(y, mo - 1, da)).getUTCDay();
+  const activeDays = d.calendar.filter((c) => c.answered > 0).length;
+  const badgeCount = STREAK_BADGES.filter((n) => d.profile?.badges.includes(`streak-${n}`)).length;
+  const topArea = [...d.mastery].filter((m) => m.seen).sort((a, b) => b.score - a.score)[0];
+  const missionLabel = today.completed ? "오늘의 미션 완수" : today.started && today.done > 0 ? "이어 풀기" : "오늘의 미션 시작";
 
-  const missionLabel = today.completed ? "오늘의 미션 완료" : today.started && today.done > 0 ? "이어 풀기" : "오늘의 미션 시작";
+  const challengeInfo: Record<ChallengeType, { count: number; note: string }> = {
+    decode: {
+      count: d.challenges.decode.hard + d.challenges.decode.mid,
+      note: d.challenges.decode.hard ? `'상' ${d.challenges.decode.hard}문제` : d.challenges.decode.mid ? `'상' 없음 · '중' ${d.challenges.decode.mid}문제로` : "",
+    },
+    essay: {
+      count: d.challenges.essay.hard + d.challenges.essay.mid,
+      note: d.challenges.essay.hard ? `'상' ${d.challenges.essay.hard}문제` : d.challenges.essay.mid ? `'상' 없음 · '중' ${d.challenges.essay.mid}문제로` : "",
+    },
+    revenge: { count: d.challenges.revenge, note: d.challenges.revenge ? `재도전할 문제 ${d.challenges.revenge}개` : "" },
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      {/* 레벨 · 연속 학습 */}
+      {/* 1. 프로필 요약 */}
       <section className="card flex flex-wrap items-center gap-x-6 gap-y-3 p-4">
-        <div className="min-w-[12rem] flex-1">
+        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-navy/30 bg-navy-soft">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-navy/80">Lv</span>
+          <span className="-mt-1 text-xl font-bold leading-none text-navy">{level.level}</span>
+        </div>
+        <div className="min-w-[10rem] flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-navy">Lv.{level.level}</span>
-            <span className="text-sm text-muted">{xp} XP</span>
-            <span className="ml-auto rounded bg-surface-2 px-2 py-0.5 text-xs text-muted">{scopeLabel}</span>
+            <span className="text-sm font-semibold tabular-nums">{xp} XP</span>
+            <span className="text-xs text-faint">다음 레벨까지 {level.next - xp}</span>
           </div>
-          <div className="mt-2">
-            <Bar value={lvProgress} />
-            <div className="mt-1 text-right text-[11px] text-faint">다음 레벨까지 {level.next - xp} XP</div>
-          </div>
+          <div className="mt-1.5"><Bar value={lvProgress} /></div>
         </div>
         <div className="flex items-center gap-2">
           <Flame on={d.streak > 0} />
           <div>
-            <div className="text-xl font-bold leading-none">{d.streak}일</div>
-            <div className="text-xs text-muted">연속 학습{d.profile?.best_streak ? ` · 최고 ${d.profile.best_streak}일` : ""}</div>
+            <div className="text-xl font-bold leading-none tabular-nums">{d.streak}일</div>
+            <div className="text-[11px] text-muted">연속 학습{d.profile?.best_streak ? ` · 최고 ${d.profile.best_streak}일` : ""}</div>
           </div>
+        </div>
+        <a href="#settings" className="rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy">
+          {SCOPE_NAMES[d.scope]}
+        </a>
+      </section>
+
+      {/* 2. 오늘의 미션 (메인) */}
+      <section className={`card overflow-hidden ${today.completed ? "border-ok/50" : "border-navy/40"}`}>
+        <div className={`px-5 pb-5 pt-4 ${today.completed ? "bg-ok-soft/50" : "bg-navy-soft/40"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-muted">오늘의 미션 · {today.size}문제</div>
+              <h2 className={`mt-0.5 text-xl font-bold ${today.completed ? "text-ok" : "text-navy"}`}>{mission.headline}</h2>
+              <p className="text-sm text-muted">{today.started || today.done ? mission.sub : "1문제만 풀어도 첫 도전 성공. 체크포인트를 하나씩 넘어 보세요."}</p>
+            </div>
+            <span className={`shrink-0 text-2xl font-bold tabular-nums ${today.completed ? "text-ok" : "text-navy"}`}>
+              {today.done}
+              <span className="text-base text-faint">/{today.size}</span>
+            </span>
+          </div>
+          <div className="mt-4">
+            <CheckpointTrack done={today.done} total={today.size} />
+          </div>
+          <ul className="flex flex-wrap gap-1.5 text-[11px]">
+            {cps.map((c) => (
+              <li key={c.at} className={`rounded-full border px-2 py-0.5 ${today.done >= c.at ? "border-navy/40 bg-surface font-semibold text-navy" : "border-line text-faint"}`}>
+                {today.done >= c.at ? "✓ " : ""}
+                {c.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="space-y-3 px-5 pb-5 pt-4">
+          {ts.answered > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <span className="text-muted">오늘의 성과</span>
+              <span><b className="tabular-nums">{ts.answered}</b>문제</span>
+              <span className="text-ok">정답 <b className="tabular-nums">{ts.correct}</b></span>
+              {ts.reconquered > 0 && <span className="text-ok">재정복 <b className="tabular-nums">{ts.reconquered}</b></span>}
+              {ts.hardCorrect > 0 && <span>&apos;상&apos; 정답 <b className="tabular-nums">{ts.hardCorrect}</b></span>}
+              <span className="font-semibold tabular-nums text-warn">+{ts.xp} XP</span>
+              {ts.bestCombo >= 2 && <span className="ml-auto"><ComboChip count={ts.bestCombo} /></span>}
+            </div>
+          )}
+          {d.bankSize === 0 ? (
+            <p className="rounded bg-surface-2 p-3 text-sm text-muted">아직 공개된 퀴즈 문제가 없습니다. 관리자 화면의 &apos;윤리 퀴즈 관리&apos;에서 문제은행을 동기화하고 승인하세요.</p>
+          ) : today.completed ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <a href="#challenges" className="btn-primary py-3 text-base font-semibold">실전 도전 이어 가기</a>
+              <Link href="/quiz/free" className="btn py-3">자유 학습</Link>
+            </div>
+          ) : (
+            <Link href="/quiz/play?mode=daily" className="btn-primary block w-full py-3.5 text-center text-base font-semibold">
+              {missionLabel}
+            </Link>
+          )}
         </div>
       </section>
 
-      {/* 오늘의 미션 */}
-      <section className={`card p-5 ${today.completed ? "border-ok/40" : "border-navy/30"}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-bold">오늘의 미션</h2>
-            <p className="text-sm text-muted">
-              {today.completed
-                ? "오늘 미션을 끝냈습니다. 내일도 이어서 풀어 보세요."
-                : today.started
-                  ? `${today.total}문제 중 ${today.done}문제를 풀었습니다.`
-                  : "기출 · 예상 문제 · 복습을 섞은 하루 분량"}
-            </p>
-          </div>
-          <span className={`text-2xl font-bold tabular-nums ${today.completed ? "text-ok" : "text-navy"}`}>
-            {today.started ? `${today.done}/${today.total}` : ""}
-          </span>
+      {/* 3. 오늘의 실전 도전 */}
+      <section id="challenges" className="scroll-mt-20">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-[15px] font-bold">오늘의 실전 도전</h2>
+          <span className="text-[11px] text-faint">{SCOPE_NAMES[d.scope]} 안에서 출제</span>
         </div>
-        {today.started && (
-          <div className="mt-3">
-            <Bar value={today.total ? today.done / today.total : 0} tone={today.completed ? "ok" : "navy"} />
-          </div>
-        )}
-        {d.bankSize === 0 ? (
-          <p className="mt-4 rounded bg-surface-2 p-3 text-sm text-muted">아직 공개된 퀴즈 문제가 없습니다. 관리자 화면의 &apos;윤리 퀴즈 관리&apos;에서 문제은행을 동기화하고 승인하세요.</p>
-        ) : today.completed ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/quiz/free" className="btn-primary">더 풀기 (자유 학습)</Link>
-            {d.wrongCount > 0 && <Link href="/quiz/play?mode=review" className="btn">오답 복습 {d.wrongCount}</Link>}
-          </div>
-        ) : (
-          <Link href="/quiz/play?mode=daily" className="btn-primary mt-4 block w-full py-3 text-center text-base font-semibold">
-            {missionLabel}
-          </Link>
-        )}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(Object.keys(CHALLENGES) as ChallengeType[]).map((k, i) => {
+            const c = CHALLENGES[k];
+            const info = challengeInfo[k];
+            const ok = info.count > 0;
+            return (
+              <div key={k} className={`card flex flex-col p-4 ${ok ? "" : "opacity-70"}`}>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy text-[11px] font-bold text-white dark:text-[#0f141c]">{["I", "II", "III"][i]}</span>
+                  <h3 className="font-bold">{c.title}</h3>
+                </div>
+                <p className="mt-1.5 flex-1 text-xs leading-5 text-muted">{c.desc}</p>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-faint">{ok ? `${info.note} · ${c.size}문제씩` : k === "revenge" ? "틀린 문제가 없어요" : "조건에 맞는 문제가 아직 없어요"}</span>
+                  {ok ? (
+                    <Link href={`/quiz/play?challenge=${k}`} className="btn shrink-0 !py-1 text-xs font-semibold">도전</Link>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
+      {/* 4. 자유 학습 · 오답 복습 */}
       <div className="grid grid-cols-2 gap-3">
         <Link href="/quiz/free" className="card p-4 hover:border-navy/50">
           <div className="font-bold">자유 학습</div>
-          <div className="mt-0.5 text-xs text-muted">영역·사상가·연도·유형 골라 풀기</div>
+          <div className="mt-0.5 text-xs text-muted">영역·사상가·연도·유형·난이도 골라 풀기</div>
         </Link>
         <Link href={d.wrongCount ? "/quiz/play?mode=review" : "/quiz"} className={`card p-4 ${d.wrongCount ? "hover:border-navy/50" : "pointer-events-none opacity-60"}`}>
           <div className="flex items-baseline gap-2 font-bold">
@@ -107,14 +184,62 @@ export function QuizHome({ d }: { d: Dashboard }) {
       </div>
       {d.dueCount > 0 && <p className="text-center text-xs text-muted">복습할 때가 된 문제 {d.dueCount}개 — 다음 미션에 우선 들어갑니다</p>}
 
-      {/* 영역별 숙련도 */}
+      {/* 5. 학습 성장 요약 (실제 학습 지표) */}
       <section className="card p-4">
-        <h2 className="mb-3 text-[15px] font-bold">영역별 숙련도</h2>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-[15px] font-bold">학습 성장 요약</h2>
+          <span className="text-[11px] text-faint">최근 7일 · 실제 풀이 기록 기준</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: "푼 문제", value: `${week.answered}`, sub: `${week.activeDays}일 학습` },
+            { label: "정답률", value: pct(week.accuracy), sub: "일부만 = 0.5" },
+            { label: "난이도 '상' 정답", value: `${week.hardCorrect}`, sub: `${week.hardAnswered}문제 중` },
+            { label: "서술형 답안", value: `${week.essays}`, sub: week.reconquered ? `재정복 ${week.reconquered}` : "자기평가 포함" },
+          ].map((t) => (
+            <div key={t.label} className="rounded-lg bg-surface-2 p-3">
+              <div className="text-[11px] text-muted">{t.label}</div>
+              <div className="text-xl font-bold tabular-nums">{t.value}</div>
+              <div className="text-[10px] text-faint">{t.sub}</div>
+            </div>
+          ))}
+        </div>
+        {d.growth.length > 0 && (
+          <ul className="mt-3 space-y-1 text-sm">
+            {d.growth.slice(0, 3).map((g) => (
+              <li key={g.area} className="flex items-center gap-2 rounded-md border border-ok/30 bg-ok-soft/50 px-3 py-1.5">
+                <span className="font-semibold text-ok">↑</span>
+                <span>
+                  <b>{g.area}</b> 정답률이 {pct(g.before)} → <b className="text-ok">{pct(g.now)}</b>로 올랐습니다
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <h3 className="mt-4 text-xs font-semibold text-muted">난이도별 정답률 <span className="font-normal text-faint">최근 6주 · 서술형은 자기평가</span></h3>
+        <div className="mt-1 grid grid-cols-3 gap-2 text-center text-xs text-muted">
+          {([1, 2, 3] as const).map((k) => {
+            const s = d.levelStats[k];
+            return (
+              <div key={k} className="rounded bg-surface-2 p-2">
+                <div className="font-semibold text-ink">{["", "하", "중", "상"][k]} 문제</div>
+                {s.attempts ? `정답 ${Math.round((s.correct / s.attempts) * 100)}% · ${s.attempts}회` : "기록 없음"}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 6. 숙련도 */}
+      <Fold
+        title="영역별·사상가별 숙련도"
+        summary={topArea ? `가장 높은 영역: ${topArea.name} ${Math.round(topArea.score * 100)}%` : "문제를 풀면 숙련도가 쌓입니다"}
+      >
         {d.mastery.length === 0 ? (
           <p className="text-sm text-faint">문제를 풀면 영역별 숙련도가 쌓입니다.</p>
         ) : (
           <ul className="space-y-2.5">
-            {d.mastery
+            {[...d.mastery]
               .sort((a, b) => b.total - a.total)
               .map((m) => (
                 <li key={m.name}>
@@ -130,9 +255,9 @@ export function QuizHome({ d }: { d: Dashboard }) {
           </ul>
         )}
         {d.philosophers.length > 0 && (
-          <details className="mt-3">
-            <summary className="cursor-pointer text-sm text-muted">사상가별 숙련도</summary>
-            <ul className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+          <>
+            <h3 className="mb-2 mt-4 text-xs font-semibold text-muted">사상가별 숙련도</h3>
+            <ul className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
               {d.philosophers.map((p) => (
                 <li key={p.name} className="flex items-center gap-2 text-sm">
                   <span className="w-20 shrink-0 truncate">{p.name}</span>
@@ -141,76 +266,65 @@ export function QuizHome({ d }: { d: Dashboard }) {
                 </li>
               ))}
             </ul>
-          </details>
+          </>
         )}
-      </section>
+      </Fold>
 
-      {/* 학습 달력 */}
-      <section className="card p-4">
-        <h2 className="mb-3 text-[15px] font-bold">학습 달력 <span className="text-xs font-normal text-faint">최근 6주</span></h2>
-        <div className="grid max-w-sm grid-cols-7 gap-1.5 text-center text-[10px] text-faint">
-          {WEEKDAYS.map((w) => (
-            <span key={w}>{w}</span>
-          ))}
-          {Array.from({ length: dow0 }).map((_, i) => (
-            <span key={`pad-${i}`} />
-          ))}
-          {d.calendar.map((c) => (
-            <span
-              key={c.day}
-              title={`${c.day} · ${c.answered}문제${c.completed ? " · 미션 완료" : ""}`}
-              className={`flex aspect-square items-center justify-center rounded-md text-[11px] ${
-                c.completed ? "bg-ok text-white dark:text-[#0f141c]" : c.answered ? "bg-navy-soft text-navy" : "bg-surface-2 text-faint"
-              }`}
-            >
-              {Number(c.day.slice(8))}
-            </span>
-          ))}
+      {/* 7. 학습 달력 · 배지 */}
+      <Fold title="학습 달력 · 배지" summary={`최근 6주 ${activeDays}일 학습 · 배지 ${badgeCount}/${STREAK_BADGES.length}`}>
+        <div className="grid gap-5 sm:grid-cols-[minmax(0,20rem)_1fr]">
+          <div>
+            <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] text-faint">
+              {WEEKDAYS.map((w) => (
+                <span key={w}>{w}</span>
+              ))}
+              {Array.from({ length: dow0 }).map((_, i) => (
+                <span key={`pad-${i}`} />
+              ))}
+              {d.calendar.map((c) => (
+                <span
+                  key={c.day}
+                  title={`${c.day} · ${c.answered}문제${c.completed ? " · 미션 완료" : ""}`}
+                  className={`flex aspect-square items-center justify-center rounded-md text-[11px] ${
+                    c.completed ? "bg-ok text-white dark:text-[#0f141c]" : c.answered ? "bg-navy-soft text-navy" : "bg-surface-2 text-faint"
+                  }`}
+                >
+                  {Number(c.day.slice(8))}
+                </span>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-3 text-[11px] text-faint">
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-ok" /> 미션 완료</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-navy-soft" /> 문제 풀이</span>
+            </div>
+          </div>
+          <div>
+            <h3 className="mb-2 text-xs font-semibold text-muted">연속 학습 배지</h3>
+            <div className="grid grid-cols-4 gap-2">
+              {STREAK_BADGES.map((n) => {
+                const got = d.profile?.badges.includes(`streak-${n}`);
+                return (
+                  <div key={n} className={`rounded-lg border p-2 text-center ${got ? "border-warn/50 bg-warn-soft/40" : "border-line opacity-50"}`}>
+                    <div className={`text-lg font-bold ${got ? "text-warn" : "text-faint"}`}>{n}일</div>
+                    <div className="text-[10px] text-muted">{got ? "획득" : "연속 학습"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-        <div className="mt-2 flex gap-3 text-[11px] text-faint">
-          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-ok" /> 미션 완료</span>
-          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-navy-soft" /> 문제 풀이</span>
-        </div>
-      </section>
+      </Fold>
 
-      {/* 배지 · 난이도 */}
-      <section className="card p-4">
-        <h2 className="mb-3 text-[15px] font-bold">연속 학습 배지</h2>
-        <div className="grid grid-cols-4 gap-2">
-          {STREAK_BADGES.map((n) => {
-            const got = d.profile?.badges.includes(`streak-${n}`);
-            return (
-              <div key={n} className={`rounded-lg border p-2 text-center ${got ? "border-warn/50 bg-warn-soft/40" : "border-line opacity-50"}`}>
-                <div className={`text-lg font-bold ${got ? "text-warn" : "text-faint"}`}>{n}일</div>
-                <div className="text-[10px] text-muted">{got ? "획득" : "연속 학습"}</div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="card p-4">
+      {/* 8. 출제 범위 · 설정 */}
+      <section id="settings" className="card scroll-mt-20 p-4">
         <h2 className="mb-1 text-[15px] font-bold">출제 범위</h2>
         <p className="mb-3 text-xs text-muted">
-          오늘의 미션과 오답 복습에 낼 문제 종류입니다. 바꾸면 오늘 미션에서 아직 안 푼 문제도 바로 바뀝니다 (푼 문제와 기록은 그대로).
+          오늘의 미션·오답 복습·실전 도전에 낼 문제 종류입니다. 바꾸면 오늘 미션에서 아직 안 푼 문제도 바로 바뀝니다 (푼 문제와 기록은 그대로).
         </p>
         <ScopePicker current={d.scope} counts={d.kindCount} />
         {d.scope !== "exam" && d.kindCount.expected < 10 && (
           <p className="mt-2 text-xs text-warn">공개된 AI 예상 문제가 {d.kindCount.expected}개뿐이라 미션 문제 수가 줄어들 수 있습니다.</p>
         )}
-        <h3 className="mt-4 text-xs font-semibold text-muted">난이도별 정답률</h3>
-        <div className="mt-1 grid grid-cols-3 gap-2 text-center text-xs text-muted">
-          {([1, 2, 3] as const).map((k) => {
-            const s = d.levelStats[k];
-            return (
-              <div key={k} className="rounded bg-surface-2 p-2">
-                <div className="font-semibold text-ink">{["", "하", "중", "상"][k]} 문제</div>
-                {s.attempts ? `정답 ${Math.round((s.correct / s.attempts) * 100)}% · ${s.attempts}회` : "기록 없음"}
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-[11px] text-faint">최근 6주 기록 · 서술형은 자기평가 결과입니다.</p>
       </section>
     </div>
   );

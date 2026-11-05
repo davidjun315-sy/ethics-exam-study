@@ -12,12 +12,15 @@ import { focusRequirement } from "./split.ts";
 import type { EssayContext } from "./essay.ts";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
+import { areaGrowth, bestCombo, CHALLENGES, countReconquests, isReconquest, trailingCombo, type AreaGrowth, type ChallengeType } from "./game.ts";
 import {
   answerXp,
+  hardBonus,
   currentStreak,
   kstDay,
   levelForXp,
   missionBonus,
+  addDays,
   NEW_PROGRESS,
   newBadges,
   nextReview,
@@ -152,6 +155,10 @@ export interface Session {
   slots: Slot[];
   results: Record<string, QuizResult>;
   completed: boolean;
+  /** 오늘의 실전 도전으로 시작한 세션 */
+  challenge?: ChallengeType;
+  /** 조건에 맞는 문제가 모자라 범위를 넓혔을 때 등 안내 */
+  notice?: string | null;
 }
 
 type DailyRow = { item_ids: string[]; slots: string[]; results: Record<string, QuizResult> | null; xp: number | null; completed_at: string | null };
@@ -393,6 +400,43 @@ export async function getEssayContext(id: string): Promise<EssayContext> {
   };
 }
 
+/**
+ * 오늘의 실전 도전 (새 문제은행 없이 기존 공개 문제에서 고른다, 출제 범위 유지).
+ * - 원문 해독: 난이도 '상' 기입형 → 모자라면 '중'까지
+ * - 서술형 마스터: 난이도 '상' 서술형 → 모자라면 '중'까지
+ * - 오답 복수전: 틀렸거나 일부만 맞힌 문제 (오답 복습과 같은 기록)
+ */
+export async function getChallengeSession(learner: string, type: ChallengeType): Promise<Session> {
+  const day = kstDay();
+  const profile = await getProfile(learner);
+  const scope = scopeOf(profile);
+  const kind = scope === "both" ? undefined : scope;
+  const size = CHALLENGES[type].size;
+  const progress = await progressMap(learner);
+  const seed = `${learner}:${type}:${Date.now()}`;
+  if (type === "revenge") {
+    const candidates = await approvedItems({ kind });
+    const itemIds = buildPractice({ candidates, progress, today: day, n: size, seed, which: "wrong" });
+    return { mode: "review", day, itemIds, slots: itemIds.map(() => "review"), results: {}, completed: false, challenge: type, notice: null };
+  }
+  const format = type === "decode" ? "fill" : "essay";
+  const hard = await approvedItems({ kind, format, difficulty: 3 });
+  let candidates = hard;
+  let notice: string | null = null;
+  if (hard.length < size) {
+    const mid = await approvedItems({ kind, format, difficulty: 2 });
+    candidates = [...hard, ...mid];
+    notice = hard.length
+      ? `난이도 '상' ${format === "fill" ? "기입형" : "서술형"}이 ${hard.length}문제뿐이라 '중' 문제를 함께 냈습니다.`
+      : `난이도 '상' ${format === "fill" ? "기입형" : "서술형"}이 아직 없어 '중' 문제로 도전합니다.`;
+  }
+  // '상' 문제를 먼저, 그 안에서는 새 문제·복습할 문제 우선
+  const pickHard = buildPractice({ candidates: hard, progress, today: day, n: size, seed, which: "any" });
+  const rest = pickHard.length < size ? buildPractice({ candidates: candidates.filter((c) => !pickHard.includes(c.id)), progress, today: day, n: size - pickHard.length, seed, which: "any" }) : [];
+  const itemIds = [...pickHard, ...rest];
+  return { mode: "free", day, itemIds, slots: itemIds.map(() => "fill"), results: {}, completed: false, challenge: type, notice: itemIds.length ? notice : null };
+}
+
 // ---------------------------------------------------------------------
 // 풀이 기록
 // ---------------------------------------------------------------------
@@ -405,6 +449,20 @@ export interface AttemptResult {
   streak: number;
   newBadges: string[];
   profile: { xp: number; level: number; levelFrom: number; levelTo: number };
+  /** 오늘 최종 판정 기준 연속 정답 (게임용 · 경험치·복습과 무관) */
+  combo: number;
+  bestComboToday: number;
+  /** 지난번에 틀렸거나 일부만 맞힌 문제를 맞힘 */
+  reconquered: boolean;
+  /** 레벨이 올랐으면 새 레벨 */
+  levelUp: number | null;
+  /** 경험치 중 난이도 '상' 보너스 */
+  hardBonus: number;
+  /** 숙련도 변화 (성장 요약용) */
+  area: string | null;
+  masteryBefore: number;
+  masteryAfter: number;
+  difficulty: 1 | 2 | 3;
 }
 
 function toState(raw: Record<string, unknown> | undefined): ProgressState {
@@ -446,7 +504,8 @@ export async function recordAttempt(
   const { data: prevRow, error: pe } = await db.from("quiz_progress").select("*").eq("learner", learner).eq("item_id", it.id).maybeSingle();
   if (pe) throw quizError(pe.message);
   const prev = toState(prevRow ?? undefined);
-  const xp = answerXp(prev, result, today);
+  const xp = answerXp(prev, result, today, it.difficulty);
+  const bonus = xp > 0 ? hardBonus(result, it.difficulty) : 0;
   const next = nextReview(prev, result, today);
   const { error: e1 } = await db.from("quiz_progress").upsert(
     {
@@ -530,6 +589,10 @@ export async function recordAttempt(
   );
   if (e2) throw quizError(e2.message);
   const lv = levelForXp(totalXp);
+  const levelBefore = levelForXp(profile.xp).level;
+  // 콤보: 오늘의 최종 판정 순서 (방금 기록 포함)
+  const { data: todays } = await db.from("quiz_attempts").select("result").eq("learner", learner).eq("day", today).order("created_at").limit(1000);
+  const seq = ((todays ?? []) as { result: QuizResult }[]).map((r) => r.result);
   return {
     result,
     gradedBy,
@@ -539,6 +602,15 @@ export async function recordAttempt(
     streak: currentStreak(lastDay, streak, today),
     newBadges: gained,
     profile: { xp: totalXp, level: lv.level, levelFrom: lv.current, levelTo: lv.next },
+    combo: trailingCombo(seq),
+    bestComboToday: bestCombo(seq),
+    reconquered: isReconquest(prev.lastResult, result),
+    levelUp: lv.level > levelBefore ? lv.level : null,
+    hardBonus: bonus,
+    area: it.area,
+    masteryBefore: prev.mastery,
+    masteryAfter: next.mastery,
+    difficulty: it.difficulty,
   };
 }
 
@@ -554,7 +626,7 @@ export interface Dashboard {
   profile: Profile | null;
   level: { level: number; current: number; next: number };
   streak: number;
-  today: { total: number; done: number; completed: boolean; started: boolean };
+  today: { total: number; done: number; completed: boolean; started: boolean; size: number };
   dueCount: number;
   wrongCount: number;
   bankSize: number;
@@ -564,23 +636,32 @@ export interface Dashboard {
   philosophers: { name: string; seen: number; score: number }[];
   calendar: { day: string; answered: number; completed: boolean }[];
   levelStats: Record<1 | 2 | 3, { attempts: number; correct: number }>;
+  /** 오늘 한 일 (미션을 다 끝내지 않아도 보이는 성과) — 게임 지표(콤보)는 따로 */
+  todayStats: { answered: number; correct: number; partial: number; wrong: number; xp: number; hardCorrect: number; reconquered: number; combo: number; bestCombo: number };
+  /** 최근 7일 실제 학습 지표 */
+  week: { answered: number; accuracy: number | null; hardAnswered: number; hardCorrect: number; essays: number; reconquered: number; activeDays: number };
+  /** 이전보다 정답률이 오른 영역 */
+  growth: AreaGrowth[];
+  /** 실전 도전에 낼 수 있는 문제 수 (출제 범위 안) */
+  challenges: { decode: { hard: number; mid: number }; essay: { hard: number; mid: number }; revenge: number };
 }
 
 export async function getDashboard(learner: string): Promise<Dashboard> {
   const db = getAdminClient();
   const today = kstDay();
   const from = new Date(Date.now() - 41 * 86400000);
-  const [profile, daily, progress, items, attempts, missions] = await Promise.all([
+  const [settings, profile, daily, progress, items, attempts, missions] = await Promise.all([
+    getQuizSettings(),
     getProfile(learner),
     getDailySession(learner, false),
     progressMap(learner),
-    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: "exam" | "expected" }>((a, b) =>
-      db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind").eq("status", "approved").order("id").range(a, b),
+    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: "exam" | "expected"; format: "fill" | "essay" }>((a, b) =>
+      db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind, format").eq("status", "approved").order("id").range(a, b),
     ).then((data) => ({ data })),
-    fetchAll<{ day: string; result: string; item_id: string }>((a, b) =>
-      db.from("quiz_attempts").select("day, result, item_id").eq("learner", learner).gte("created_at", from.toISOString()).order("created_at").range(a, b),
+    fetchAll<{ day: string; result: QuizResult; item_id: string; xp: number; mode: string }>((a, b) =>
+      db.from("quiz_attempts").select("day, result, item_id, xp, mode").eq("learner", learner).gte("created_at", from.toISOString()).order("created_at").order("id").range(a, b),
     ).then((data) => ({ data })),
-    db.from("quiz_daily").select("day, completed_at").eq("learner", learner).gte("day", kstDay(from)),
+    db.from("quiz_daily").select("day, completed_at, xp").eq("learner", learner).gte("day", kstDay(from)),
   ]);
   const byArea = new Map<string, { seen: number; total: number; sum: number }>();
   const byPh = new Map<string, { seen: number; sum: number }>();
@@ -590,8 +671,16 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
   let wrongCount = 0;
   const scope = scopeOf(profile);
   const kindCount = { exam: 0, expected: 0 };
+  const challenges: Dashboard["challenges"] = { decode: { hard: 0, mid: 0 }, essay: { hard: 0, mid: 0 }, revenge: 0 };
+  const itemInfo = new Map<string, { area: string; difficulty: 1 | 2 | 3; format: "fill" | "essay" }>();
   for (const it of items.data ?? []) {
     kindCount[it.kind]++;
+    itemInfo.set(it.id, { area: it.area ?? "미분류", difficulty: it.difficulty, format: it.format });
+    if (inScope(it.kind, scope) && it.difficulty >= 2) {
+      const c = challenges[it.format === "fill" ? "decode" : "essay"];
+      if (it.difficulty === 3) c.hard++;
+      else c.mid++;
+    }
     diffOf.set(it.id, it.difficulty);
     const area = it.area ?? "미분류";
     const a = byArea.get(area) ?? { seen: 0, total: 0, sum: 0 };
@@ -620,6 +709,44 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
       if (r.result === "correct") levelStats[dl].correct++;
     }
   }
+  challenges.revenge = wrongCount;
+
+  // 오늘의 성과 · 최근 7일 학습 지표 (실제 풀이 기록에서 계산)
+  const all = (attempts.data ?? []).map((r) => ({ ...r, itemId: r.item_id }));
+  const todays = all.filter((r) => r.day === today);
+  const weekFrom = addDays(today, -6);
+  const week = all.filter((r) => r.day >= weekFrom);
+  const todayDaily = (missions.data ?? []).find((m) => m.day === today);
+  const dailyAttemptXp = todays.filter((r) => r.mode === "daily").reduce((n, r) => n + (r.xp ?? 0), 0);
+  const missionBonusToday = todayDaily?.completed_at ? Math.max(0, ((todayDaily.xp as number) ?? 0) - dailyAttemptXp) : 0;
+  const results = (xs: typeof all) => xs.map((r) => r.result);
+  const hard = (r: { item_id: string }) => itemInfo.get(r.item_id)?.difficulty === 3;
+  const todayStats: Dashboard["todayStats"] = {
+    answered: todays.length,
+    correct: todays.filter((r) => r.result === "correct").length,
+    partial: todays.filter((r) => r.result === "partial").length,
+    wrong: todays.filter((r) => r.result === "wrong").length,
+    xp: todays.reduce((n, r) => n + (r.xp ?? 0), 0) + missionBonusToday,
+    hardCorrect: todays.filter((r) => r.result === "correct" && hard(r)).length,
+    reconquered: countReconquests(all, today),
+    combo: trailingCombo(results(todays)),
+    bestCombo: bestCombo(results(todays)),
+  };
+  const score = (xs: typeof all) => (xs.length ? xs.reduce((n, r) => n + (r.result === "correct" ? 1 : r.result === "partial" ? 0.5 : 0), 0) / xs.length : null);
+  const weekStats: Dashboard["week"] = {
+    answered: week.length,
+    accuracy: score(week),
+    hardAnswered: week.filter(hard).length,
+    hardCorrect: week.filter((r) => r.result === "correct" && hard(r)).length,
+    essays: week.filter((r) => itemInfo.get(r.item_id)?.format === "essay").length,
+    reconquered: countReconquests(all, weekFrom),
+    activeDays: new Set(week.map((r) => r.day)).size,
+  };
+  const growth = areaGrowth(
+    all.filter((r) => itemInfo.has(r.item_id)).map((r) => ({ area: itemInfo.get(r.item_id)!.area, result: r.result, day: r.day })),
+    weekFrom,
+  );
+
   const completedDays = new Set((missions.data ?? []).filter((m) => m.completed_at).map((m) => m.day as string));
   const calendar: Dashboard["calendar"] = [];
   for (let i = 41; i >= 0; i--) {
@@ -636,6 +763,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
       done: daily ? Object.keys(daily.results).length : 0,
       completed: daily?.completed ?? false,
       started: Boolean(daily),
+      // 아직 미션을 만들기 전이면 설정의 하루 문제 수
+      size: daily?.itemIds.length || settings.daily_total,
     },
     dueCount,
     wrongCount,
@@ -649,6 +778,10 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
       .slice(0, 12),
     calendar,
     levelStats,
+    todayStats,
+    week: weekStats,
+    growth,
+    challenges,
   };
 }
 

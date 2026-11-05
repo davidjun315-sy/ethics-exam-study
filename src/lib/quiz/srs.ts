@@ -91,14 +91,23 @@ export const XP = {
   recovered: 5, // 틀렸거나 일부만 맞힌 문제를 다시 맞힘
   missionComplete: 30,
   streakPerDay: 2, // 연속 학습 일수 × 2 (최대 20)
+  // 난이도 '상' 보너스: 쉬운 문제를 반복하는 것보다 어려운 문제에 도전하는 편이 유리하도록
+  hardCorrect: 5,
+  hardPartial: 2,
 } as const;
 
+/** 난이도 '상' 문제 보너스 (경험치를 받는 풀이에만 붙는다) */
+export function hardBonus(result: QuizResult, difficulty: 1 | 2 | 3 | undefined): number {
+  if (difficulty !== 3) return 0;
+  return result === "correct" ? XP.hardCorrect : result === "partial" ? XP.hardPartial : 0;
+}
+
 /** 같은 문제는 하루 한 번만 경험치를 준다 (반복 풀이로 경험치를 쌓지 못하게) */
-export function answerXp(prev: ProgressState, result: QuizResult, today: string): number {
+export function answerXp(prev: ProgressState, result: QuizResult, today: string, difficulty?: 1 | 2 | 3): number {
   if (prev.lastXpDay === today) return 0;
   const base = XP[result];
   const recovered = result === "correct" && (prev.lastResult === "wrong" || prev.lastResult === "partial") ? XP.recovered : 0;
-  return base + recovered;
+  return base + recovered + hardBonus(result, difficulty);
 }
 
 export function missionBonus(streakAfter: number): number {

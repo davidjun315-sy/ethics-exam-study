@@ -4,7 +4,8 @@ import { buildMission, buildPractice, spaceOut, type Candidate, type ProgressLit
 import { expectedFromAnalysis, focusRequirement, requirementLines, splitQuestion, type SplitInput } from "../src/lib/quiz/split.ts";
 import { buildChatPrompt, buildEssayPrompt, EssayGradingSchema, tidyGrading } from "../src/lib/quiz/essay.ts";
 import { validatePasted } from "../src/lib/ai/lenient.ts";
-import { inScope } from "../src/lib/quiz/srs.ts";
+import { hardBonus, inScope } from "../src/lib/quiz/srs.ts";
+import { areaGrowth, bestCombo, checkpointReached, checkpoints, comboTier, countReconquests, isReconquest, missionStatus, trailingCombo } from "../src/lib/quiz/game.ts";
 import { addDays, answerXp, currentStreak, kstDay, levelForXp, newBadges, NEW_PROGRESS, nextReview, streakAfterCompletion } from "../src/lib/quiz/srs.ts";
 
 let failed = 0;
@@ -160,6 +161,39 @@ check("출제 범위: 기출만 / 예상만 / 둘 다", inScope("exam", "exam") 
   const m = buildMission({ candidates: pool, progress: new Map(), settings: { total: 10, exam: 0, expected: 8, review: 2 }, today: "2026-11-05", seed: "scope" });
   check("난이도 과정 없이 예상 문제만으로 미션 10문제", m.itemIds.length === 10 && m.itemIds.every((id) => id.startsWith("s")), String(m.itemIds.length));
 }
+
+// ---------------- 게임 요소 ----------------
+check("체크포인트 10문제: 1·3·5·10", checkpoints(10).map((c) => c.at).join() === "1,3,5,10");
+check("체크포인트 3문제: 1·2·3 (마지막은 미션 완수)", checkpoints(3).map((c) => `${c.at}${c.title}`).join() === "1첫 도전 성공,2절반 정복,3오늘의 미션 완수", checkpoints(3).map((c) => `${c.at}${c.title}`).join());
+check("체크포인트 4문제: 1·2·4 (순서 유지)", checkpoints(4).map((c) => `${c.at}${c.title}`).join() === "1첫 도전 성공,2절반 정복,4오늘의 미션 완수", checkpoints(4).map((c) => `${c.at}${c.title}`).join());
+check("체크포인트 20문제: 1·3·10·20", checkpoints(20).map((c) => c.at).join() === "1,3,10,20");
+check("진행 문구 0문제", missionStatus(0, 10).headline === "오늘의 첫 문제에 도전하세요" && missionStatus(0, 10).remaining === 1);
+check("진행 문구 4문제: 첫 번째 체크포인트 돌파 · 다음까지 1문제", missionStatus(4, 10).headline === "첫 번째 체크포인트 돌파!" && missionStatus(4, 10).sub === "다음 목표 '절반 정복'까지 1문제");
+check("진행 문구 10문제: 완수", missionStatus(10, 10).completed && missionStatus(10, 10).headline === "오늘의 미션 완수!");
+check("체크포인트 달성 순간", checkpointReached(2, 3, 10)?.at === 3 && checkpointReached(3, 4, 10) === null && checkpointReached(9, 10, 10)?.at === 10);
+check("콤보 단계", comboTier(1) === null && comboTier(2)?.label === "COMBO x2" && comboTier(3)?.label === "NICE COMBO" && comboTier(5)?.label === "PERFECT STREAK" && comboTier(10)?.label === "MASTER COMBO");
+check("콤보: 끝에서 이어진 정답만, 부분 정답은 끊음", trailingCombo(["correct", "partial", "correct", "correct"]) === 2 && trailingCombo(["correct", "wrong"]) === 0 && bestCombo(["correct", "correct", "correct", "partial", "correct"]) === 3);
+check("재정복: 오답·부분 → 정답만", isReconquest("wrong", "correct") && isReconquest("partial", "correct") && !isReconquest("correct", "correct") && !isReconquest(null, "correct") && !isReconquest("wrong", "partial"));
+check(
+  "오늘 재정복 수 (이전 날 오답을 오늘 맞힘, 같은 날 두 번 맞혀도 1번)",
+  countReconquests(
+    [
+      { itemId: "a", result: "wrong", day: "2026-11-01" },
+      { itemId: "a", result: "correct", day: "2026-11-05" },
+      { itemId: "a", result: "correct", day: "2026-11-05" },
+      { itemId: "b", result: "correct", day: "2026-11-05" },
+    ],
+    "2026-11-05",
+  ) === 1,
+);
+{
+  const at = (area: string, day: string, rs: ("correct" | "wrong")[]) => rs.map((result) => ({ area, result, day }));
+  const g = areaGrowth([...at("동양윤리", "2026-10-20", ["wrong", "wrong", "correct"]), ...at("동양윤리", "2026-11-04", ["correct", "correct", "correct"]), ...at("서양윤리", "2026-11-04", ["correct", "correct", "correct"])], "2026-10-30");
+  check("성장 영역: 이전 기간 기록이 있고 10%p 이상 오른 영역만", g.length === 1 && g[0].area === "동양윤리" && g[0].now === 1, JSON.stringify(g));
+}
+check("난이도 '상' 보너스: 정답 +5 · 부분 +2 · 하·중 없음", hardBonus("correct", 3) === 5 && hardBonus("partial", 3) === 2 && hardBonus("wrong", 3) === 0 && hardBonus("correct", 2) === 0);
+check("경험치: '상' 정답 15, 같은 날 다시 풀면 0 (반복으로 쌓기 불가)", answerXp(NEW_PROGRESS, "correct", today, 3) === 15 && answerXp({ ...NEW_PROGRESS, lastXpDay: today }, "correct", today, 3) === 0);
+check("경험치: 하·중 문제는 기존과 같음", answerXp(NEW_PROGRESS, "correct", today, 1) === 10 && answerXp(NEW_PROGRESS, "correct", today) === 10);
 
 // ---------------- 서술형 AI 첨삭 ----------------
 const ectx = {
