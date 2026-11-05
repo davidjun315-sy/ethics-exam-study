@@ -1,4 +1,5 @@
 import "server-only";
+import { classifyPhilosopher, groupByTradition } from "@/lib/traditions";
 import { getReadClient } from "@/lib/supabase/server";
 import type {
   AnalysisStatus,
@@ -591,8 +592,16 @@ export function computeTrends(all: QuestionSummary[]) {
 }
 
 export async function getTrends() {
-  const all = await listQuestionSummaries();
-  return computeTrends(all);
+  const [all, { data: ps }] = await Promise.all([listQuestionSummaries(), getReadClient().from("philosophers").select("id, name, tradition")]);
+  const t = computeTrends(all);
+  // 사상가 분류 (동양윤리·서양윤리 …): 분야 값 → 이름 순으로
+  const chapterById = new Map(((ps ?? []) as Pick<Philosopher, "id" | "name" | "tradition">[]).map((p) => [p.id, classifyPhilosopher(p)]));
+  const philosopherGroups = groupByTradition(t.philosopherCounts.map((r) => ({ ...r, tradition: chapterById.get(r.id) ?? null }))).map((g) => ({
+    chapter: g.chapter,
+    rows: g.items, // 그룹 안에서도 출제 횟수 많은 순 (philosopherCounts 순서 유지)
+    total: g.items.reduce((n, r) => n + r.count, 0),
+  }));
+  return { ...t, philosopherGroups };
 }
 
 export interface PhilosopherQuestions {

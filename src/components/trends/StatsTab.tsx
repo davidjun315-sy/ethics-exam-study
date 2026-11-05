@@ -1,4 +1,4 @@
-import { BarList, Heatmap } from "@/components/charts";
+import { BarList, GroupedHeatmap } from "@/components/charts";
 import { DataError, load } from "@/components/DataError";
 import { Empty, SectionTitle, StatCard } from "@/components/ui";
 import { getTrends } from "@/lib/data/queries";
@@ -20,7 +20,6 @@ export async function StatsTab() {
     return <Empty>기출 데이터가 쌓이면 통계가 표시됩니다.</Empty>;
   }
   const yearsAsc = [...t.years].sort((a, b) => a - b);
-  const heatRows = t.philosopherCounts.slice(0, 25);
   const recentPhil = t.philosopherCounts
     .map((p) => ({ ...p, count: p.years.filter((y) => t.recentYears.includes(y)).length }))
     .filter((p) => p.count > 0)
@@ -37,8 +36,8 @@ export async function StatsTab() {
         <StatCard label="출제 개념" value={t.conceptCounts.length} />
       </div>
 
-      <Panel title="연도별 사상가 출제 빈도" note="셀 = 해당 학년도 출제 문항 수">
-        <Heatmap years={yearsAsc} rows={heatRows} values={t.yearPhilosopher} hrefBase="/philosophers" />
+      <Panel title="연도별 사상가 출제 빈도" note="분류별 · 출제 많은 순 · 셀 = 해당 학년도 출제 문항 수">
+        <GroupedHeatmap years={yearsAsc} groups={t.philosopherGroups} values={t.yearPhilosopher} hrefBase="/philosophers" />
       </Panel>
 
       <div className="grid gap-6 lg:grid-cols-2">
