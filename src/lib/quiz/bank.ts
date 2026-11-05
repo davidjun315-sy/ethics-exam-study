@@ -223,10 +223,29 @@ export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promi
     }
   }
 
+  // 같은 키가 두 번 계획된 경우 (비슷한 예상 문제 두 개, 같은 레이블 두 번 등): 내용이 같으면 하나만, 다르면 순번을 붙인다
+  const seenKeys = new Map<string, string>();
+  const uniquePlanned: Planned[] = [];
+  for (const p of planned) {
+    const prev = seenKeys.get(p.key);
+    if (prev === undefined) {
+      seenKeys.set(p.key, p.hash);
+      uniquePlanned.push(p);
+      continue;
+    }
+    if (prev === p.hash) continue;
+    let n = 2;
+    while (seenKeys.has(`${p.key}:${n}`)) n++;
+    const key = `${p.key}:${n}`;
+    seenKeys.set(key, p.hash);
+    uniquePlanned.push({ ...p, key, row: { ...p.row, key } });
+  }
+  planned.splice(0, planned.length, ...uniquePlanned);
+
   // 기존 문제: 전체 동기화는 문제은행 전체를, 문항 동기화는 그 문항의 문제만 읽는다 (키 목록을 URL 에 싣지 않음)
   const current = opts.questionIds
     ? await fetchIn<QuizItemRow>(opts.questionIds, (part) => db.from("quiz_items").select("*").in("question_id", part))
-    : await fetchAll<QuizItemRow>((from, to) => db.from("quiz_items").select("*").order("created_at").range(from, to));
+    : await fetchAll<QuizItemRow>((from, to) => db.from("quiz_items").select("*").order("id").range(from, to));
   const existing = new Map(current.map((r) => [r.key, r]));
   // 중복 검사용: 이미 있는 예상 문제의 본문 키
   const expRows = await fetchAll<{ key: string; passage: string | null }>((from, to) =>
@@ -274,8 +293,9 @@ export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promi
     if (error) throw quizError(error.message);
     result.updated++;
   }
+  // 이미 있는 키는 건너뛴다 (동시에 동기화하거나 읽는 사이 생긴 문제와 겹쳐도 실패하지 않게. 기존 문제는 덮어쓰지 않음)
   for (const part of chunks(inserts, 100)) {
-    const { error } = await db.from("quiz_items").insert(part);
+    const { error } = await db.from("quiz_items").upsert(part, { onConflict: "key", ignoreDuplicates: true });
     if (error) throw quizError(error.message);
   }
 
@@ -317,7 +337,7 @@ export async function getBankStatus(): Promise<BankStatus> {
   const db = getAdminClient();
   const [items, analyses, { count: openReports, error: re }] = await Promise.all([
     fetchAll<{ kind: string; status: string; question_id: string | null; source_changed: boolean }>((from, to) =>
-      db.from("quiz_items").select("kind, status, question_id, source_changed").order("created_at").range(from, to),
+      db.from("quiz_items").select("kind, status, question_id, source_changed").order("id").range(from, to),
     ),
     fetchAll<{ question_id: string; ie: unknown }>((from, to) =>
       db.from("question_analysis").select("question_id, ie:details->itemExplanations").in("status", ANALYZED).order("question_id").range(from, to),
@@ -489,7 +509,7 @@ export async function listLearnerStats(): Promise<LearnerStat[]> {
   const db = getAdminClient();
   const [{ data: profiles, error }, attempts] = await Promise.all([
     db.from("quiz_profiles").select("*"),
-    fetchAll<{ learner: string; result: string; graded_by: string }>((from, to) => db.from("quiz_attempts").select("learner, result, graded_by").order("created_at").range(from, to)),
+    fetchAll<{ learner: string; result: string; graded_by: string }>((from, to) => db.from("quiz_attempts").select("learner, result, graded_by").order("id").range(from, to)),
   ]);
   if (error) throw quizError(error.message);
   // 학습자 키 "m:<회원 id>" → 회원 이름
