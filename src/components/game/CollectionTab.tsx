@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
-import { RARITIES, RARITY_NAMES, nextRarity } from "@/lib/game/rules";
+import { canFuseCard, RARITIES, RARITY_NAMES } from "@/lib/game/rules";
 import { TRADITIONS } from "@/lib/traditions";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, gemStyle } from "./GameApp";
@@ -25,8 +25,8 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
   const traditions = ["전체", ...TRADITIONS.filter((t) => all.some((c) => c.tradition === t)), ...(all.some((c) => !TRADITIONS.includes(c.tradition as never)) ? ["미분류"] : [])];
   const best = (c: { copies: OwnedCard[] }) => c.copies[0];
   const rank = (c: { copies: OwnedCard[] }) => (best(c) ? RARITIES.indexOf(best(c).rarity) : -1);
-  // 합성 가능: 같은 등급(전설 제외) 잠기지 않은 카드가 합성 장수만큼 (다른 사상가 카드와도 합성 가능)
-  const fusableRarity = new Set(RARITIES.filter((r) => nextRarity(r) && state.owned.filter((o) => o.rarity === r && !o.locked).length >= state.settings.fusionCount));
+  // 합성 가능: 같은 사상가 · 같은 등급 카드가 합성 장수만큼 (대표·잠금 카드는 재료 불가)
+  const canFuse = (o: OwnedCard) => canFuseCard(o, state.owned, state.featuredId, state.settings.fusionCount);
   const list = all
     .filter((c) => tradition === "전체" || c.tradition === tradition)
     .filter((c) => (show === "owned" ? c.copies.length : show === "locked" ? !c.copies.length : true))
@@ -72,7 +72,7 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
           {list.map((c) => {
             const b = best(c);
             const featured = c.copies.some((o) => o.cardId === state.featuredId);
-            const fusable = c.copies.some((o) => fusableRarity.has(o.rarity) && !o.locked);
+            const fusable = c.copies.some(canFuse);
             return (
               <div key={c.philosopherId}>
                 <PhilosopherCard

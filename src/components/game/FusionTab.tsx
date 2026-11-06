@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { GameState, OwnedCard } from "@/lib/game/data";
-import { fusionProblem, nextRarity, RARITIES, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
+import { canFuseCard, fusionMaterials, fusionProblem, nextRarity, RARITIES, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, Coins, gemStyle } from "./GameApp";
@@ -18,15 +18,15 @@ interface Show {
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /**
- * 카드 합성(진화): 같은 등급 카드 N장 → 기준 카드가 한 단계 위 등급 (확정 성공).
- * 기준 카드의 id·레벨·대표·덱 자리는 그대로, 재료 카드는 사라진다. 다른 사상가 카드도 재료가 될 수 있다.
+ * 카드 합성(진화): 같은 사상가 · 같은 등급 카드 N장 → 기준 카드가 한 단계 위 등급 (확정 성공).
+ * 예: 일반 콜버그 2장 → 희귀 콜버그. 일반 콜버그 + 일반 루소는 불가.
+ * 기준 카드의 id·레벨·대표·덱 자리는 그대로, 재료 카드는 사라진다.
  */
 export function FusionTab({ state, reload, initialBase }: { state: GameState; reload: () => Promise<GameState>; initialBase?: string | null }) {
   const { fusionCount, fusionCost, rarityMult, maxLevel } = state.settings;
   const need = fusionCount - 1;
-  const usable = (o: OwnedCard) => !o.locked && o.cardId !== state.featuredId;
-  const materialsFor = (b: OwnedCard) => state.owned.filter((o) => o.cardId !== b.cardId && o.rarity === b.rarity && usable(o));
-  const canFuse = (b: OwnedCard) => Boolean(nextRarity(b.rarity)) && materialsFor(b).length >= need;
+  const materialsFor = (b: OwnedCard) => fusionMaterials(b, state.owned, state.featuredId);
+  const canFuse = (b: OwnedCard) => canFuseCard(b, state.owned, state.featuredId, fusionCount);
   // 자동 선택: 레벨 낮은 카드부터, 덱 카드는 피해서
   const autoMaterials = (b: OwnedCard) =>
     materialsFor(b)
@@ -120,7 +120,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
       {/* 합성 슬롯: 기준(왼쪽) + 재료(오른쪽) ↓ 결과 미리보기 */}
       <section className="card p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-bold">카드 합성 <span className="font-normal text-muted">같은 등급 {fusionCount}장 → 한 단계 위 등급 (확정 성공)</span></h2>
+          <h2 className="text-sm font-bold">카드 합성 <span className="font-normal text-muted">같은 사상가 · 같은 등급 {fusionCount}장 → 한 단계 위 등급 (확정 성공)</span></h2>
           <span className="ml-auto"><Coins value={state.coins} /></span>
         </div>
         <div className="mx-auto grid max-w-xl grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
@@ -134,7 +134,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
                 {materials.map((m) => <MiniCard key={m.cardId} o={m} maxLevel={maxLevel} />)}
               </div>
             ) : (
-              <Empty text={base ? `${RARITY_NAMES[base.rarity]} 카드 ${need}장` : "기준 카드를 먼저"} />
+              <Empty text={base ? `${RARITY_NAMES[base.rarity]} ${base.name} ${need}장` : "기준 카드를 먼저"} />
             )}
           </Slot>
         </div>
@@ -212,13 +212,13 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
               </select>
             </div>
           ) : (
-            base && <span className="ml-auto text-xs text-muted">{RARITY_NAMES[base.rarity]} 카드만 · 대표·잠금 카드 제외 · 약한 카드부터</span>
+            base && <span className="ml-auto text-xs text-muted">{RARITY_NAMES[base.rarity]} {base.name} 카드만 · 대표·잠금 카드 제외 · 약한 카드부터</span>
           )}
         </div>
         {picking === "base" ? (
           baseList.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
-              {onlyFusable ? `같은 등급 카드가 ${fusionCount}장 이상 모이면 합성할 수 있습니다. 카드를 더 뽑아 보세요.` : "합성할 수 있는 카드가 없습니다 (전설은 최고 등급)."}
+              {onlyFusable ? `같은 사상가의 같은 등급 카드가 ${fusionCount}장 이상 모이면 합성할 수 있습니다 (예: 일반 콜버그 ${fusionCount}장). 카드를 더 뽑아 보세요.` : "합성할 수 있는 카드가 없습니다 (전설은 최고 등급)."}
             </p>
           ) : (
             <Grid>
@@ -240,7 +240,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
             </Grid>
           )
         ) : materialList.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted">재료로 쓸 수 있는 {base ? RARITY_NAMES[base.rarity] : ""} 카드가 없습니다 (대표·잠금 카드는 제외).</p>
+          <p className="py-6 text-center text-sm text-muted">재료로 쓸 수 있는 {base ? `${RARITY_NAMES[base.rarity]} ${base.name}` : ""} 카드가 없습니다. 같은 사상가 · 같은 등급 카드만 재료가 됩니다 (대표·잠금 카드는 제외).</p>
         ) : (
           <Grid>
             {materialList.map((o) => (

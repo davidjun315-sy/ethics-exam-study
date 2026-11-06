@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
 import { quizApi } from "@/lib/quiz/client";
-import { nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS } from "@/lib/game/rules";
+import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS } from "@/lib/game/rules";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { DrawTab } from "./DrawTab";
 import { CollectionTab } from "./CollectionTab";
@@ -50,7 +50,8 @@ export function GameApp({ initial, initialTab, initialBase }: { initial: GameSta
     window.history.replaceState(null, "", `/quiz/game?tab=${t}`);
   };
   const levelable = state.owned.filter((o) => o.upgrade && (state.shards[o.philosopherId] ?? 0) >= o.upgrade.shards && state.coins >= o.upgrade.coins).length;
-  const fusable = RARITIES.slice(0, 3).reduce((n, r) => n + (state.owned.filter((o) => o.rarity === r && !o.locked).length >= state.settings.fusionCount ? 1 : 0), 0);
+  // 합성 가능한 (사상가 · 등급) 묶음 수
+  const fusable = new Set(state.owned.filter((o) => canFuseCard(o, state.owned, state.featuredId, state.settings.fusionCount)).map((o) => `${o.philosopherId}:${o.rarity}`)).size;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -207,7 +208,7 @@ function PhilosopherSheet({
                 <ul className="space-y-1.5">
                   {copies.map((c) => {
                     const featured = c.cardId === state.featuredId;
-                    const sameRarity = state.owned.filter((o) => o.cardId !== c.cardId && o.rarity === c.rarity && !o.locked && o.cardId !== state.featuredId).length;
+                    const sameRarity = fusionMaterials(c, state.owned, state.featuredId).length;
                     return (
                       <li key={c.cardId} className={`rounded-lg border p-2.5 ${shown === c.cardId ? "border-navy/50 bg-navy-soft/30" : "border-line"}`}>
                         <button type="button" className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left" onClick={() => setShown(c.cardId)}>
@@ -227,8 +228,8 @@ function PhilosopherSheet({
                             {c.locked ? "잠금 해제" : "잠금"}
                           </button>
                           {c.upgrade && <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => onLevelUp(c.cardId)}>레벨업</button>}
-                          {nextRarity(c.rarity) && (
-                            <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => onFuse(c.cardId)} title={`같은 등급 재료 후보 ${sameRarity}장`}>
+                          {nextRarity(c.rarity) && sameRarity >= state.settings.fusionCount - 1 && (
+                            <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => onFuse(c.cardId)} title={`같은 사상가 · 같은 등급 재료 후보 ${sameRarity}장`}>
                               합성 → {RARITY_NAMES[nextRarity(c.rarity)!]}
                             </button>
                           )}

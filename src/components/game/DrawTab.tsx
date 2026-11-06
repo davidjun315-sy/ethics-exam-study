@@ -153,7 +153,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
             ))}
           </ul>
           <p className="mt-2 text-[11px] text-faint">모든 철학자({state.cards.length}명)가 네 등급 모두로 나올 수 있습니다. 등급을 먼저 정하고 철학자를 고르며, 결과는 서버에서 정해집니다.</p>
-          <p className="mt-1 text-[11px] text-faint">같은 카드가 또 나와도 카드로 보관됩니다. 같은 등급 {state.settings.fusionCount}장을 합성하면 한 단계 위 등급으로 진화해요.</p>
+          <p className="mt-1 text-[11px] text-faint">같은 카드가 또 나와도 카드로 보관됩니다. 같은 사상가의 같은 등급 카드 {state.settings.fusionCount}장을 합성하면 한 단계 위 등급으로 진화해요 (예: 일반 콜버그 {state.settings.fusionCount}장 → 희귀 콜버그).</p>
         </section>
       </aside>
     </div>

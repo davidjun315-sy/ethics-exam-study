@@ -51,17 +51,31 @@ export function statsFor(
 
 /**
  * 합성 가능 여부 (화면 미리보기용 · 서버 DB 함수가 최종 확인)
- * 같은 등급 n 장 (기준 1 + 재료 n-1), 전설은 더 못 올림, 재료는 잠금·대표 카드 불가
+ * 같은 사상가 · 같은 등급 n 장 (기준 1 + 재료 n-1), 전설은 더 못 올림, 재료는 잠금·대표 카드 불가
+ * 예: 일반 콜버그 + 일반 콜버그 → 희귀 콜버그 (가능) / 일반 콜버그 + 일반 루소 (불가)
  */
+type FusionCard = { cardId: string; rarity: Rarity; locked: boolean; philosopherId: string };
+
+/** 기준 카드의 합성 재료 후보: 같은 사상가 · 같은 등급 · 잠기지 않음 · 대표 카드 아님 */
+export function fusionMaterials<T extends FusionCard>(base: FusionCard, owned: T[], featuredId: string | null): T[] {
+  return owned.filter((o) => o.cardId !== base.cardId && o.philosopherId === base.philosopherId && o.rarity === base.rarity && !o.locked && o.cardId !== featuredId);
+}
+
+/** 이 카드를 기준으로 지금 합성할 수 있는가 (전설 제외, 재료가 합성 장수-1 이상) */
+export function canFuseCard(base: FusionCard, owned: FusionCard[], featuredId: string | null, fusionCount: number): boolean {
+  return Boolean(nextRarity(base.rarity)) && fusionMaterials(base, owned, featuredId).length >= fusionCount - 1;
+}
+
 export function fusionProblem(
-  base: { cardId: string; rarity: Rarity } | null,
-  materials: { cardId: string; rarity: Rarity; locked: boolean }[],
+  base: { cardId: string; rarity: Rarity; philosopherId: string } | null,
+  materials: { cardId: string; rarity: Rarity; locked: boolean; philosopherId: string }[],
   opts: { fusionCount: number; featuredId: string | null; coins: number; cost: number },
 ): string | null {
   if (!base) return "기준 카드를 고르세요";
   if (!nextRarity(base.rarity)) return "전설은 최고 등급입니다";
   if (materials.length !== opts.fusionCount - 1) return `재료 카드 ${opts.fusionCount - 1}장을 고르세요`;
   if (materials.some((m) => m.cardId === base.cardId) || new Set(materials.map((m) => m.cardId)).size !== materials.length) return "같은 카드를 두 번 쓸 수 없습니다";
+  if (materials.some((m) => m.philosopherId !== base.philosopherId)) return "같은 사상가 카드끼리만 합성할 수 있습니다";
   if (materials.some((m) => m.rarity !== base.rarity)) return "같은 등급끼리만 합성할 수 있습니다";
   if (materials.some((m) => m.locked)) return "잠긴 카드는 재료로 쓸 수 없습니다";
   if (materials.some((m) => m.cardId === opts.featuredId)) return "대표 카드는 재료로 쓸 수 없습니다";

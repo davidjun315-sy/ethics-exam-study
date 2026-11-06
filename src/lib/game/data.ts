@@ -5,9 +5,11 @@ import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, type BattleEvent, type Difficulty, type Fighter } from "./battle";
 import {
+  canFuseCard,
   DEFAULT_COIN_RULES,
   DEFAULT_RARITY_MULT,
   effectiveRates,
+  fusionMaterials,
   MAX_LEVEL_DEFAULT,
   quizCoins,
   statsFor,
@@ -38,6 +40,7 @@ const MESSAGES: Record<string, string> = {
   GAME_FUSION_COUNT: "합성할 카드 수가 맞지 않습니다.",
   GAME_FUSION_MAX: "전설은 최고 등급이라 더 진화할 수 없습니다.",
   GAME_FUSION_RARITY: "같은 등급의 보유 카드끼리만 합성할 수 있습니다.",
+  GAME_FUSION_PHILOSOPHER: "같은 사상가의 같은 등급 카드끼리만 합성할 수 있습니다.",
   GAME_FUSION_LOCKED: "잠긴 카드는 재료로 쓸 수 없습니다. 잠금을 풀어 주세요.",
   GAME_FUSION_FEATURED: "대표 카드는 재료로 쓸 수 없습니다. 대표 카드를 바꾼 뒤 다시 시도하세요.",
 };
@@ -291,7 +294,7 @@ export interface FeaturedSummary {
   maxLevel: number;
   freeDraw: boolean;
   shards: number; // 대표 카드 사상가의 강화 조각
-  fusable: number; // 대표 카드와 같은 등급의 다른 보유 카드 수 (합성 재료 후보)
+  fusable: number; // 대표 카드와 같은 사상가 · 같은 등급의 재료 후보 수 (합성 장수-1 이상일 때만, 아니면 0)
 }
 
 /** 퀴즈 홈의 '나의 철학자' (테이블이 없으면 null → 퀴즈는 그대로 동작) */
@@ -307,7 +310,7 @@ export async function getFeatured(learner: string): Promise<FeaturedSummary | nu
       maxLevel: s.settings.maxLevel,
       freeDraw: s.freeDraw.available,
       shards: f ? (s.shards[f.philosopherId] ?? 0) : 0,
-      fusable: f ? s.owned.filter((o) => o.cardId !== f.cardId && o.rarity === f.rarity && !o.locked).length : 0,
+      fusable: f && canFuseCard(f, s.owned, s.featuredId, s.settings.fusionCount) ? fusionMaterials(f, s.owned, s.featuredId).length : 0,
     };
   } catch {
     return null;
@@ -361,8 +364,16 @@ export async function levelUpCard(learner: string, cardId: string, requestId: st
   return data as { fromLevel: number; level: number; coins: number; replayed: boolean };
 }
 
-/** 합성(진화): 기준 카드 + 같은 등급 재료 → 기준 카드가 한 단계 위 등급 (확정) */
+/** 합성(진화): 기준 카드 + 같은 사상가 · 같은 등급 재료 → 기준 카드가 한 단계 위 등급 (확정) */
 export async function fuseCards(learner: string, baseId: string, materialIds: string[], requestId: string) {
+  // 같은 사상가끼리만 (DB 함수 010 도 같은 조건을 확인 — 010 적용 전에도 여기서 막는다).
+  // 이미 소모된 카드(재시도)는 DB 가 처음 결과를 돌려주도록 그대로 넘긴다.
+  const { data: rows, error: readErr } = await getAdminClient().from("game_user_cards").select("id, philosopher_id, status").eq("learner", learner).in("id", [baseId, ...materialIds]);
+  if (readErr) throw gameError(readErr.message);
+  const base = rows?.find((r) => r.id === baseId);
+  if (base && base.status === "owned" && rows!.some((r) => r.id !== baseId && r.status === "owned" && r.philosopher_id !== base.philosopher_id)) {
+    throw new GameError(MESSAGES.GAME_FUSION_PHILOSOPHER);
+  }
   const { data, error } = await getAdminClient().rpc("game_fuse", { p_learner: learner, p_base: baseId, p_materials: materialIds, p_ref: `fusion:${requestId}`, p_day: kstDay() });
   if (error) throw gameError(error.message);
   const r = data as { cardId: string; rarity: Rarity; level: number; coins: number; replayed: boolean };

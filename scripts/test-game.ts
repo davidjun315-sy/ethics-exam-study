@@ -37,8 +37,9 @@ check("레벨과 등급은 독립 (희귀 Lv.3 = 기본×1.2×1.24)", JSON.strin
 check("진화 단계: 일반→희귀→영웅→전설, 전설은 끝", nextRarity("common") === "rare" && nextRarity("rare") === "epic" && nextRarity("epic") === "legendary" && nextRarity("legendary") === null);
 check("카드→조각: 1·2·4·8", SHARDS_FOR_CARD.common === 1 && SHARDS_FOR_CARD.legendary === 8);
 const fp = (b: Parameters<typeof fusionProblem>[0], m: Parameters<typeof fusionProblem>[1], featured: string | null = null) => fusionProblem(b, m, { fusionCount: 2, featuredId: featured, coins: 0, cost: 0 });
-const C = (id: string, rarity: "common" | "rare" | "epic" | "legendary", locked = false) => ({ cardId: id, rarity, locked });
-check("합성 가능: 같은 등급 2장 (사상가 달라도)", fp(C("a", "common"), [C("b", "common")]) === null);
+const C = (id: string, rarity: "common" | "rare" | "epic" | "legendary", locked = false, philosopherId = "kohlberg") => ({ cardId: id, rarity, locked, philosopherId });
+check("합성 가능: 같은 사상가 · 같은 등급 2장 (일반 콜버그 + 일반 콜버그)", fp(C("a", "common"), [C("b", "common")]) === null);
+check("합성 불가: 다른 사상가 (일반 콜버그 + 일반 루소)", fp(C("a", "common"), [C("b", "common", false, "rousseau")]) === "같은 사상가 카드끼리만 합성할 수 있습니다");
 check("합성 불가: 다른 등급", fp(C("a", "common"), [C("b", "rare")]) === "같은 등급끼리만 합성할 수 있습니다");
 check("합성 불가: 전설", fp(C("a", "legendary"), [C("b", "legendary")]) === "전설은 최고 등급입니다");
 check("합성 불가: 같은 카드 두 번 · 잠금 · 대표 카드", fp(C("a", "common"), [C("a", "common")]) !== null && fp(C("a", "common"), [C("b", "common", true)]) !== null && fp(C("a", "common"), [C("b", "common")], "b") !== null);

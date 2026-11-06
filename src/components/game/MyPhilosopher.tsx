@@ -129,7 +129,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
             )}
             {up && game.fusable > 0 && (
               <Link href={`/quiz/game?tab=fusion&base=${f.cardId}`} className="mt-1.5 inline-flex items-center gap-1 font-semibold text-ok hover:underline">
-                같은 등급 카드 {game.fusable}장 · {RARITY_NAMES[up]}(으)로 합성 가능 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                같은 {RARITY_NAMES[f.rarity]} {f.name} {game.fusable}장 · {RARITY_NAMES[up]}(으)로 합성 가능 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
               </Link>
             )}
           </div>
