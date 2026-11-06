@@ -172,7 +172,7 @@ export function AnswerSection({ d }: { d: QuestionDetail }) {
           {items.map((it, i) => (
             <article key={i} className="rounded-lg border border-line bg-surface p-4">
               <header className="flex flex-wrap items-baseline gap-2">
-                <span className="rounded bg-navy px-2 py-0.5 text-xs font-bold text-white dark:text-[#0f141c]">{it.label}</span>
+                <span className="rounded bg-navy px-2 py-0.5 text-xs font-bold text-on-accent">{it.label}</span>
                 <span className="font-bold text-ink">{it.answer}</span>
               </header>
               {it.sourcePart && (

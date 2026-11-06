@@ -25,7 +25,7 @@ export function CheckpointTrack({ done, total, labels = true, size = "md" }: { d
             >
               <span
                 className={`flex ${dot} items-center justify-center rounded-full border-2 text-[9px] font-bold ${
-                  got ? `${complete ? "border-ok bg-ok" : "border-navy bg-navy"} text-white dark:text-[#0f141c]` : "border-line-strong bg-surface text-faint"
+                  got ? `${complete ? "border-ok bg-ok" : "border-navy bg-navy"} text-on-accent` : "border-line-strong bg-surface text-faint"
                 }`}
               >
                 {got ? "✓" : ""}
@@ -69,7 +69,7 @@ export function ComboChip({ count, animate = false }: { count: number; animate?:
 export function CheckpointRibbon({ cp }: { cp: Checkpoint }) {
   return (
     <div className="quiz-rise flex items-center gap-2 rounded-lg border border-navy/30 bg-navy-soft px-3 py-2 text-sm">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-navy text-[10px] font-bold text-white dark:text-[#0f141c]">✓</span>
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-navy text-[10px] font-bold text-on-accent">✓</span>
       <span className="font-semibold text-navy">{cp.at === 3 ? "첫 번째 체크포인트 돌파!" : `${cp.title}!`}</span>
       <span className="ml-auto text-xs text-muted">{cp.at}문제 달성</span>
     </div>

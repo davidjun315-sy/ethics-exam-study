@@ -4,6 +4,7 @@ import { Badge, Empty } from "@/components/ui";
 import { cachedQuestionsByPhilosopher as listQuestionsByPhilosopher } from "@/lib/data/cached";
 import { groupByTradition } from "@/lib/traditions";
 import { ROLE_LABEL } from "@/lib/types";
+import { SearchFilter } from "./SearchFilter";
 
 /** 기출문제 → 사상가별: 분야(섹터) → 사상가 → 문항 */
 export async function ExamsByPhilosopher() {
@@ -13,17 +14,18 @@ export async function ExamsByPhilosopher() {
   const groups = groupByTradition(data.map((d) => ({ ...d, name: d.philosopher.name, tradition: d.philosopher.tradition })));
 
   return (
-    <div className="space-y-6">
-      <nav className="sticky top-14 z-10 flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface/95 p-1 backdrop-blur">
+    <div id="ph-exams" className="space-y-6">
+      <SearchFilter target="ph-exams" placeholder="사상가 이름으로 찾기" />
+      <nav className="sticky top-[calc(3.5rem+var(--safe-top))] z-10 -mx-4 -mt-3 flex gap-1.5 overflow-x-auto bg-bg/90 px-4 py-2 backdrop-blur [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0">
         {groups.map((g) => (
-          <a key={g.chapter} href={`#sector-${g.chapter}`} className="shrink-0 rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface-2 hover:text-ink">
-            {g.chapter} <span className="text-xs text-faint">{g.items.length}</span>
+          <a key={g.chapter} href={`#sector-${g.chapter}`} className="chip shrink-0 !min-h-8">
+            {g.chapter} <span className="num text-xs text-faint">{g.items.length}</span>
           </a>
         ))}
       </nav>
       {groups.map((g) => (
-        <section key={g.chapter} id={`sector-${g.chapter}`} className="scroll-mt-28">
-          <h2 className="mb-2 flex items-baseline gap-2 text-lg font-bold">
+        <section key={g.chapter} id={`sector-${g.chapter}`} data-group className="scroll-mt-32">
+          <h2 className="mb-2 flex items-baseline gap-2 text-base font-bold">
             {g.chapter}
             <span className="text-sm font-normal text-faint">
               사상가 {g.items.length}명 · 기출 {new Set(g.items.flatMap((d) => d.questions.filter((q) => q.role === "main" || q.role === "comparison").map((q) => q.id))).size}문항
@@ -31,8 +33,8 @@ export async function ExamsByPhilosopher() {
           </h2>
           <div className="space-y-2">
             {g.items.map(({ philosopher: p, questions, asked, lastYear }) => (
-              <details key={p.id} className="card group">
-                <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-3">
+              <details key={p.id} data-search={`${p.name} ${p.school ?? ""}`} className="card group">
+                <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3">
                   <span className="text-faint transition-transform group-open:rotate-90" aria-hidden>▸</span>
                   <span className="font-bold text-ink">{p.name}</span>
                   {p.school && <span className="text-xs text-faint">{p.school}</span>}

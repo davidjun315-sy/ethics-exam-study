@@ -158,6 +158,7 @@ export async function getDashboard() {
     questionCount,
     philosopherCount,
     sourceCount,
+    analyzedCount: all.filter((q) => q.analysis).length,
     recentExams,
     recentQuestions,
     topPhilosophers: stats.philosopherCounts.slice(0, 10),

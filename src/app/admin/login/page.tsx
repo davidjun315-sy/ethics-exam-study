@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/admin/LoginForm";
+import { LogoMark } from "@/components/brand/Logo";
 import { isAdminPasswordConfigured } from "@/lib/auth";
 
 export const metadata = { title: "관리자 로그인" };
@@ -10,7 +11,10 @@ export default async function LoginPage({ searchParams }: PageProps<"/admin/logi
   return (
     <div className="mx-auto mt-16 max-w-sm">
       <div className="card p-6">
-        <h1 className="text-lg font-bold">관리자</h1>
+        <div className="flex items-center gap-2.5">
+          <LogoMark className="h-8 w-8" />
+          <h1 className="text-lg font-bold">ETHOS 관리자</h1>
+        </div>
         <p className="mt-1 text-sm text-muted">PDF 업로드와 데이터 수정은 관리자만 할 수 있습니다.</p>
         {isAdminPasswordConfigured() ? (
           <LoginForm next={next} />

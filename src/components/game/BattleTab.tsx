@@ -55,7 +55,7 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
             return (
               <div key={o.cardId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
                 <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} featured={o.cardId === state.featuredId} tilt={false} onClick={() => toggle(o.cardId)} />
-                {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-white shadow dark:text-[#0f141c]">{at + 1}</span>}
+                {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-on-accent shadow">{at + 1}</span>}
               </div>
             );
           })}

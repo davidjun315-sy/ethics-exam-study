@@ -24,7 +24,7 @@ export default async function TrendsPage({ searchParams }: PageProps<"/trends">)
             key={t.key}
             href={`/trends?tab=${t.key}`}
             title={t.help}
-            className={`rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+            className={`rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-on-accent" : "text-muted hover:bg-surface-2"}`}
           >
             {t.label}
           </Link>

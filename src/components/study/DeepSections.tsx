@@ -200,7 +200,7 @@ export function ConceptsTab({ d, isAdmin }: { d: QuestionDetail; isAdmin: boolea
                     <span className="text-xs font-semibold text-muted">{m.philosopher}</span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-baseline gap-2 rounded-md bg-navy px-3 py-2 text-white dark:text-[#0f141c]">
+                <div className="flex flex-wrap items-baseline gap-2 rounded-md bg-navy px-3 py-2 text-on-accent">
                   <KeywordLink name={m.focus} className="text-base font-bold" />
                   {m.focusGist && <span className="text-sm opacity-80">{m.focusGist}</span>}
                 </div>

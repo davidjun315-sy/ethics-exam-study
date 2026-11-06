@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { ChevronLeft, GitCompare } from "lucide-react";
 import { notFound } from "next/navigation";
 import { DataError, load } from "@/components/DataError";
 import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
-import { Badge, Empty, PageTitle, SectionTitle, StatCard, Tag } from "@/components/ui";
+import { Badge, Empty, SectionTitle, Tag } from "@/components/ui";
 import { PhilosopherNotebook } from "@/components/study/PhilosopherNotebook";
 import { PhilosopherStudyNote } from "@/components/study/PhilosopherStudyNote";
 import { isAdmin } from "@/lib/admin-guard";
@@ -40,26 +41,40 @@ export default async function PhilosopherPage({ params, searchParams }: PageProp
 
   return (
     <div className="space-y-6">
-      <PageTitle
-        title={
-          <>
-            {p.name} {p.original_name && <span className="text-lg font-normal text-muted">{p.original_name}</span>}
-          </>
-        }
-        subtitle={[p.tradition, p.school, p.era].filter(Boolean).join(" · ") || undefined}
-        actions={
-          <>
+      <section className="relative overflow-hidden rounded-2xl border border-line p-5 sm:p-6" style={{ background: "var(--hero)" }}>
+        <Link href="/philosophers" className="relative mb-2 inline-flex items-center gap-1 text-[13px] text-muted hover:text-navy">
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+          사상가 탐구
+        </Link>
+        <div className="relative flex flex-wrap items-start gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-surface text-2xl font-bold text-navy shadow-card" aria-hidden>
+            {p.name.slice(0, 1)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              {p.name} {p.original_name && <span className="text-base font-normal text-muted sm:text-lg">{p.original_name}</span>}
+            </h1>
+            {[p.tradition, p.school, p.era].some(Boolean) && <p className="mt-0.5 text-sm text-muted">{[p.tradition, p.school, p.era].filter(Boolean).join(" · ")}</p>}
+          </div>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {admin && <Link href={`/admin/philosophers/${p.id}`} className="btn">페이지 편집</Link>}
-            <Link href={`/philosophers/compare?a=${p.id}`} className="btn">다른 사상가와 비교</Link>
-          </>
-        }
-      />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="출제 횟수" value={`${questions.length}회`} />
-        <StatCard label="최근 출제 연도" value={lastYear ?? "-"} />
-        <StatCard label="주요 개념" value={concepts.length} />
-        <StatCard label="주요 원전" value={sources.length} />
-      </div>
+            <Link href={`/philosophers/compare?a=${p.id}`} className="btn"><GitCompare className="h-4 w-4" aria-hidden />다른 사상가와 비교</Link>
+          </div>
+        </div>
+        <dl className="relative mt-5 grid grid-cols-4 gap-2 border-t border-line/70 pt-4 text-center sm:max-w-xl sm:text-left">
+          {[
+            { label: "출제", value: `${questions.length}회` },
+            { label: "최근 출제", value: lastYear ?? "-" },
+            { label: "주요 개념", value: concepts.length },
+            { label: "주요 원전", value: sources.length },
+          ].map((x) => (
+            <div key={x.label}>
+              <dt className="text-[11px] text-muted">{x.label}</dt>
+              <dd className="num text-lg font-bold">{x.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       {p.aliases.length > 0 && (
         <div className="flex flex-wrap gap-1.5 text-sm">
           <span className="text-muted">다른 이름</span>
@@ -70,13 +85,14 @@ export default async function PhilosopherPage({ params, searchParams }: PageProp
       )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 space-y-6 lg:col-span-2">
-          <nav className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
+          <nav className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0" aria-label="사상가 보기">
             {TABS.map((t) => (
               <Link
                 key={t.key}
                 href={`/philosophers/${p.id}?tab=${t.key}`}
                 scroll={false}
-                className={`shrink-0 rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+                aria-current={tab === t.key ? "page" : undefined}
+                className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm transition-colors ${tab === t.key ? "border-navy font-semibold text-navy" : "border-transparent text-muted hover:text-ink"}`}
               >
                 {t.label}
                 {t.key === "questions" && <span className="ml-1 text-xs opacity-70">{questions.length}</span>}

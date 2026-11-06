@@ -25,7 +25,7 @@ export default async function MyPage({ searchParams }: PageProps<"/my">) {
           <Link
             key={t.key}
             href={`/my?tab=${t.key}`}
-            className={`rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+            className={`rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-on-accent" : "text-muted hover:bg-surface-2"}`}
           >
             {t.label}
           </Link>

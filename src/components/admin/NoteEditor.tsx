@@ -234,7 +234,7 @@ export function NoteEditor({ philosopherId, initial, refs, hasNote }: { philosop
             <button
               key={m}
               type="button"
-              className={`rounded-md px-3 py-1 text-sm ${mode === m ? "bg-navy text-white dark:text-[#0f141c]" : "text-muted"}`}
+              className={`rounded-md px-3 py-1 text-sm ${mode === m ? "bg-navy text-on-accent" : "text-muted"}`}
               onClick={() => {
                 if (m === "json") setJson(JSON.stringify(note, null, 2));
                 setMode(m);

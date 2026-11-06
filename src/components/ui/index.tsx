@@ -5,10 +5,10 @@ import { ROLE_LABEL, STATUS_LABEL, VERIFICATION_LABEL, type AnalysisStatus, type
 
 export function PageTitle({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:mb-6">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-[1.7rem]">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm leading-relaxed text-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
@@ -18,7 +18,7 @@ export function PageTitle({ title, subtitle, actions }: { title: ReactNode; subt
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="text-[15px] font-bold text-ink">{children}</h2>
+      <h2 className="text-base font-bold tracking-tight text-ink">{children}</h2>
       {right}
     </div>
   );
@@ -35,7 +35,7 @@ const TONE: Record<Tone, string> = {
 
 export function Badge({ children, tone = "neutral", title }: { children: ReactNode; tone?: Tone; title?: string }) {
   return (
-    <span title={title} className={`inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-xs font-medium ${TONE[tone]}`}>
+    <span title={title} className={`inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-medium ${TONE[tone]}`}>
       {children}
     </span>
   );
@@ -86,17 +86,36 @@ export function Tag({ href, children }: { href: string; children: ReactNode }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="rounded-lg border border-dashed border-line-strong px-4 py-8 text-center text-sm text-muted">{children}</div>;
+  return <div className="rounded-xl border border-dashed border-line-strong px-4 py-10 text-center text-sm text-muted">{children}</div>;
 }
 
 export function StatCard({ label, value, href }: { label: string; value: ReactNode; href?: string }) {
   const body = (
-    <div className="card px-4 py-3 hover:border-line-strong">
+    <div className="card h-full px-4 py-3 transition-colors hover:border-line-strong">
       <div className="text-xs font-medium text-muted">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-navy">{value}</div>
+      <div className="num mt-0.5 text-2xl font-bold text-ink">{value}</div>
     </div>
   );
   return href ? <Link href={href}>{body}</Link> : body;
 }
 
 export { isLowConfidence };
+
+/** 세그먼트 탭 (링크) — 연도별/사상가별 같은 화면 내 보기 전환 */
+export function Segmented({ items, active }: { items: { key: string; label: ReactNode; href: string }[]; active: string }) {
+  return (
+    <nav className="mb-4 inline-flex w-full gap-1 rounded-xl bg-surface-2 p-1 sm:w-auto" role="tablist">
+      {items.map((v) => (
+        <Link
+          key={v.key}
+          href={v.href}
+          role="tab"
+          aria-selected={active === v.key}
+          className={`flex-1 rounded-lg px-4 py-2 text-center text-sm transition-colors sm:flex-none ${active === v.key ? "bg-surface font-semibold text-ink shadow-soft" : "text-muted hover:text-ink"}`}
+        >
+          {v.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}

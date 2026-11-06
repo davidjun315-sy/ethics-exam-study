@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { QuestionDetail, QuestionSummary } from "@/lib/data/queries";
 import { isLowConfidence, questionRef } from "@/lib/format";
@@ -111,13 +112,13 @@ export function QuestionStudy({
   return (
     <div>
       {/* 상단 정보 */}
-      <div className="card mb-4 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/exams/${exam.id}`} className="text-sm text-muted hover:text-navy">
-            {exam.exam_year}학년도 {exam.section ? `전공 ${exam.section}` : exam.exam_name}
-          </Link>
-          <span className="text-faint">/</span>
-          <h1 className="text-xl font-bold">{q.label}번</h1>
+      <div className="card mb-4 p-4 sm:p-5">
+        <Link href={`/exams/${exam.id}`} className="inline-flex items-center gap-1 text-[13px] text-muted hover:text-navy">
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+          {exam.exam_year}학년도 {exam.section ? `전공 ${exam.section}` : exam.exam_name}
+        </Link>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight">{q.label}번</h1>
           {q.score !== null && <Badge>{q.score}점</Badge>}
           {q.question_type && <Badge>{q.question_type}</Badge>}
           {showAnalysis && a?.area && <Badge tone="navy">{a.area}</Badge>}
@@ -127,13 +128,13 @@ export function QuestionStudy({
           {showAnalysis && a?.difficulty && <Badge>난이도 {a.difficulty}</Badge>}
           <div className="ml-auto flex items-center gap-1">
             {prev && (
-              <Link className="btn" href={`/questions/${prev.id}`}>
-                ← {prev.label}
+              <Link className="btn !px-2.5" href={`/questions/${prev.id}`} aria-label={`이전 문항 ${prev.label}번`}>
+                <ChevronLeft className="h-4 w-4" aria-hidden /> {prev.label}
               </Link>
             )}
             {next && (
-              <Link className="btn" href={`/questions/${next.id}`}>
-                {next.label} →
+              <Link className="btn !px-2.5" href={`/questions/${next.id}`} aria-label={`다음 문항 ${next.label}번`}>
+                {next.label} <ChevronRight className="h-4 w-4" aria-hidden />
               </Link>
             )}
           </div>
@@ -170,10 +171,10 @@ export function QuestionStudy({
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* 왼쪽: 원본 문제 */}
-        <div className="lg:sticky lg:top-18 lg:max-h-[calc(100vh-5.5rem)] lg:self-start lg:overflow-auto">
+        <div className="lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:self-start lg:overflow-auto">
           <div className="card p-3">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-bold text-navy">원본 문제</span>
+              <span className="eyebrow !text-navy">원본 문제</span>
               <div className="flex gap-1">
                 <button className="btn" onClick={() => setShowText((v) => !v)}>
                   {showText ? "이미지 보기" : "텍스트 보기"}
@@ -187,9 +188,9 @@ export function QuestionStudy({
             </div>
             {!showText && q.question_image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={q.question_image_url} alt={`${refLabel} 원본 문제`} className="w-full rounded border border-line bg-white" />
+              <img src={q.question_image_url} alt={`${refLabel} 원본 문제`} className="w-full rounded-lg border border-line bg-white" />
             ) : q.question_text ? (
-              <p className="prose-study rounded bg-surface-2 p-3">{q.question_text}</p>
+              <p className="prose-study rounded-lg bg-surface-2 p-4">{q.question_text}</p>
             ) : (
               <Empty>문항 이미지와 텍스트가 없습니다.</Empty>
             )}
@@ -210,8 +211,8 @@ export function QuestionStudy({
 
         {/* 오른쪽: AI 분석 */}
         <div className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2/70 p-2">
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 px-1 text-sm font-medium">
               <input type="checkbox" checked={solveMode} onChange={toggleMode} className="h-4 w-4 accent-[var(--navy)]" />
               문제 풀이 모드
             </label>
@@ -247,12 +248,14 @@ export function QuestionStudy({
               </>
             )}
           </div>
-          <div className="mb-3 flex flex-wrap gap-1 rounded-lg border border-line bg-surface p-1">
+          <div className="-mx-4 mb-3 flex gap-1 overflow-x-auto border-b border-line px-4 [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0" role="tablist" aria-label="분석 보기">
             {TABS.map((t) => (
               <button
                 key={t}
+                role="tab"
+                aria-selected={tab === t}
                 onClick={() => setTab(t)}
-                className={`rounded-md px-2.5 py-1.5 text-sm ${tab === t ? "bg-navy text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+                className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm transition-colors ${tab === t ? "border-navy font-semibold text-navy" : "border-transparent text-muted hover:text-ink"}`}
               >
                 {t}
               </button>

@@ -58,7 +58,7 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
           <Link
             key={t.key}
             href={`/admin/quiz?tab=${t.key}`}
-            className={`shrink-0 rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+            className={`shrink-0 rounded-md px-4 py-2 text-sm ${tab === t.key ? "bg-navy font-semibold text-on-accent" : "text-muted hover:bg-surface-2"}`}
           >
             {t.label}
             {t.key === "reports" && data?.status.openReports ? <span className="ml-1 rounded bg-danger px-1.5 text-xs text-white">{data.status.openReports}</span> : null}

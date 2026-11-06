@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/account/AuthForm";
+import { LogoMark } from "@/components/brand/Logo";
 import { getCurrentMember, isSignupOpen, safeNext } from "@/lib/members";
 
 export const metadata = { title: "회원가입" };
@@ -12,7 +13,10 @@ export default async function SignupPage({ searchParams }: PageProps<"/signup">)
   const open = await isSignupOpen().catch(() => true);
   return (
     <div className="mx-auto max-w-sm space-y-4 py-6">
-      <h1 className="text-center text-2xl font-bold">회원가입</h1>
+      <div className="flex flex-col items-center gap-3 pb-2 pt-4">
+        <LogoMark className="h-12 w-12 drop-shadow-sm" />
+        <h1 className="text-center text-2xl font-bold tracking-tight">회원가입</h1>
+      </div>
       {open ? (
         <>
           <p className="text-center text-sm text-muted">아이디와 비밀번호만 있으면 됩니다. 이메일 등 다른 정보는 받지 않습니다.</p>

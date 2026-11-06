@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { ChevronRight, Compass, PenLine, RotateCcw, ScrollText, Swords } from "lucide-react";
 import type { Dashboard } from "@/lib/quiz/learn";
 import { CHALLENGES, checkpoints, missionStatus, type ChallengeType } from "@/lib/quiz/game";
 import { SCOPE_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
 import { Bar, CheckpointTrack, ComboChip } from "./GameBits";
 import { ScopePicker } from "./ScopePicker";
-import { MyPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
+import { FeaturedPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
 
 function Flame({ on }: { on: boolean }) {
   return (
@@ -15,6 +16,13 @@ function Flame({ on }: { on: boolean }) {
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+// 실전 도전 I·II·III: 원문 획득(decode) · 서술형 마스터(essay) · 오답 복수전(revenge)
+const CHALLENGE_ICON = [ScrollText, PenLine, Swords];
+const CHALLENGE_TONE = [
+  "bg-[#ebeffa] text-[#4a66bf] dark:bg-[#1f2c47] dark:text-[#9db6ee]",
+  "bg-[#e9f4ee] text-[#1f7a5c] dark:bg-[#15301f] dark:text-[#7cd0a5]",
+  "bg-[#fdecea] text-[#b42318] dark:bg-[#3d1c1d] dark:text-[#f08a80]",
+];
 const pct = (v: number | null) => (v === null ? "-" : `${Math.round(v * 100)}%`);
 
 /** 접기/펼치기 카드 (숙련도·달력처럼 자주 보지 않는 정보) */
@@ -22,7 +30,7 @@ function Fold({ title, summary, children, id }: { title: string; summary: React.
   return (
     <details id={id} className="card group">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
-        <span className="text-[15px] font-bold">{title}</span>
+        <span className="text-base font-bold">{title}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
         <span className="text-faint transition-transform group-open:rotate-90" aria-hidden>›</span>
       </summary>
@@ -62,14 +70,14 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
 
   const profile = (
     <>
-        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-navy/30 bg-navy-soft">
+        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-navy-soft">
           <span className="text-[9px] font-semibold uppercase tracking-wider text-navy/80">Lv</span>
           <span className="-mt-1 text-xl font-bold leading-none text-navy">{level.level}</span>
         </div>
-        <div className="min-w-[10rem] flex-1">
+        <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold tabular-nums">{xp} XP</span>
-            <span className="text-xs text-faint">다음 레벨까지 {level.next - xp}</span>
+            <span className="text-sm font-semibold"><span className="text-muted">학습 레벨</span> <span className="num">{xp} XP</span></span>
+            <span className="hidden text-xs text-faint sm:inline">다음 레벨까지 {level.next - xp}</span>
           </div>
           <div className="mt-1.5"><Bar value={lvProgress} /></div>
         </div>
@@ -77,10 +85,10 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
           <Flame on={d.streak > 0} />
           <div>
             <div className="text-xl font-bold leading-none tabular-nums">{d.streak}일</div>
-            <div className="text-[11px] text-muted">연속 학습{d.profile?.best_streak ? ` · 최고 ${d.profile.best_streak}일` : ""}</div>
+            <div className="whitespace-nowrap text-[11px] text-muted">연속 학습<span className="hidden sm:inline">{d.profile?.best_streak ? ` · 최고 ${d.profile.best_streak}일` : ""}</span></div>
           </div>
         </div>
-        <a href="#settings" className="rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy">
+        <a href="#settings" className="hidden rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy sm:inline-block">
           {SCOPE_NAMES[d.scope]}
         </a>
       </>
@@ -88,17 +96,14 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      {/* 1. 나의 철학자 (대표 카드) + 프로필 요약 */}
-      {game ? (
-        <MyPhilosopher game={game}>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">{profile}</div>
-        </MyPhilosopher>
-      ) : (
-        <section className="card flex flex-wrap items-center gap-x-6 gap-y-3 p-4">{profile}</section>
-      )}
+      {/* 1. 학습 레벨 · XP · 연속 학습 (학습자 지표 — 카드 레벨과 별개) */}
+      <section className="card flex items-center gap-3 p-3.5 sm:gap-5 sm:p-4" aria-label="나의 학습 레벨">{profile}</section>
+
+      {/* 2. 대표 사상가 카드 (메인 홈과 같은 데이터) */}
+      {game && <FeaturedPhilosopher game={game} variant="full" />}
 
       {/* 2. 오늘의 미션 (메인) */}
-      <section className={`card overflow-hidden ${today.completed ? "border-ok/50" : "border-navy/40"}`}>
+      <section className={`card overflow-hidden ${today.completed ? "border-ok/50" : "border-navy/30"}`}>
         <div className={`px-5 pb-5 pt-4 ${today.completed ? "bg-ok-soft/50" : "bg-navy-soft/40"}`}>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -139,12 +144,12 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
             <p className="rounded bg-surface-2 p-3 text-sm text-muted">아직 공개된 퀴즈 문제가 없습니다. 관리자 화면의 &apos;윤리 퀴즈 관리&apos;에서 문제은행을 동기화하고 승인하세요.</p>
           ) : today.completed ? (
             <div className="grid gap-2 sm:grid-cols-2">
-              <a href="#challenges" className="btn-primary py-3 text-base font-semibold">실전 도전 이어 가기</a>
+              <a href="#challenges" className="btn-primary py-3 text-base">실전 도전 이어 가기</a>
               <Link href="/quiz/free" className="btn py-3">자유 학습</Link>
             </div>
           ) : (
-            <Link href="/quiz/play?mode=daily" className="btn-primary block w-full py-3.5 text-center text-base font-semibold">
-              {missionLabel}
+            <Link href="/quiz/play?mode=daily" className="btn-primary w-full py-3.5 text-base">
+              {missionLabel} <ChevronRight className="h-4 w-4" aria-hidden />
             </Link>
           )}
         </div>
@@ -153,7 +158,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
       {/* 3. 오늘의 실전 도전 */}
       <section id="challenges" className="scroll-mt-20">
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-[15px] font-bold">오늘의 실전 도전</h2>
+          <h2 className="text-base font-bold">오늘의 실전 도전</h2>
           <span className="text-[11px] text-faint">{SCOPE_NAMES[d.scope]} 안에서 출제</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -163,15 +168,23 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
             const ok = info.count > 0;
             return (
               <div key={k} className={`card flex flex-col p-4 ${ok ? "" : "opacity-70"}`}>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy text-[11px] font-bold text-white dark:text-[#0f141c]">{["I", "II", "III"][i]}</span>
-                  <h3 className="font-bold">{c.title}</h3>
+                <div className="flex items-center gap-2.5">
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${CHALLENGE_TONE[i]}`}>
+                    {(() => {
+                      const Icon = CHALLENGE_ICON[i];
+                      return <Icon className="h-[18px] w-[18px]" aria-hidden />;
+                    })()}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">도전 {["I", "II", "III"][i]}</div>
+                    <h3 className="font-bold leading-tight">{c.title}</h3>
+                  </div>
                 </div>
                 <p className="mt-1.5 flex-1 text-xs leading-5 text-muted">{c.desc}</p>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="text-[11px] text-faint">{ok ? `${info.note} · ${c.size}문제씩` : k === "revenge" ? "틀린 문제가 없어요" : "조건에 맞는 문제가 아직 없어요"}</span>
                   {ok ? (
-                    <Link href={`/quiz/play?challenge=${k}`} className="btn shrink-0 !py-1 text-xs font-semibold">도전</Link>
+                    <Link href={`/quiz/play?challenge=${k}`} className="btn-primary shrink-0 !min-h-8 !py-1 text-xs">도전</Link>
                   ) : null}
                 </div>
               </div>
@@ -182,13 +195,14 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
 
       {/* 4. 자유 학습 · 오답 복습 */}
       <div className="grid grid-cols-2 gap-3">
-        <Link href="/quiz/free" className="card p-4 hover:border-navy/50">
-          <div className="font-bold">자유 학습</div>
+        <Link href="/quiz/free" className="card p-4 transition-colors hover:border-navy/50">
+          <div className="flex items-center gap-1.5 font-bold"><Compass className="h-4 w-4 text-navy" aria-hidden />자유 학습</div>
           <div className="mt-0.5 text-xs text-muted">영역·사상가·연도·유형·난이도 골라 풀기</div>
         </Link>
         <Link href={d.wrongCount ? "/quiz/play?mode=review" : "/quiz"} className={`card p-4 ${d.wrongCount ? "hover:border-navy/50" : "pointer-events-none opacity-60"}`}>
-          <div className="flex items-baseline gap-2 font-bold">
-            오답 복습 <span className="text-sm font-semibold text-danger">{d.wrongCount || ""}</span>
+          <div className="flex items-center gap-1.5 font-bold">
+            <RotateCcw className="h-4 w-4 text-danger" aria-hidden />
+            오답 복습 <span className="num text-sm font-semibold text-danger">{d.wrongCount || ""}</span>
           </div>
           <div className="mt-0.5 text-xs text-muted">{d.wrongCount ? "틀렸거나 일부만 맞힌 문제" : "아직 틀린 문제가 없습니다"}</div>
         </Link>
@@ -198,7 +212,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
       {/* 5. 학습 성장 요약 (실제 학습 지표) */}
       <section className="card p-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-[15px] font-bold">학습 성장 요약</h2>
+          <h2 className="text-base font-bold">학습 성장 요약</h2>
           <span className="text-[11px] text-faint">최근 7일 · 실제 풀이 기록 기준</span>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -210,7 +224,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
           ].map((t) => (
             <div key={t.label} className="rounded-lg bg-surface-2 p-3">
               <div className="text-[11px] text-muted">{t.label}</div>
-              <div className="text-xl font-bold tabular-nums">{t.value}</div>
+              <div className="num text-[22px] font-bold leading-tight">{t.value}</div>
               <div className="text-[10px] text-faint">{t.sub}</div>
             </div>
           ))}
@@ -297,7 +311,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
                   key={c.day}
                   title={`${c.day} · ${c.answered}문제${c.completed ? " · 미션 완료" : ""}`}
                   className={`flex aspect-square items-center justify-center rounded-md text-[11px] ${
-                    c.completed ? "bg-ok text-white dark:text-[#0f141c]" : c.answered ? "bg-navy-soft text-navy" : "bg-surface-2 text-faint"
+                    c.completed ? "bg-ok text-on-accent" : c.answered ? "bg-navy-soft text-navy" : "bg-surface-2 text-faint"
                   }`}
                 >
                   {Number(c.day.slice(8))}
@@ -328,7 +342,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
 
       {/* 8. 출제 범위 · 설정 */}
       <section id="settings" className="card scroll-mt-20 p-4">
-        <h2 className="mb-1 text-[15px] font-bold">출제 범위</h2>
+        <h2 className="mb-1 text-base font-bold">출제 범위</h2>
         <p className="mb-3 text-xs text-muted">
           오늘의 미션·오답 복습·실전 도전에 낼 문제 종류입니다. 바꾸면 오늘 미션에서 아직 안 푼 문제도 바로 바뀝니다 (푼 문제와 기록은 그대로).
         </p>

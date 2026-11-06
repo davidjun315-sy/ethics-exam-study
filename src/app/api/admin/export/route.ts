@@ -65,7 +65,7 @@ export async function GET(req: Request) {
       return download(createZip(files, now), `ethics-${since ? "changed" : "philosophers"}-${day}.zip`, "application/zip");
     }
 
-    return download(combinedFile("윤리 기출 — 전체 분석 자료", philosophers, questions, opt, now), `ethics-all-${day}.md`, md);
+    return download(combinedFile("ETHOS — 전체 분석 자료", philosophers, questions, opt, now), `ethics-all-${day}.md`, md);
   } catch (e) {
     return jsonError(e);
   }

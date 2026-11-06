@@ -24,7 +24,7 @@ const TABS: { key: Tab; label: string; short: string }[] = [
 export function Coins({ value, className = "" }: { value: number; className?: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border border-warn/40 bg-warn-soft px-3 py-1 text-sm font-bold tabular-nums text-warn ${className}`}>
-      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-warn text-[9px] font-black text-white dark:text-[#0f141c]">C</span>
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-warn text-[9px] font-black text-on-accent">C</span>
       {value.toLocaleString()}
     </span>
   );
@@ -73,7 +73,7 @@ export function GameApp({ initial, initialTab, initialBase }: { initial: GameSta
               role="tab"
               aria-selected={tab === t.key}
               onClick={() => go(t.key)}
-              className={`relative rounded-lg px-1 py-2.5 text-sm font-semibold transition-colors ${tab === t.key ? "bg-navy text-white dark:text-[#0f141c]" : "text-muted hover:bg-surface-2"}`}
+              className={`relative rounded-lg px-1 py-2.5 text-sm font-semibold transition-colors ${tab === t.key ? "bg-navy text-on-accent" : "text-muted hover:bg-surface-2"}`}
             >
               <span className="sm:hidden">{t.short}</span>
               <span className="hidden sm:inline">{t.label}</span>

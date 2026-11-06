@@ -195,7 +195,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
                 aria-selected={picking === p}
                 disabled={p === "material" && !base}
                 onClick={() => setPicking(p)}
-                className={`rounded-md px-3 py-1 ${picking === p ? "bg-navy font-semibold text-white dark:text-[#0f141c]" : "text-muted disabled:opacity-40"}`}
+                className={`rounded-md px-3 py-1 ${picking === p ? "bg-navy font-semibold text-on-accent" : "text-muted disabled:opacity-40"}`}
               >
                 {p === "base" ? "기준 카드 고르기" : "재료 고르기"}
               </button>
@@ -245,7 +245,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
           <Grid>
             {materialList.map((o) => (
               <Pickable key={o.cardId} selected={materialIds.includes(o.cardId)} onClick={() => toggleMaterial(o)}>
-                <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} badge={state.deck.includes(o.cardId) ? <span className="rounded bg-navy px-1 text-[9px] font-bold text-white dark:text-[#0f141c]">덱</span> : undefined} />
+                <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} badge={state.deck.includes(o.cardId) ? <span className="rounded bg-navy px-1 text-[9px] font-bold text-on-accent">덱</span> : undefined} />
               </Pickable>
             ))}
           </Grid>

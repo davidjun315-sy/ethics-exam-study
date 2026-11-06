@@ -294,7 +294,7 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
       ) : (
         <article className="space-y-4">
           <header className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className={`rounded px-2 py-0.5 font-semibold ${view.kind === "exam" ? "bg-navy text-white dark:text-[#0f141c]" : "bg-warn-soft text-warn"}`}>
+            <span className={`rounded px-2 py-0.5 font-semibold ${view.kind === "exam" ? "bg-navy text-on-accent" : "bg-warn-soft text-warn"}`}>
               {view.kind === "exam" ? "실제 기출" : "AI 예상 문제"}
             </span>
             {view.kind === "exam" && view.ref && <span className="text-muted">{view.ref}{view.score ? ` · ${view.score}점` : ""}</span>}
@@ -451,7 +451,7 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
                         >
                           <div className="flex items-center gap-1.5 font-bold">
                             {o.title}
-                            {suggested && <span className="rounded bg-navy px-1 text-[10px] font-semibold text-white dark:text-[#0f141c]">AI 제안</span>}
+                            {suggested && <span className="rounded bg-navy px-1 text-[10px] font-semibold text-on-accent">AI 제안</span>}
                           </div>
                           <div className="text-[11px] text-muted">{o.help}</div>
                         </button>
@@ -531,12 +531,12 @@ function OutcomePanel({ r, auto, prevCombo, cp, children }: { r: AttemptResult; 
     <section className={`quiz-rise rounded-lg border p-4 ${tone}`} aria-live="polite">
       <div className="flex flex-wrap items-center gap-2">
         {r.result === "correct" && (
-          <span className="quiz-pop quiz-ring flex h-7 w-7 items-center justify-center rounded-full bg-ok text-sm font-bold text-white dark:text-[#0f141c]" aria-hidden>
+          <span className="quiz-pop quiz-ring flex h-7 w-7 items-center justify-center rounded-full bg-ok text-sm font-bold text-on-accent" aria-hidden>
             ✓
           </span>
         )}
         <span className={`text-lg font-bold ${r.result === "correct" ? "text-ok" : r.result === "partial" ? "text-warn" : "text-ink"}`}>{title}</span>
-        {r.reconquered && <span className="quiz-pop rounded-full bg-ok px-2 py-0.5 text-xs font-bold text-white dark:text-[#0f141c]">재정복 성공</span>}
+        {r.reconquered && <span className="quiz-pop rounded-full bg-ok px-2 py-0.5 text-xs font-bold text-on-accent">재정복 성공</span>}
         <span className="ml-auto flex items-center gap-2">
           {r.result === "correct" && <ComboChip count={r.combo} animate />}
           {r.xp > 0 && <span className="text-sm font-semibold tabular-nums text-warn">+{r.xp} XP</span>}

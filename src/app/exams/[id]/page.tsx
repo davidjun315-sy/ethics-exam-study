@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { DataError, load } from "@/components/DataError";
 import { QuestionCard } from "@/components/QuestionCard";
@@ -20,7 +21,11 @@ export default async function ExamPage({ params, searchParams }: PageProps<"/exa
   const { exam, questions, admin } = data;
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl">
+      <Link href="/exams" className="mb-1 inline-flex items-center gap-1 text-[13px] text-muted hover:text-navy">
+        <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+        기출문제
+      </Link>
       <PageTitle
         title={examFullLabel(exam)}
         subtitle={exam.note ?? `${questions.length}문항`}
