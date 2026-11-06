@@ -6,6 +6,9 @@ import { listQuestionSummaries, type QuestionSummary } from "@/lib/data/queries"
 import { seedAcceptedAnswers } from "./grade.ts";
 import { chunks, fetchAll, fetchIn } from "./paged.ts";
 import { dedupeKey, expectedFromAnalysis, splitQuestion, type ExpectedItem, type SplitItem } from "./split.ts";
+import { buildPracticeItems, type PracticePayload } from "./practice.ts";
+import { buildPracticeAiPrompt, PracticeAiSchema, toAiPracticeItems } from "./practice-ai.ts";
+import { validatePasted } from "@/lib/ai/lenient";
 
 /**
  * 퀴즈 문제은행 동기화.
@@ -19,15 +22,16 @@ import { dedupeKey, expectedFromAnalysis, splitQuestion, type ExpectedItem, type
 export interface QuizItemRow {
   id: string;
   key: string;
-  kind: "exam" | "expected";
+  kind: QuizKind;
   origin: "analysis" | "practice" | "manual";
   question_id: string | null;
   practice_question_id: string | null;
   label: string;
-  format: "fill" | "essay";
+  format: QuizFormat;
   grading: "auto" | "self";
   prompt: string | null;
   passage: string | null;
+  payload?: PracticePayload | null; // 011: 연습문제 (보기·정답·해설)
   answer: string | null;
   accepted_answers: string[];
   model_answer: string | null;
@@ -46,6 +50,11 @@ export interface QuizItemRow {
   created_at: string;
   updated_at: string;
 }
+
+/** exam = 실제 기출 세부 문제 · expected = AI 예상 문제 · practice = 기출 기반 연습문제 (011) */
+export type QuizKind = "exam" | "expected" | "practice";
+/** choice·multi·classify 는 연습문제 (011) */
+export type QuizFormat = "fill" | "essay" | "choice" | "multi" | "classify";
 
 export interface QuizSettings {
   daily_total: number;
@@ -89,11 +98,11 @@ function meta(s: QuestionSummary) {
   };
 }
 
-type AnalysisRow = { question_id: string; answer: string | null; difficulty: "상" | "중" | "하" | null; area: string | null; details: AnalysisDetails };
+type AnalysisRow = { question_id: string; status: string; answer: string | null; difficulty: "상" | "중" | "하" | null; area: string | null; details: AnalysisDetails; common_mistakes: string[] | null };
 
 async function loadAnalyzed(questionIds?: string[]) {
   const db = getAdminClient();
-  const cols = "question_id, status, answer, difficulty, area, details";
+  const cols = "question_id, status, answer, difficulty, area, details, common_mistakes";
   const analyses = questionIds
     ? await fetchIn<AnalysisRow>(questionIds, (part) => db.from("question_analysis").select(cols).in("status", ANALYZED).in("question_id", part))
     : await fetchAll<AnalysisRow>((from, to) => db.from("question_analysis").select(cols).in("status", ANALYZED).order("question_id").range(from, to));
@@ -128,7 +137,7 @@ interface Planned {
   row: Record<string, unknown>;
   hash: string;
   reasons: string[];
-  kind: "exam" | "expected";
+  kind: QuizKind;
   questionId: string | null;
   dedupe?: string;
 }
@@ -198,12 +207,53 @@ function planExpected(s: QuestionSummary | null, x: ExpectedItem, extra: Record<
   };
 }
 
+/** 기출 기반 연습문제 (011): 그 문항의 저장된 분석으로만 만든다 */
+function planPractice(s: QuestionSummary, a: AnalysisRow): Planned[] {
+  const m = meta(s);
+  return buildPracticeItems({
+    questionId: s.id,
+    questionText: s.question_text,
+    details: a.details ?? {},
+    commonMistakes: a.common_mistakes ?? [],
+    needsReview: a.status === "needs_review",
+  }).map((it) => ({
+    key: it.key,
+    hash: it.sourceHash,
+    reasons: it.reviewReasons,
+    kind: "practice",
+    questionId: s.id,
+    row: {
+      key: it.key,
+      kind: "practice",
+      origin: "analysis",
+      question_id: s.id,
+      label: it.label,
+      format: it.format,
+      grading: "auto",
+      prompt: it.prompt,
+      answer: it.answer,
+      accepted_answers: it.acceptedAnswers,
+      payload: it.payload,
+      difficulty: it.difficulty,
+      sort_order: 1000 + it.sortOrder,
+      ...m,
+    },
+  }));
+}
+
+/** 011 마이그레이션(연습문제)이 적용됐는지: payload 열이 있으면 적용된 것 */
+export async function practiceReady(): Promise<boolean> {
+  const { error } = await getAdminClient().from("quiz_items").select("payload").limit(1);
+  return !error;
+}
+
 export interface SyncResult {
   created: number;
   updated: number;
   changed: number; // 관리자가 고친 문제인데 원본이 바뀜
   stale: number;
   expected: number;
+  practice: number; // 새로 만든 연습문제
   duplicates: number;
 }
 
@@ -213,10 +263,11 @@ export interface SyncResult {
 export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promise<SyncResult> {
   const db = getAdminClient();
   const settings = await getQuizSettings();
-  const rows = await loadAnalyzed(opts.questionIds);
+  const [rows, withPractice] = await Promise.all([loadAnalyzed(opts.questionIds), practiceReady()]);
   const planned: Planned[] = [];
   for (const { a, s } of rows) {
     planned.push(...planExam(s, a));
+    if (withPractice) planned.push(...planPractice(s, a));
     for (const ext of a.details?.futureExtensions ?? []) {
       const x = expectedFromAnalysis(s.id, ext);
       if (x) planned.push(planExpected(s, x, { origin: "analysis", question_id: s.id }));
@@ -254,7 +305,7 @@ export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promi
   const dedupe = new Map<string, string>();
   for (const r of expRows) if (r.passage) dedupe.set(dedupeKey(r.passage), r.key);
 
-  const result: SyncResult = { created: 0, updated: 0, changed: 0, stale: 0, expected: 0, duplicates: 0 };
+  const result: SyncResult = { created: 0, updated: 0, changed: 0, stale: 0, expected: 0, practice: 0, duplicates: 0 };
   const now = new Date().toISOString();
   const inserts: Record<string, unknown>[] = [];
   for (const p of planned) {
@@ -268,10 +319,12 @@ export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promi
       } else dedupe.set(p.dedupe, p.key);
     }
     if (!cur) {
-      const autoOk = p.kind === "exam" && settings.auto_approve_exam && reasons.length === 0;
-      inserts.push({ ...ROW_DEFAULTS, ...p.row, review_reasons: reasons, source_hash: p.hash, status: autoOk ? "approved" : "pending" });
+      // 기출 세부 문제·연습문제는 저장된 분석에서 규칙으로 만든 것 → 검토 사유가 없으면 자동 승인 설정을 따른다
+      const autoOk = (p.kind === "exam" || p.kind === "practice") && settings.auto_approve_exam && reasons.length === 0;
+      inserts.push({ ...ROW_DEFAULTS, ...(withPractice ? { payload: null } : {}), ...p.row, review_reasons: reasons, source_hash: p.hash, status: autoOk ? "approved" : "pending" });
       result.created++;
       if (p.kind === "expected") result.expected++;
+      if (p.kind === "practice") result.practice++;
       continue;
     }
     if (cur.source_hash === p.hash && cur.status !== "stale") continue;
@@ -567,4 +620,63 @@ export async function listLearnerStats(): Promise<LearnerStat[]> {
       selfRated: mine.length - auto.length,
     };
   });
+}
+
+// ---------------------------------------------------------------------
+// 연습문제 ② 원문 해석 · ⑤ 채점 요소 (채팅 AI 붙여넣기, 011)
+// ---------------------------------------------------------------------
+async function practiceAiContext(questionId: string) {
+  const rows = await loadAnalyzed([questionId]);
+  const r = rows[0];
+  if (!r) throw new Error("분석된 문항이 아닙니다. 먼저 AI 분석을 저장하세요.");
+  return r;
+}
+
+export async function getPracticeAiPrompt(questionId: string): Promise<string> {
+  const { a, s } = await practiceAiContext(questionId);
+  return buildPracticeAiPrompt({
+    ref: `${s.exam.exam_year} ${s.exam.section ?? ""} ${s.label}번`.replace(/\s+/g, " "),
+    questionText: s.question_text,
+    details: a.details ?? {},
+    commonMistakes: a.common_mistakes ?? [],
+  });
+}
+
+/** 붙여넣은 결과를 연습문제로 저장 (승인 대기). 같은 문항에서 다시 붙여넣으면 덮어쓰고, 줄어든 문제는 출제 중지 */
+export async function saveAiPractice(questionId: string, pasted: string): Promise<{ saved: number; skipped: string[] }> {
+  if (!(await practiceReady())) throw new Error("연습문제 열이 없습니다. Supabase SQL Editor 에서 supabase/migrations/011_quiz_practice.sql 을 실행하세요.");
+  const { s } = await practiceAiContext(questionId);
+  const ai = validatePasted(PracticeAiSchema, pasted);
+  const { items, skipped } = toAiPracticeItems(questionId, ai);
+  if (!items.length) throw new Error(`저장할 문제가 없습니다. ${skipped.join(" / ")}`);
+  const db = getAdminClient();
+  const m = meta(s);
+  const now = new Date().toISOString();
+  const rows = items.map((it, i) => ({
+    ...ROW_DEFAULTS,
+    key: it.key,
+    kind: "practice",
+    origin: "manual", // 동기화가 '원본에서 사라짐'으로 출제 중지하지 않게
+    question_id: questionId,
+    label: it.label,
+    format: it.format,
+    grading: "auto",
+    payload: it.payload,
+    difficulty: 2,
+    sort_order: 2000 + i,
+    status: "pending",
+    review_reasons: ["채팅 AI 가 만든 문제입니다. 보기·정답을 확인한 뒤 승인하세요."],
+    source_hash: it.sourceHash,
+    edited: false,
+    updated_at: now,
+    ...m,
+  }));
+  const { error } = await db.from("quiz_items").upsert(rows, { onConflict: "key" });
+  if (error) throw quizError(error.message);
+  // 이전에 붙여넣은 것 중 이번에 없는 문제는 출제 중지
+  const { data: prev } = await db.from("quiz_items").select("id, key").eq("question_id", questionId).like("key", `d:${questionId}:ai:%`);
+  const keep = new Set(items.map((i) => i.key));
+  const gone = (prev ?? []).filter((r) => !keep.has(r.key as string)).map((r) => r.id as string);
+  if (gone.length) await db.from("quiz_items").update({ status: "stale", updated_at: now }).in("id", gone);
+  return { saved: items.length, skipped };
 }

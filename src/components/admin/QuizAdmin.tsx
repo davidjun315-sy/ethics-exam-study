@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { api } from "@/lib/admin-client";
 import type { AdminItem, QuizSettings, ReportRow, SyncResult } from "@/lib/quiz/bank";
 import { TRADITIONS } from "@/lib/traditions";
+import { PRACTICE_TYPE_NAMES, type PracticePayload } from "@/lib/quiz/practice";
 import { Badge } from "@/components/ui";
 
 function useAction() {
@@ -42,7 +43,7 @@ export function SyncButton() {
         onClick={() =>
           run("sync", async () => {
             const r = await api<SyncResult>("/api/admin/quiz/sync", "POST");
-            return `새 문제 ${r.created}개 (예상 문제 ${r.expected}) · 갱신 ${r.updated} · 원본 변경(수정 문제) ${r.changed} · 출제 중지 ${r.stale}${r.duplicates ? ` · 중복 의심 ${r.duplicates}` : ""}`;
+            return `새 문제 ${r.created}개 (예상 문제 ${r.expected}${r.practice ? ` · 연습문제 ${r.practice}` : ""}) · 갱신 ${r.updated} · 원본 변경(수정 문제) ${r.changed} · 출제 중지 ${r.stale}${r.duplicates ? ` · 중복 의심 ${r.duplicates}` : ""}`;
           })
         }
       >
@@ -88,6 +89,39 @@ export function AiTestButton() {
   );
 }
 
+/** 연습문제 미리보기 (보기·정답·해설). 내용은 분석에서 자동으로 만들어지므로 고치려면 원본 분석을 고친 뒤 동기화 */
+function PracticePreview({ p }: { p: PracticePayload }) {
+  return (
+    <div className="mt-2 space-y-2 text-sm">
+      {"stem" in p && <p className="font-semibold">{p.stem}</p>}
+      {(p.mode === "choice" || p.mode === "multi") && (
+        <ol className="space-y-1">
+          {p.options.map((o, i) => {
+            const ok = p.mode === "choice" ? i === p.answer : p.answers.includes(i);
+            return (
+              <li key={i} className={`rounded px-2 py-1 ${ok ? "bg-ok-soft font-semibold text-ok" : "bg-surface-2"}`}>
+                {ok ? "✓ " : `${i + 1}. `}
+                {o}
+                {p.notes[i] && <span className="ml-1 text-xs font-normal text-muted">— {p.notes[i]}</span>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {p.mode === "classify" && (
+        <ul className="space-y-1">
+          {p.statements.map((s, i) => (
+            <li key={i} className="rounded bg-surface-2 px-2 py-1">
+              <b className="text-ok">[{p.groups[s.group]}]</b> {s.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted">출처: {p.grounds} · 내용을 고치려면 원본 분석을 수정한 뒤 동기화하세요 (문제가 맞지 않으면 비공개).</p>
+    </div>
+  );
+}
+
 const STATUS_TONE = { approved: "ok", pending: "warn", hidden: "neutral", stale: "neutral" } as const;
 const STATUS_LABEL = { approved: "공개", pending: "승인 대기", hidden: "비공개", stale: "출제 중지" } as const;
 
@@ -116,9 +150,9 @@ function ItemCard({ it, checked, onCheck }: { it: AdminItem; checked: boolean; o
     <li className={`card p-4 ${it.status === "stale" ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} aria-label="선택" className="mr-1" />
-        <Badge tone={it.kind === "exam" ? "navy" : "warn"}>{it.kind === "exam" ? "실제 기출" : "AI 예상"}</Badge>
+        <Badge tone={it.kind === "exam" ? "navy" : it.kind === "practice" ? "ok" : "warn"}>{it.kind === "exam" ? "실제 기출" : it.kind === "practice" ? "기출 기반 연습" : "AI 예상"}</Badge>
         <Badge tone={STATUS_TONE[it.status]}>{STATUS_LABEL[it.status]}</Badge>
-        <Badge>{it.format === "fill" ? "기입형" : "서술형"}</Badge>
+        <Badge>{it.payload ? PRACTICE_TYPE_NAMES[it.payload.type] : it.format === "fill" ? "기입형" : "서술형"}</Badge>
         <Badge>{it.grading === "auto" ? "자동 채점" : "자기평가"}</Badge>
         {it.ref && (
           <Link href={`/questions/${it.question_id}`} className="text-sm font-semibold text-navy hover:underline">
@@ -139,7 +173,9 @@ function ItemCard({ it, checked, onCheck }: { it: AdminItem; checked: boolean; o
         </ul>
       )}
 
-      {!editing ? (
+      {it.kind === "practice" && it.payload && it.payload.mode !== "fill" ? (
+        <PracticePreview p={it.payload} />
+      ) : !editing ? (
         <div className="mt-2 grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
           {it.kind === "exam" ? (
             <>
@@ -276,7 +312,7 @@ function ItemCard({ it, checked, onCheck }: { it: AdminItem; checked: boolean; o
             비공개
           </button>
         )}
-        {!editing && (
+        {!editing && !(it.kind === "practice" && it.payload?.mode !== "fill") && (
           <button className="btn !py-1 text-sm" onClick={() => setEditing(true)}>
             수정
           </button>

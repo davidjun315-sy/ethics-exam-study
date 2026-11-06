@@ -9,7 +9,9 @@ import type { QuizResult, StartLevel } from "./srs.ts";
 
 export interface Candidate {
   id: string;
-  kind: "exam" | "expected";
+  kind: "exam" | "expected" | "practice";
+  /** 실전 문제인데 같은 기출의 연습문제를 아직 하나도 맞히지 못함 → 연습문제를 먼저 내도록 뒤로 미룬다 */
+  gated?: boolean;
   questionId: string | null;
   area: string; // 섹터 (동양윤리 …)
   philosophers: string[];
@@ -28,9 +30,11 @@ export interface MissionSettings {
   exam: number;
   expected: number;
   review: number;
+  /** 기출 기반 연습문제 (없으면 0) */
+  practice?: number;
 }
 
-export type Slot = "review" | "exam" | "expected" | "fill";
+export type Slot = "review" | "exam" | "expected" | "practice" | "fill";
 
 function rngFrom(seed: string) {
   let h = 1779033703 ^ seed.length;
@@ -118,14 +122,15 @@ export function buildMission(opts: {
   const reviewPool: { c: Candidate; score: number }[] = [];
   const newExam: { c: Candidate; score: number }[] = [];
   const newExpected: { c: Candidate; score: number }[] = [];
+  const newPractice: { c: Candidate; score: number }[] = [];
   const seenLater: { c: Candidate; score: number }[] = [];
   for (const c of candidates) {
     const p = progress.get(c.id);
     const fit = level ? FIT[level][c.difficulty] : 0.5;
     const j = jitter.get(c.id)!;
     if (!p || !p.lastResult) {
-      const score = fit + j + 0.5 * (areaStale.get(c.area) ?? 0);
-      (c.kind === "exam" ? newExam : newExpected).push({ c, score });
+      const score = fit + j + 0.5 * (areaStale.get(c.area) ?? 0) - (c.gated ? 0.8 : 0);
+      (c.kind === "exam" ? newExam : c.kind === "practice" ? newPractice : newExpected).push({ c, score });
       continue;
     }
     // 전문가: 이미 익힌 쉬운 문제는 복습에서 뺀다
@@ -145,14 +150,15 @@ export function buildMission(opts: {
   pick(reviewPool, settings.review, "review");
   // 예상 문제는 수가 적으므로 기출보다 먼저 자리를 잡는다 (같은 원문 제한 때문에 밀려나지 않게)
   pick(newExpected, settings.expected, "expected");
+  pick(newPractice, settings.practice ?? 0, "practice");
   pick(newExam, settings.exam, "exam");
   // 부족하면 다른 문제로 채운다 (출처는 문제 자체의 kind 로 표시)
-  for (const pool of [newExam, reviewPool, newExpected, seenLater]) {
+  for (const pool of [newExam, newPractice, reviewPool, newExpected, seenLater]) {
     if (chosen.length >= settings.total) break;
     pick(pool, settings.total - chosen.length, "fill");
   }
   // 그래도 부족하면 같은 원문 제한을 풀어서
-  for (const pool of [newExam, reviewPool, newExpected, seenLater]) {
+  for (const pool of [newExam, newPractice, reviewPool, newExpected, seenLater]) {
     if (chosen.length >= settings.total) break;
     pick(pool, settings.total - chosen.length, "fill", true);
   }

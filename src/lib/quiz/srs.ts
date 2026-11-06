@@ -148,5 +148,23 @@ export const LEVEL_NAMES = { basic: "입문", advanced: "심화", expert: "전�
 /** 출제 범위: 오늘의 미션·오답 복습에 낼 문제 종류 */
 export const SCOPE_NAMES = { exam: "기출문제", expected: "AI 예상문제", both: "기출문제+AI 예상문제" } as const;
 export type QuestionScope = keyof typeof SCOPE_NAMES;
-export const inScope = (kind: "exam" | "expected", scope: QuestionScope) => scope === "both" || kind === scope;
+/** 학습 단계 (011): 연습문제(기출 기반 개념 다지기)와 실전(기출·예상 문제 그대로)을 섞을지 */
+export const TRACK_NAMES = { mixed: "연습+실전", practice: "개념 다지기", real: "실전만" } as const;
+export type Track = keyof typeof TRACK_NAMES;
+export const TRACK_DESC: Record<Track, string> = {
+  mixed: "기출 기반 연습문제와 실전 문제를 섞어서 (추천)",
+  practice: "기출 원문·정답 개념·감점 포인트를 연습문제로 먼저 다지기",
+  real: "실제 기출 기입형·서술형과 AI 예상문제만 (예전 방식)",
+};
+
+/**
+ * 출제 범위 · 학습 단계 안의 문제인가.
+ * 연습문제는 실제 기출에서 만든 것이므로 출제 범위가 'AI 예상문제만'이면 빼고, 학습 단계가 '실전만'이면 뺀다.
+ * track 을 주지 않으면 예전처럼(실전만) 판단한다.
+ */
+export const inScope = (kind: "exam" | "expected" | "practice", scope: QuestionScope, track: Track = "real") => {
+  if (kind === "practice") return track !== "real" && scope !== "expected";
+  if (track === "practice") return false;
+  return scope === "both" || kind === scope;
+};
 export type StartLevel = keyof typeof LEVEL_NAMES;

@@ -18,7 +18,7 @@ export function AiPasteBox({
   promptUrl: string;
   submitUrl: string;
   copyLabel?: string;
-  onSaved: (message: string) => void;
+  onSaved: (message: string, result?: unknown) => void;
 }) {
   const [text, setText] = useState("");
   const [source, setSource] = useState(SOURCES[0]);
@@ -65,9 +65,9 @@ export function AiPasteBox({
             setBusy(true);
             setError(null);
             try {
-              await api(submitUrl, "POST", { text, source });
+              const result = await api(submitUrl, "POST", { text, source });
               setText("");
-              onSaved(`${source} 결과를 저장했습니다.`);
+              onSaved(`${source} 결과를 저장했습니다.`, result);
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));
             } finally {

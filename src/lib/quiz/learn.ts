@@ -31,7 +31,11 @@ import {
   type StartLevel,
   inScope,
   type QuestionScope,
+  type Track,
 } from "./srs.ts";
+import { gradePractice, publicPayload, PRACTICE_TYPE_NAMES, type PracticePayload } from "./practice.ts";
+import { passageOnly } from "./split.ts";
+import type { QuizFormat, QuizKind } from "./bank.ts";
 
 /**
  * 학습자 키: 회원은 "m:<회원 id>", 회원 로그인 없이 관리자로만 들어온 경우 "owner".
@@ -47,6 +51,7 @@ export interface Profile {
   learner: string;
   start_level: StartLevel; // 예전 시작 난이도 (지금은 쓰지 않음, 기록 보존)
   question_scope?: QuestionScope; // 007 이후
+  track?: Track; // 011 이후
 
   xp: number;
   streak: number;
@@ -77,15 +82,30 @@ export async function setQuestionScope(learner: string, scope: QuestionScope) {
   }
 }
 
-/** 출제 범위에 맞춰 미션 구성: 한쪽만 고르면 다른 쪽 자리도 그 종류로 채운다 */
-function missionSettings(s: { daily_total: number; daily_exam: number; daily_expected: number; daily_review: number }, scope: QuestionScope) {
+/** 학습 단계. 011 을 실행하기 전이거나 정하지 않았으면 연습+실전 */
+export const trackOf = (p: Profile | null): Track => p?.track ?? "mixed";
+
+/** 학습 단계 설정·변경 */
+export async function setTrack(learner: string, track: Track) {
+  const { error } = await getAdminClient().from("quiz_profiles").upsert({ learner, track, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  if (error) {
+    if (/track/.test(error.message)) throw new Error("학습 단계를 저장할 열이 없습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/011_quiz_practice.sql 을 실행하세요.");
+    throw quizError(error.message);
+  }
+}
+
+/**
+ * 출제 범위·학습 단계에 맞춰 미션 구성: 한쪽만 고르면 다른 쪽 자리도 그 종류로 채운다.
+ * 연습+실전: 새 문제 자리의 절반을 연습문제로 (예: 기출 6·예상 2 → 연습 4·기출 2·예상 2)
+ */
+function missionSettings(s: { daily_total: number; daily_exam: number; daily_expected: number; daily_review: number }, scope: QuestionScope, track: Track = "real") {
   const fresh = s.daily_exam + s.daily_expected;
-  return {
-    total: s.daily_total,
-    exam: scope === "both" ? s.daily_exam : scope === "exam" ? fresh : 0,
-    expected: scope === "both" ? s.daily_expected : scope === "expected" ? fresh : 0,
-    review: s.daily_review,
-  };
+  const exam = scope === "both" ? s.daily_exam : scope === "exam" ? fresh : 0;
+  const expected = scope === "both" ? s.daily_expected : scope === "expected" ? fresh : 0;
+  if (scope === "expected" || track === "real") return { total: s.daily_total, exam, expected, review: s.daily_review, practice: 0 };
+  if (track === "practice") return { total: s.daily_total, exam: 0, expected: 0, review: s.daily_review, practice: fresh };
+  const practice = Math.ceil(fresh / 2);
+  return { total: s.daily_total, exam: Math.max(0, exam - practice), expected, review: s.daily_review, practice };
 }
 
 // ---------------------------------------------------------------------
@@ -95,13 +115,13 @@ export interface Filters {
   area?: string;
   philosopher?: string;
   year?: number;
-  kind?: "exam" | "expected";
-  format?: "fill" | "essay";
+  kind?: QuizKind;
+  format?: QuizFormat;
   difficulty?: 1 | 2 | 3;
   which?: "any" | "new" | "review";
 }
 
-type CandidateRow = { id: string; kind: "exam" | "expected"; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
+type CandidateRow = { id: string; kind: QuizKind; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
 
 async function approvedItems(f: Filters = {}) {
   const build = () => {
@@ -178,23 +198,30 @@ async function repairDaily(learner: string, day: string, d: DailyRow): Promise<S
   const [{ data: rows, error }, profile] = await Promise.all([db.from("quiz_items").select("id, status, question_id, kind").in("id", d.item_ids), getProfile(learner)]);
   if (error) throw quizError(error.message);
   const scope = scopeOf(profile);
+  const track = trackOf(profile);
   const byId = new Map((rows ?? []).map((r) => [r.id as string, r]));
   // 아직 안 푼 문제 중: 공개가 내려갔거나, 출제 범위를 바꿔 범위 밖이 된 문제
   const bad = d.item_ids.filter((id) => {
     if (results[id]) return false;
     const r = byId.get(id);
-    return r?.status !== "approved" || !inScope(r.kind as "exam" | "expected", scope);
+    return r?.status !== "approved" || !inScope(r.kind as QuizKind, scope, track);
   });
   if (bad.length === 0) return toSession(day, d);
 
   const keep = d.item_ids.filter((id) => !bad.includes(id));
   const usedQuestions = new Set(keep.map((id) => byId.get(id)?.question_id).filter(Boolean));
   const [candidates, progress] = await Promise.all([approvedItems(), progressMap(learner)]);
-  const pool = candidates.filter((c) => inScope(c.kind, scope) && !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
+  const pool = candidates.filter((c) => inScope(c.kind, scope, track) && !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
   const repl = buildMission({
     candidates: pool,
     progress,
-    settings: { total: bad.length, exam: scope === "expected" ? 0 : bad.length, expected: scope === "expected" ? bad.length : 0, review: 0 },
+    settings: {
+      total: bad.length,
+      exam: scope === "expected" || track === "practice" ? 0 : bad.length,
+      expected: scope === "expected" ? bad.length : 0,
+      practice: track === "practice" ? bad.length : 0,
+      review: 0,
+    },
     today: day,
     seed: `${learner}:${day}:repair:${bad.join(",")}`,
   }).itemIds;
@@ -240,10 +267,11 @@ export async function getDailySession(learner: string, create = true): Promise<S
   if (!create) return null;
   const [settings, profile, candidates, progress] = await Promise.all([getQuizSettings(), getProfile(learner), approvedItems(), progressMap(learner)]);
   const scope = scopeOf(profile);
+  const track = trackOf(profile);
   const { itemIds, slots } = buildMission({
-    candidates: candidates.filter((c) => inScope(c.kind, scope)),
+    candidates: gateReal(candidates.filter((c) => inScope(c.kind, scope, track)), progress, track),
     progress,
-    settings: missionSettings(settings, scope),
+    settings: missionSettings(settings, scope, track),
     today: day,
     seed: `${learner}:${day}`,
   });
@@ -254,14 +282,31 @@ export async function getDailySession(learner: string, create = true): Promise<S
   return { mode: "daily", day, itemIds, slots, results: {}, completed: false };
 }
 
+/**
+ * 연습+실전: 같은 기출의 연습문제를 아직 하나도 맞히지 못한 실전 문제는 뒤로 미룬다 (연습 → 실전 순서).
+ * 연습문제가 없는 기출은 그대로.
+ */
+function gateReal(candidates: Candidate[], progress: Map<string, ProgressLite>, track: Track): Candidate[] {
+  if (track !== "mixed") return candidates;
+  const practiced = new Map<string, boolean>(); // 기출 id → 연습문제를 하나라도 맞혔는가
+  for (const c of candidates) {
+    if (c.kind !== "practice" || !c.questionId) continue;
+    const ok = progress.get(c.id)?.lastResult === "correct";
+    practiced.set(c.questionId, (practiced.get(c.questionId) ?? false) || ok);
+  }
+  return candidates.map((c) => (c.kind === "exam" && c.questionId && practiced.get(c.questionId) === false ? { ...c, gated: true } : c));
+}
+
 export async function getPracticeSession(learner: string, mode: "free" | "review", f: Filters, n = 10): Promise<Session> {
   const day = kstDay();
   // 문제 종류를 따로 고르지 않았으면 출제 범위를 따른다
   const profile = await getProfile(learner);
   const scope = scopeOf(profile);
   const base = mode === "review" ? {} : f;
-  const kind = base.kind ?? (scope === "both" ? undefined : scope);
-  const [candidates, progress] = await Promise.all([approvedItems({ ...base, kind }), progressMap(learner)]);
+  const track = trackOf(profile);
+  const [all, progress] = await Promise.all([approvedItems(base), progressMap(learner)]);
+  // 종류를 고르면 그 종류만, 아니면 출제 범위·학습 단계 안에서
+  const candidates = all.filter((c) => (base.kind ? c.kind === base.kind : inScope(c.kind, scope, track)));
   const itemIds = buildPractice({
     candidates,
     progress,
@@ -294,9 +339,12 @@ async function loadSource(questionId: string | null) {
 
 export interface ItemView {
   id: string;
-  kind: "exam" | "expected";
+  kind: QuizKind;
   label: string;
-  format: "fill" | "essay";
+  format: QuizFormat;
+  /** 연습문제: 발문·보기 (정답 없음) */
+  practice: Record<string, unknown> | null;
+  practiceType: string | null;
   grading: "auto" | "self";
   prompt: string | null;
   passage: string | null;
@@ -315,16 +363,19 @@ export async function getItemView(id: string): Promise<ItemView> {
   const it = await loadItem(id);
   if (it.status !== "approved") throw new Error("공개되지 않은 문제입니다.");
   const src = await loadSource(it.question_id);
+  const pp = it.kind === "practice" && it.payload ? publicPayload(it.payload) : null;
   return {
     id: it.id,
     kind: it.kind,
     // 예상 문제의 레이블은 "사상가 · 개념"이라 정답이 드러날 수 있다 → 풀이 화면에는 보내지 않는다
     label: it.kind === "exam" ? it.label : "",
     format: it.format,
+    practice: pp,
+    practiceType: it.kind === "practice" && it.payload ? PRACTICE_TYPE_NAMES[it.payload.type] : null,
     grading: it.grading,
     prompt: it.prompt,
-    // 기출: <작성 방법> 아래에는 이 문제의 조건만 (한 화면에 한 문제)
-    passage: it.kind === "exam" ? focusRequirement(src?.text ?? null, it.prompt) : it.passage,
+    // 기출: <작성 방법> 아래에는 이 문제의 조건만 (한 화면에 한 문제) / 연습문제: 제시문만 (<작성 방법> 없이)
+    passage: it.kind === "exam" ? focusRequirement(src?.text ?? null, it.prompt) : it.kind === "practice" ? passageOnly(src?.text ?? null) : it.passage,
     imageUrl: it.kind === "exam" ? (src?.image ?? null) : null,
     ref: src ? questionRef(src.exam, src.label) : null,
     score: it.kind === "exam" ? (src?.score ?? null) : null,
@@ -337,7 +388,19 @@ export async function getItemView(id: string): Promise<ItemView> {
 
 const normLabel = (s: string) => s.replace(/\s+/g, "");
 
+export interface PracticeSolution {
+  mode: PracticePayload["mode"];
+  /** 보기별 정답 여부와 해설 (choice·multi) */
+  options: { text: string; correct: boolean; note: string | null }[];
+  /** 진술별 정답 그룹과 해설 (classify) */
+  groups: string[];
+  statements: { text: string; group: string; groupIndex: number; note: string | null }[];
+  explanation: string;
+  grounds: string;
+}
+
 export interface Solution {
+  practice: PracticeSolution | null;
   answer: string | null;
   accepted: string[];
   modelAnswer: string | null;
@@ -369,12 +432,27 @@ export async function getSolution(id: string): Promise<Solution> {
   const intents = (d.examinerIntent?.itemIntents ?? []).filter((x) => labels.has(normLabel(x.label)));
   const itemIntent = intents.length ? intents.map((x) => (intents.length > 1 ? `${x.label} ${x.intent}` : x.intent)).join("\n") : undefined;
   const related = it.question_id ? await findRelatedQuestions(it.question_id, 5).catch(() => []) : [];
+  const p = it.kind === "practice" ? it.payload : null;
+  const practice: PracticeSolution | null = p
+    ? {
+        mode: p.mode,
+        options:
+          p.mode === "choice" || p.mode === "multi"
+            ? p.options.map((text, i) => ({ text, correct: p.mode === "choice" ? i === p.answer : p.answers.includes(i), note: p.notes[i] ?? null }))
+            : [],
+        groups: p.mode === "classify" ? p.groups : [],
+        statements: p.mode === "classify" ? p.statements.map((x) => ({ text: x.text, group: p.groups[x.group], groupIndex: x.group, note: x.note })) : [],
+        explanation: p.explanation,
+        grounds: p.grounds,
+      }
+    : null;
   return {
+    practice,
     answer: it.kind === "exam" && ies.length ? ies.map((x) => (ies.length > 1 ? `${x.label} ${x.answer}` : x.answer)).join("\n") : it.answer,
     accepted: it.accepted_answers,
     modelAnswer: it.kind === "exam" ? (d.modelAnswer ?? null) : it.model_answer,
     itemExplanations: ies.map((x) => ({ label: x.label, answer: x.answer, sourcePart: x.sourcePart, explanation: x.explanation })),
-    passageCommentary: it.kind === "exam" ? (d.passageCommentary ?? []) : [],
+    passageCommentary: it.kind !== "expected" ? (d.passageCommentary ?? []) : [],
     conceptMap: d.conceptMap ?? [],
     studyConcepts: d.studyConcepts ?? [],
     intent: { summary: it.kind === "exam" ? (d.examinerIntent?.summary ?? null) : null, item: itemIntent ?? null },
@@ -389,7 +467,7 @@ export async function getEssayContext(id: string): Promise<EssayContext> {
   const [view, s] = await Promise.all([getItemView(id), getSolution(id)]);
   if (view.grading !== "self") throw new Error("서술형(자기평가) 문제만 AI 첨삭을 받을 수 있습니다.");
   return {
-    kind: view.kind,
+    kind: view.kind === "expected" ? "expected" : "exam",
     ref: view.ref,
     label: view.label,
     prompt: view.prompt,
@@ -411,21 +489,23 @@ export async function getChallengeSession(learner: string, type: ChallengeType):
   const day = kstDay();
   const profile = await getProfile(learner);
   const scope = scopeOf(profile);
+  // 실전 도전: 연습문제는 빼고 실제 기출·예상 문제만
   const kind = scope === "both" ? undefined : scope;
   const size = CHALLENGES[type].size;
   const progress = await progressMap(learner);
   const seed = `${learner}:${type}:${Date.now()}`;
+  const real = (cs: Candidate[]) => cs.filter((c) => c.kind !== "practice");
   if (type === "revenge") {
-    const candidates = await approvedItems({ kind });
+    const candidates = real(await approvedItems({ kind }));
     const itemIds = buildPractice({ candidates, progress, today: day, n: size, seed, which: "wrong" });
     return { mode: "review", day, itemIds, slots: itemIds.map(() => "review"), results: {}, completed: false, challenge: type, notice: null };
   }
   const format = type === "decode" ? "fill" : "essay";
-  const hard = await approvedItems({ kind, format, difficulty: 3 });
+  const hard = real(await approvedItems({ kind, format, difficulty: 3 }));
   let candidates = hard;
   let notice: string | null = null;
   if (hard.length < size) {
-    const mid = await approvedItems({ kind, format, difficulty: 2 });
+    const mid = real(await approvedItems({ kind, format, difficulty: 2 }));
     candidates = [...hard, ...mid];
     notice = hard.length
       ? `난이도 '상' ${format === "fill" ? "기입형" : "서술형"}이 ${hard.length}문제뿐이라 '중' 문제를 함께 냈습니다.`
@@ -496,7 +576,11 @@ export async function recordAttempt(
   // 채점: 자동 채점 문제는 항상 서버가 판정 (학습자가 결과를 정할 수 없음), 자기평가 문제는 학습자 선택
   let result: QuizResult;
   let gradedBy: "auto" | "self";
-  if (it.grading === "auto") {
+  if (it.kind === "practice" && it.payload && it.payload.mode !== "fill") {
+    // 연습문제(고르기·분류): 서버가 정답과 비교
+    result = gradePractice(it.payload, input.answer ?? "");
+    gradedBy = "auto";
+  } else if (it.grading === "auto") {
     result = isCorrectFill(input.answer ?? "", it.accepted_answers.length ? it.accepted_answers : it.answer ? [it.answer] : []) ? "correct" : "wrong";
     gradedBy = "auto";
   } else {
@@ -605,7 +689,8 @@ export async function recordAttempt(
   const coin = attemptRow
     ? await grantQuizCoins(learner, {
         attemptId: attemptRow.id as string,
-        format: it.format,
+        // 연습문제는 자동 채점 기입형과 같은 기준 (코인은 하루 한 번·상한 동일)
+        format: it.format === "essay" ? "essay" : "fill",
         selfGraded: gradedBy === "self",
         result,
         answerLength: (input.answer ?? "").trim().length,
@@ -654,7 +739,8 @@ export interface Dashboard {
   wrongCount: number;
   bankSize: number;
   scope: QuestionScope;
-  kindCount: { exam: number; expected: number }; // 공개된 문제 수
+  kindCount: { exam: number; expected: number; practice: number }; // 공개된 문제 수 (practice = 기출 기반 연습문제)
+  track: Track;
   mastery: { name: string; seen: number; total: number; score: number }[]; // 영역별
   philosophers: { name: string; seen: number; score: number }[];
   calendar: { day: string; answered: number; completed: boolean }[];
@@ -678,7 +764,7 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     getProfile(learner),
     getDailySession(learner, false),
     progressMap(learner),
-    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: "exam" | "expected"; format: "fill" | "essay" }>((a, b) =>
+    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: QuizKind; format: QuizFormat }>((a, b) =>
       db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind, format").eq("status", "approved").order("id").range(a, b),
     ).then((data) => ({ data })),
     fetchAll<{ day: string; result: QuizResult; item_id: string; xp: number; mode: string }>((a, b) =>
@@ -693,13 +779,21 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
   let dueCount = 0;
   let wrongCount = 0;
   const scope = scopeOf(profile);
-  const kindCount = { exam: 0, expected: 0 };
+  const track = trackOf(profile);
+  const kindCount = { exam: 0, expected: 0, practice: 0 };
   const challenges: Dashboard["challenges"] = { decode: { hard: 0, mid: 0 }, essay: { hard: 0, mid: 0 }, revenge: 0 };
-  const itemInfo = new Map<string, { area: string; difficulty: 1 | 2 | 3; format: "fill" | "essay" }>();
+  const itemInfo = new Map<string, { area: string; difficulty: 1 | 2 | 3; format: QuizFormat }>();
   for (const it of items.data ?? []) {
     kindCount[it.kind]++;
     itemInfo.set(it.id, { area: it.area ?? "미분류", difficulty: it.difficulty, format: it.format });
-    if (inScope(it.kind, scope) && it.difficulty >= 2) {
+    const p = progress.get(it.id);
+    if (p?.lastResult) {
+      if (inScope(it.kind, scope, track) && p.dueOn && p.dueOn <= today) dueCount++;
+      if (inScope(it.kind, scope, track) && (p.lastResult === "wrong" || p.lastResult === "partial")) wrongCount++;
+    }
+    // 숙련도·실전 도전 집계는 실전 문제만 (연습문제는 같은 기출을 여러 번 묻기 때문)
+    if (it.kind === "practice") continue;
+    if (inScope(it.kind, scope) && it.difficulty >= 2 && (it.format === "fill" || it.format === "essay")) {
       const c = challenges[it.format === "fill" ? "decode" : "essay"];
       if (it.difficulty === 3) c.hard++;
       else c.mid++;
@@ -708,7 +802,6 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     const area = it.area ?? "미분류";
     const a = byArea.get(area) ?? { seen: 0, total: 0, sum: 0 };
     a.total++;
-    const p = progress.get(it.id);
     if (p?.lastResult) {
       a.seen++;
       a.sum += p.mastery / 5;
@@ -718,8 +811,6 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
         ph.sum += p.mastery / 5;
         byPh.set(n, ph);
       }
-      if (inScope(it.kind, scope) && p.dueOn && p.dueOn <= today) dueCount++;
-      if (inScope(it.kind, scope) && (p.lastResult === "wrong" || p.lastResult === "partial")) wrongCount++;
     }
     byArea.set(area, a);
   }
@@ -794,6 +885,7 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     bankSize: items.data?.length ?? 0,
     scope,
     kindCount,
+    track,
     mastery: [...byArea.entries()].map(([name, v]) => ({ name, seen: v.seen, total: v.total, score: v.seen ? v.sum / v.seen : 0 })),
     philosophers: [...byPh.entries()]
       .map(([name, v]) => ({ name, seen: v.seen, score: v.sum / v.seen }))
@@ -829,6 +921,7 @@ export async function getFilterOptions() {
     philosophers: [...philosophers.entries()].sort((a, b) => b[1] - a[1]),
     years: [...years.entries()].sort((a, b) => b[0] - a[0]),
     expected: rows.filter((r) => r.kind === "expected").length,
+    practice: rows.filter((r) => r.kind === "practice").length,
     total: rows.length,
   };
 }

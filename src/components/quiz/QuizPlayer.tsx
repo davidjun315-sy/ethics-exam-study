@@ -10,6 +10,7 @@ import { ChatGrader, EssayFeedback } from "./EssayFeedback";
 import { CHALLENGES, checkpointReached, missionStatus, type ChallengeType, type Checkpoint } from "@/lib/quiz/game";
 import { Celebration, CheckpointRibbon, CheckpointTrack, ComboChip } from "./GameBits";
 import { SolutionView } from "./SolutionView";
+import { PracticeInput, PracticeReview, type PublicPractice } from "./PracticeParts";
 
 type Mode = Session["mode"];
 const SELF: { value: QuizResult; title: string; help: string; tone: string }[] = [
@@ -60,6 +61,9 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
   const [cpNow, setCpNow] = useState<Checkpoint | null>(null);
   const [celebrate, setCelebrate] = useState<{ title: string; lines: string[] } | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
+  // 연습문제: 고른 보기 / 진술별 사상가
+  const [picks, setPicks] = useState<number[]>([]);
+  const [assign, setAssign] = useState<(number | null)[]>([]);
   const topRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
 
@@ -132,6 +136,24 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
     setError(null);
     try {
       const [r] = await Promise.all([quizApi<AttemptResult>("/api/quiz/attempt", "POST", { itemId, mode, answer }), fetchSolution(itemId)]);
+      applyOutcome(r);
+      setRevealed(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 연습문제(고르기·분류): 서버 채점 + 보기 해설
+  async function submitPractice() {
+    if (!view || !itemId || !view.practice) return;
+    const p = view.practice as unknown as PublicPractice;
+    const payload = p.mode === "classify" ? JSON.stringify(assign.map((x) => x ?? -1)) : p.mode === "choice" ? String(picks[0]) : JSON.stringify(picks);
+    setBusy(true);
+    setError(null);
+    try {
+      const [r] = await Promise.all([quizApi<AttemptResult>("/api/quiz/attempt", "POST", { itemId, mode, answer: payload }), fetchSolution(itemId)]);
       applyOutcome(r);
       setRevealed(true);
     } catch (e) {
@@ -225,6 +247,8 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
     setChatOpen(false);
     setCpNow(null);
     setError(null);
+    setPicks([]);
+    setAssign([]);
     setIndex((i) => i + 1);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -249,6 +273,9 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
 
   const isFill = view?.format === "fill";
   const auto = view?.grading === "auto";
+  const practice = view?.kind === "practice" && view.practice ? (view.practice as unknown as PublicPractice) : null;
+  const picking = practice && practice.mode !== "fill" ? practice : null;
+  const ready = picking ? (picking.mode === "classify" ? (picking.statements ?? []).every((_, i) => assign[i] !== null && assign[i] !== undefined) : picks.length > 0) : false;
   const lastStep = index === total - 1;
   const status = mode === "daily" ? missionStatus(done, total) : null;
   const prevCombo = log.length >= 2 ? log[log.length - 2].combo : 0;
@@ -294,11 +321,14 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
       ) : (
         <article className="space-y-4">
           <header className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className={`rounded px-2 py-0.5 font-semibold ${view.kind === "exam" ? "bg-navy text-on-accent" : "bg-warn-soft text-warn"}`}>
-              {view.kind === "exam" ? "실제 기출" : "AI 예상 문제"}
+            <span
+              className={`rounded px-2 py-0.5 font-semibold ${view.kind === "exam" ? "bg-navy text-on-accent" : view.kind === "practice" ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`}
+            >
+              {view.kind === "exam" ? "실제 기출" : view.kind === "practice" ? "기출 기반 연습" : "AI 예상 문제"}
             </span>
             {view.kind === "exam" && view.ref && <span className="text-muted">{view.ref}{view.score ? ` · ${view.score}점` : ""}</span>}
-            <span className="rounded border border-line px-1.5 py-0.5 text-muted">{isFill ? "기입형" : "서술형"}</span>
+            {view.kind === "practice" && view.ref && <span className="text-muted">{view.ref} 원문</span>}
+            <span className="rounded border border-line px-1.5 py-0.5 text-muted">{view.practiceType ?? (isFill ? "기입형" : "서술형")}</span>
             {view.area && <span className="rounded border border-line px-1.5 py-0.5 text-muted">{view.area}</span>}
             {session.slots[index] === "review" && <span className="rounded bg-danger-soft px-1.5 py-0.5 text-danger">복습</span>}
           </header>
@@ -333,9 +363,24 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
             </section>
           )}
 
+          {/* 연습문제 발문 */}
+          {view.kind === "practice" && (
+            <section className="rounded-xl border-2 border-ok/40 bg-ok-soft/40 p-4">
+              <div className="mb-1 text-xs font-bold text-ok">연습 · {view.practiceType}</div>
+              <p className="whitespace-pre-wrap text-[16px] font-medium leading-7">{picking?.stem ?? view.prompt}</p>
+            </section>
+          )}
+
           {/* 답 */}
           {!revealed ? (
-            isFill && auto ? (
+            picking ? (
+              <div className="space-y-3">
+                <PracticeInput p={picking} picks={picks} onPicks={setPicks} assign={assign.length ? assign : (picking.statements ?? []).map(() => null)} onAssign={setAssign} disabled={busy} />
+                <button className="btn-primary w-full py-3 text-base font-semibold" disabled={busy || !ready} onClick={submitPractice}>
+                  {busy ? "채점 중…" : ready ? "정답 확인" : picking.mode === "classify" ? "모든 진술을 분류하세요" : "보기를 고르세요"}
+                </button>
+              </div>
+            ) : isFill && auto ? (
               <form
                 className="space-y-2"
                 onSubmit={(e) => {
@@ -402,10 +447,12 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
               {/* 채점 결과 (자동 채점) */}
               {auto && outcome && (
                 <OutcomePanel r={outcome} auto prevCombo={prevCombo} cp={cpNow}>
-                  <p className="mt-1 text-sm">
-                    내 답: <b>{answer}</b>
-                  </p>
-                  {outcome.result === "wrong" && !reported && (
+                  {!picking && (
+                    <p className="mt-1 text-sm">
+                      내 답: <b>{answer}</b>
+                    </p>
+                  )}
+                  {outcome.result === "wrong" && !reported && !picking && (
                     <button
                       type="button"
                       className="mt-2 text-xs text-muted underline"
@@ -430,7 +477,8 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
               )}
               {grading && <EssayFeedback g={grading} />}
 
-              {solution && <SolutionView s={solution} kind={view.kind} />}
+              {solution?.practice && picking && <PracticeReview s={solution.practice} picks={picks} assign={assign} />}
+              {solution && <SolutionView s={solution} kind={view.kind} showAnswerBox={!picking} />}
 
               {/* 자기평가 */}
               {!auto && !outcome && (

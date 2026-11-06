@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Solution } from "@/lib/quiz/learn";
+import type { QuizKind } from "@/lib/quiz/bank";
 
 function More({ title, children, open = false }: { title: string; children: ReactNode; open?: boolean }) {
   return (
@@ -22,7 +23,7 @@ const quote = "rounded border-l-4 border-navy/40 bg-surface-2 px-3 py-2 font-ser
  * 정답 확인 후 해설: 정답과 핵심 설명을 먼저, 나머지는 펼쳐 보기.
  * 모든 내용은 기존 기출 분석에서 그대로 가져오며, 비어 있는 항목은 보이지 않는다.
  */
-export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; kind: "exam" | "expected"; showAnswerBox?: boolean }) {
+export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; kind: QuizKind; showAnswerBox?: boolean }) {
   const hasConcepts = s.conceptMap.length > 0 || s.studyConcepts.length > 0;
   const hasIntent = Boolean(s.intent.summary || s.intent.item);
   return (
@@ -43,6 +44,12 @@ export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; k
             <p className="whitespace-pre-wrap text-[16px] leading-8">{x.explanation}</p>
           </section>
         ))
+      ) : kind === "practice" && s.practice && s.practice.mode === "fill" ? (
+        <section className="rounded-lg border border-line bg-surface p-4">
+          <div className="text-xs font-bold text-navy">해설</div>
+          <p className="mt-1 whitespace-pre-wrap text-[16px] leading-8">{s.practice.explanation}</p>
+          <p className="mt-2 text-[11px] text-faint">출처: {s.practice.grounds}</p>
+        </section>
       ) : kind === "expected" && s.expectedExplanation ? (
         <section className="rounded-lg border border-line bg-surface p-4">
           <div className="text-xs font-bold text-navy">해설</div>
@@ -55,6 +62,14 @@ export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; k
         <More title="문항 전체 모범답안">
           <p className="whitespace-pre-wrap text-[15px] leading-8">{s.modelAnswer}</p>
         </More>
+      )}
+
+      {kind === "practice" && s.origin && (
+        <section className="rounded-lg border border-navy/30 bg-navy-soft/40 p-4 text-sm">
+          <div className="font-semibold text-navy">이 연습은 {s.origin.ref} 실전 문제로 이어집니다</div>
+          <p className="mt-0.5 text-muted">연습문제를 맞히면 오늘의 미션에 이 기출의 실제 기입형·서술형이 나옵니다.</p>
+          <Link href={`/questions/${s.origin.questionId}`} className="btn mt-2">{s.origin.ref} 기출 보기</Link>
+        </section>
       )}
 
       {s.passageCommentary.length > 0 && (
@@ -113,7 +128,7 @@ export function SolutionView({ s, kind, showAnswerBox = true }: { s: Solution; k
         <More title="원본 · 관련 기출">
           {s.origin && (
             <Link href={`/questions/${s.origin.questionId}`} className="btn mb-3 inline-block">
-              {kind === "exam" ? "원본 기출 보기" : "근거 기출 보기"} · {s.origin.ref}
+              {kind === "exam" || kind === "practice" ? "원본 기출 보기" : "근거 기출 보기"} · {s.origin.ref}
             </Link>
           )}
           {s.related.length > 0 && (

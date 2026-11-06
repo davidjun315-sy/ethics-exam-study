@@ -17,7 +17,7 @@ export default async function QuizPlayPage({ searchParams }: PageProps<"/quiz/pl
     area: one(sp.area),
     philosopher: one(sp.philosopher),
     year: num(one(sp.year)),
-    kind: one(sp.kind) === "exam" || one(sp.kind) === "expected" ? (one(sp.kind) as Filters["kind"]) : undefined,
+    kind: one(sp.kind) === "exam" || one(sp.kind) === "expected" || one(sp.kind) === "practice" ? (one(sp.kind) as Filters["kind"]) : undefined,
     format: one(sp.format) === "fill" || one(sp.format) === "essay" ? (one(sp.format) as Filters["format"]) : undefined,
     difficulty: [1, 2, 3].includes(num(one(sp.difficulty)) ?? 0) ? (num(one(sp.difficulty)) as 1 | 2 | 3) : undefined,
     which: one(sp.which) === "new" || one(sp.which) === "review" ? (one(sp.which) as Filters["which"]) : "any",

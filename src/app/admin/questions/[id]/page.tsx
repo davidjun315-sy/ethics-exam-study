@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { QuestionEditor } from "@/components/admin/QuestionEditor";
+import { PracticeAiPanel } from "@/components/admin/PracticeAiPanel";
 import { DataError, load } from "@/components/DataError";
 import { getExamPages, getQuestionDetail } from "@/lib/data/queries";
 
@@ -13,5 +14,10 @@ export default async function AdminQuestionPage({ params, searchParams }: PagePr
   });
   if (error || !data) return <DataError error={error} />;
   if (!data.detail) notFound();
-  return <QuestionEditor detail={data.detail} pages={data.pages} recropHint={sp.recrop === "1"} />;
+  return (
+    <div className="space-y-6">
+      <QuestionEditor detail={data.detail} pages={data.pages} recropHint={sp.recrop === "1"} />
+      {data.detail.analysis && <PracticeAiPanel questionId={id} />}
+    </div>
+  );
 }

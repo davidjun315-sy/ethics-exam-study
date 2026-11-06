@@ -5,6 +5,8 @@ import { CHALLENGES, checkpoints, missionStatus, type ChallengeType } from "@/li
 import { SCOPE_NAMES, STREAK_BADGES } from "@/lib/quiz/srs";
 import { Bar, CheckpointTrack, ComboChip } from "./GameBits";
 import { ScopePicker } from "./ScopePicker";
+import { TrackPicker } from "./TrackPicker";
+import { TRACK_NAMES } from "@/lib/quiz/srs";
 import { FeaturedPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
 
 function Flame({ on }: { on: boolean }) {
@@ -89,7 +91,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
           </div>
         </div>
         <a href="#settings" className="hidden rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy sm:inline-block">
-          {SCOPE_NAMES[d.scope]}
+          {TRACK_NAMES[d.track]} · {SCOPE_NAMES[d.scope]}
         </a>
       </>
   );
@@ -107,7 +109,12 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
         <div className={`px-5 pb-5 pt-4 ${today.completed ? "bg-ok-soft/50" : "bg-navy-soft/40"}`}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold text-muted">오늘의 미션 · {today.size}문제</div>
+              <div className="text-xs font-semibold text-muted">
+                오늘의 미션 · {today.size}문제
+                {d.track !== "real" && d.kindCount.practice > 0 && (
+                  <a href="#settings" className="ml-1.5 rounded-full bg-ok-soft px-2 py-0.5 font-semibold text-ok">{d.track === "practice" ? "개념 다지기" : "연습 + 실전"}</a>
+                )}
+              </div>
               <h2 className={`mt-0.5 text-xl font-bold ${today.completed ? "text-ok" : "text-navy"}`}>{mission.headline}</h2>
               <p className="text-sm text-muted">{today.started || today.done ? mission.sub : "1문제만 풀어도 첫 도전 성공. 체크포인트를 하나씩 넘어 보세요."}</p>
             </div>
@@ -340,8 +347,16 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
         </div>
       </Fold>
 
-      {/* 8. 출제 범위 · 설정 */}
-      <section id="settings" className="card scroll-mt-20 p-4">
+      {/* 8. 학습 단계 · 출제 범위 */}
+      <section id="settings" className="card scroll-mt-20 space-y-5 p-4">
+        <div>
+          <h2 className="mb-1 text-base font-bold">학습 단계</h2>
+          <p className="mb-3 text-xs text-muted">
+            연습문제는 실제 기출의 원문·정답 개념·채점 요소·자주 하는 실수로 만든 문제입니다 (공개 {d.kindCount.practice}문제). 연습+실전에서는 연습문제를 맞힌 기출의 실전 문제가 먼저 나옵니다.
+          </p>
+          <TrackPicker current={d.track} practiceCount={d.kindCount.practice} />
+        </div>
+        <div>
         <h2 className="mb-1 text-base font-bold">출제 범위</h2>
         <p className="mb-3 text-xs text-muted">
           오늘의 미션·오답 복습·실전 도전에 낼 문제 종류입니다. 바꾸면 오늘 미션에서 아직 안 푼 문제도 바로 바뀝니다 (푼 문제와 기록은 그대로).
@@ -350,6 +365,7 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
         {d.scope !== "exam" && d.kindCount.expected < 10 && (
           <p className="mt-2 text-xs text-warn">공개된 AI 예상 문제가 {d.kindCount.expected}개뿐이라 미션 문제 수가 줄어들 수 있습니다.</p>
         )}
+        </div>
       </section>
     </div>
   );

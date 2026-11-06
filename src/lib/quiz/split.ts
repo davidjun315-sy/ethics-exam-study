@@ -176,6 +176,13 @@ export function splitQuestion(input: SplitInput): SplitItem[] {
  * 퀴즈 화면용 원문: 발문·제시문은 그대로 두고 <작성 방법> 아래에는 이 문제의 조건 줄만 남긴다.
  * (다른 요구 사항이 함께 보이면 한 화면에 여러 문제가 나오는 셈이므로)
  */
+/** 제시문만: 마지막 <작성 방법> 머리글 앞까지 (연습문제 화면용, 원문은 바꾸지 않고 잘라서 보여 줌) */
+export function passageOnly(text: string | null): string | null {
+  if (!text) return null;
+  const h = lastHeader(text);
+  return (h ? text.slice(0, h.start) : text).trim() || text;
+}
+
 export function focusRequirement(text: string | null, prompt: string | null): string | null {
   if (!text || !prompt) return text;
   const h = lastHeader(text);

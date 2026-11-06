@@ -49,6 +49,7 @@ export default async function QuizFreePage() {
           <Select name="kind" label="출처">
             <option value="exam">실제 기출</option>
             <option value="expected">AI 예상 문제 ({data.expected})</option>
+            {data.practice > 0 && <option value="practice">기출 기반 연습문제 ({data.practice})</option>}
           </Select>
           <Select name="format" label="유형">
             <option value="fill">기입형</option>

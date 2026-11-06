@@ -167,10 +167,10 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
             </p>
           </section>
 
-          <section className="grid gap-3 sm:grid-cols-2">
-            {(["exam", "expected"] as const).map((kind) => (
+          <section className="grid gap-3 sm:grid-cols-3">
+            {(["exam", "expected", "practice"] as const).map((kind) => (
               <div key={kind} className="card p-4">
-                <h3 className="mb-2 font-bold">{kind === "exam" ? "실제 기출 세부 문제" : "AI 예상 문제"}</h3>
+                <h3 className="mb-2 font-bold">{kind === "exam" ? "실제 기출 세부 문제" : kind === "expected" ? "AI 예상 문제" : "기출 기반 연습문제"}</h3>
                 <ul className="space-y-1 text-sm">
                   {(["approved", "pending", "hidden", "stale"] as const).map((st) => (
                     <li key={st} className="flex justify-between">
@@ -249,6 +249,7 @@ export default async function AdminQuizPage({ searchParams }: PageProps<"/admin/
               <option value="">전체 출처</option>
               <option value="exam">실제 기출</option>
               <option value="expected">AI 예상 문제</option>
+              <option value="practice">기출 기반 연습문제</option>
             </select>
             <label className="flex items-center gap-1"><input type="checkbox" name="review" value="1" defaultChecked={filter.review} /> 검수 사유 있음</label>
             <label className="flex items-center gap-1"><input type="checkbox" name="changed" value="1" defaultChecked={filter.changed} /> 원본 변경됨</label>
