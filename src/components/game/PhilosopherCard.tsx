@@ -99,9 +99,6 @@ export function PhilosopherCard({
             </div>
             <span className="rounded-full bg-black/45 px-[3cqw] py-[0.8cqw] text-[5cqw] font-medium leading-none text-white/85 ring-1 ring-white/10">{card.tradition}</span>
           </div>
-          {featured && !locked && (
-            <span className="absolute left-1/2 top-[14%] z-[3] -translate-x-1/2 rounded-full bg-[#ffd36b] px-[3cqw] py-[0.6cqw] text-[4.6cqw] font-bold text-[#3a2600] shadow">대표</span>
-          )}
           {locked && (
             <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-[2cqw] text-white/80">
               <svg viewBox="0 0 24 24" className="h-[16cqw] w-[16cqw]" fill="currentColor" aria-hidden>
@@ -112,8 +109,11 @@ export function PhilosopherCard({
           )}
           {/* 아래: 이름 · 등급 · 능력치 · 필살기 */}
           <div className="absolute bottom-[4.5%] left-[6%] right-[6%] z-[3]">
-            <div className="text-[5cqw] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--r1)" }}>
+            <div className="flex items-center gap-[2.5cqw] text-[5cqw] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--r1)" }}>
               {locked ? "" : RARITY_NAMES[rarity]}
+              {featured && !locked && (
+                <span className="rounded-full bg-[#ffd36b] px-[2.5cqw] py-[0.4cqw] text-[4.4cqw] font-bold normal-case leading-none tracking-normal text-[#3a2600] shadow">대표</span>
+              )}
             </div>
             <div className="truncate text-[11cqw] font-extrabold leading-[1.15] tracking-tight text-white drop-shadow">{card.name}</div>
             {card.originalName && <div className="truncate text-[5cqw] text-white/60">{card.originalName}</div>}
