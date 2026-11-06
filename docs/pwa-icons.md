@@ -25,7 +25,7 @@ SVG 원본을 512px 로 내보낸 뒤 크기별로 줄입니다. maskable 은 �
 
 ## 이미 설정된 항목
 
-- 앱 이름 `ETHOS 에토스 — 도덕·윤리 임용 학습 플랫폼`, 짧은 이름 `ETHOS`, `display: standalone`, `lang: ko`
+- 앱 이름 `ETHOS 에토스 — 도덕·윤리 학습 플랫폼`, 짧은 이름 `ETHOS`, `display: standalone`, `lang: ko`
 - 테마 색 라이트 `#f6f7fb` / 다크 `#101827` (다크 모드 전환 시 상태 표시줄 색도 바뀜)
 - iOS: `apple-mobile-web-app-capable`, 제목 `ETHOS`, 상태 표시줄 `default`
 - `viewport-fit=cover` + safe-area: 상단 헤더·하단 탭이 노치와 홈 인디케이터를 피함

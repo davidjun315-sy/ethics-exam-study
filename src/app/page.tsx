@@ -65,7 +65,7 @@ export default async function Home() {
         <div className="relative">
           <p className="eyebrow !text-navy/80">{todayLabel()}</p>
           <h1 className="mt-1.5 text-[1.35rem] font-bold leading-snug tracking-tight sm:text-2xl">{greeting(name)}</h1>
-          <p className="mt-1 text-sm text-muted">ETHOS · 도덕·윤리 임용 학습 플랫폼</p>
+          <p className="mt-1 text-sm text-muted">ETHOS · 도덕·윤리 학습 플랫폼</p>
         </div>
       </section>
 

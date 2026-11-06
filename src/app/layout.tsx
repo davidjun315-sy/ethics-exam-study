@@ -13,7 +13,7 @@ const appleIcon = existsSync(path.join(process.cwd(), "public", "apple-touch-ico
 
 export const metadata: Metadata = {
   title: { default: "ETHOS 에토스", template: "%s · ETHOS" },
-  description: "도덕·윤리 임용 학습 플랫폼 — 기출을 사상가·개념·원전 단위로 분석하고, 대표 사상가 카드와 함께 매일 공부합니다.",
+  description: "도덕·윤리 학습 플랫폼 — 기출을 사상가·개념·원전 단위로 분석하고, 대표 사상가 카드와 함께 매일 공부합니다.",
   applicationName: "ETHOS",
   robots: { index: false, follow: false },
   appleWebApp: { capable: true, title: "ETHOS", statusBarStyle: "default" },

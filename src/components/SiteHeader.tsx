@@ -225,7 +225,7 @@ export function BottomNav({ member }: { member: string | null }) {
               </Link>
             </div>
             <p className="mt-3 flex items-center gap-1.5 text-[11px] text-faint">
-              <Library className="h-3.5 w-3.5" aria-hidden /> ETHOS 에토스 · 도덕·윤리 임용 학습 플랫폼
+              <Library className="h-3.5 w-3.5" aria-hidden /> ETHOS 에토스 · 도덕·윤리 학습 플랫폼
             </p>
           </div>
         </div>

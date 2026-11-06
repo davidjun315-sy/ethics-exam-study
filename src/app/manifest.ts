@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
     purpose: i.purpose,
   }));
   return {
-    name: "ETHOS 에토스 — 도덕·윤리 임용 학습 플랫폼",
+    name: "ETHOS 에토스 — 도덕·윤리 학습 플랫폼",
     short_name: "ETHOS",
     description: "기출 분석 · 사상가 탐구 · 사상가 카드와 함께하는 매일의 윤리 학습",
     lang: "ko",
