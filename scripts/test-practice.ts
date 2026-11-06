@@ -87,6 +87,37 @@ check("키가 안정적 (다시 만들어도 같은 키·같은 보기 순서)",
 check("요구 사항별 해설이 없으면 만들지 않음", buildPracticeItems({ ...src, details: {} }).length === 0);
 check("분석 '검토 필요'면 검토 사유가 붙음", buildPracticeItems({ ...src, needsReview: true }).every((i) => i.reviewReasons.length > 0));
 
+// 형식이 어긋난 분석 (운영 데이터에서 발견: 빠진 근거·해설, 문자열이 아닌 값)
+{
+  const bad = {
+    questionId: "q-bad",
+    questionText: null,
+    needsReview: false,
+    commonMistakes: [{ text: "객체로 저장된 실수" }, null, "㉠에 ‘태극’을 씀 — 이유", 3] as unknown as string[],
+    details: {
+      itemExplanations: [
+        { label: "㉠", answer: "하나(一)" },
+        { label: "㉡", answer: "분(分)", sourcePart: null, explanation: undefined },
+        { label: undefined, answer: "x" },
+        null,
+      ],
+      passageCommentary: [{ part: "가" }, { quote: null }, null],
+      studyConcepts: [{ name: "이일분수", philosopher: "주희" }, { name: "격물", philosopher: "왕수인", definition: 5 }, { definition: "이름 없음" }],
+      confusableConcepts: [{ name: "이일분수와 이통기국" }, {}],
+    },
+  } as unknown as Parameters<typeof buildPracticeItems>[0];
+  let ok = true;
+  let n = 0;
+  try {
+    n = buildPracticeItems(bad).length;
+  } catch (e) {
+    ok = false;
+    console.log(e);
+  }
+  check("빠진 항목·형식이 다른 분석에서도 오류 없이 만듦 (가능한 것만)", ok && n > 0, `${n}개`);
+  check("분석이 비었거나 형식이 완전히 다르면 0개 (오류 없음)", buildPracticeItems({ ...bad, details: { itemExplanations: "x" } as never }).length === 0 && buildPracticeItems({ ...bad, details: null as never }).length === 0);
+}
+
 // 채점
 const ch: ChoicePayload = { type: "ladder", mode: "choice", stem: "", options: ["a", "b", "c", "d"], answer: 2, notes: [], explanation: "", grounds: "" };
 check("하나 고르기 채점", gradePractice(ch, "2") === "correct" && gradePractice(ch, "1") === "wrong" && gradePractice(ch, "x") === "wrong");

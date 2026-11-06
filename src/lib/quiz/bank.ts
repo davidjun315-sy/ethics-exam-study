@@ -210,13 +210,21 @@ function planExpected(s: QuestionSummary | null, x: ExpectedItem, extra: Record<
 /** 기출 기반 연습문제 (011): 그 문항의 저장된 분석으로만 만든다 */
 function planPractice(s: QuestionSummary, a: AnalysisRow): Planned[] {
   const m = meta(s);
-  return buildPracticeItems({
+  // 한 문항의 분석 형식이 어긋나도 전체 동기화는 계속한다 (그 문항의 연습문제만 건너뜀)
+  let built: ReturnType<typeof buildPracticeItems>;
+  try {
+    built = buildPracticeItems({
     questionId: s.id,
     questionText: s.question_text,
     details: a.details ?? {},
     commonMistakes: a.common_mistakes ?? [],
     needsReview: a.status === "needs_review",
-  }).map((it) => ({
+    });
+  } catch (e) {
+    console.error(`[quiz] 연습문제 생성 건너뜀 (${s.id}):`, e instanceof Error ? e.message : e);
+    return [];
+  }
+  return built.map((it) => ({
     key: it.key,
     hash: it.sourceHash,
     reasons: it.reviewReasons,

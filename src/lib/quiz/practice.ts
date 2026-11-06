@@ -202,15 +202,52 @@ export function maskName(text: string, name: string): string {
 // ---------------------------------------------------------------------
 // 생성
 // ---------------------------------------------------------------------
+// 저장된 분석은 버전·수정 이력에 따라 항목이 빠져 있거나 형식이 다를 수 있다 → 문자열이 아닌 값은 빈 값으로
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+/** 분석 데이터 정리: 빠진 항목은 빈 문자열/빈 배열, 필수 값(레이블·정답·이름)이 없는 항목은 뺀다 */
+export function cleanDetails(raw: AnalysisDetails | null | undefined): AnalysisDetails {
+  const d = (raw && typeof raw === "object" ? raw : {}) as AnalysisDetails;
+  return {
+    ...d,
+    itemExplanations: arr<Record<string, unknown>>(d.itemExplanations)
+      .filter((x) => x && str(x.label).trim() && str(x.answer).trim())
+      .map((x) => ({ label: str(x.label), answer: str(x.answer), sourcePart: str(x.sourcePart), explanation: str(x.explanation) })),
+    passageCommentary: arr<Record<string, unknown>>(d.passageCommentary)
+      .filter((x) => x && typeof x === "object")
+      .map((x) => ({ part: str(x.part), quote: str(x.quote), commentary: str(x.commentary) })),
+    studyConcepts: arr<Record<string, unknown>>(d.studyConcepts)
+      .filter((x) => x && str(x.name).trim())
+      .map((x) => ({
+        name: str(x.name),
+        importance: (["required", "supporting", "comparison"].includes(str(x.importance)) ? str(x.importance) : "supporting") as "required" | "supporting" | "comparison",
+        philosopher: str(x.philosopher) || null,
+        definition: str(x.definition),
+        examPoint: str(x.examPoint),
+        connectionToQuestion: str(x.connectionToQuestion),
+        confusableWith: arr<unknown>(x.confusableWith).map(str).filter(Boolean),
+        distinction: str(x.distinction),
+      })),
+    confusableConcepts: arr<Record<string, unknown>>(d.confusableConcepts)
+      .filter((x) => x && str(x.name).trim())
+      .map((x) => ({ name: str(x.name), reason: str(x.reason) })),
+    confusablePhilosophers: arr<Record<string, unknown>>(d.confusablePhilosophers)
+      .filter((x) => x && str(x.name).trim())
+      .map((x) => ({ name: str(x.name), reason: str(x.reason) })),
+  };
+}
+
 export function buildPracticeItems(src: PracticeSource): PracticeItem[] {
-  const d = src.details ?? {};
+  const d = cleanDetails(src.details);
   const items = d.itemExplanations ?? [];
   if (!items.length) return [];
   const out: PracticeItem[] = [];
   const base = src.needsReview ? ["원본 분석이 '검토 필요' 상태입니다"] : [];
   const qid = src.questionId;
   const terms = items.filter((x) => isShortAnswer(x.answer));
-  const mistakes = (src.commonMistakes ?? []).map(splitMistake);
+  // 자주 하는 실수: 문자열이 아닌 값(예전 형식의 객체 등)은 건너뛴다
+  const mistakes = arr<unknown>(src.commonMistakes).map(str).filter((x) => x.trim()).map(splitMistake);
   const concepts = d.studyConcepts ?? [];
   let order = 0;
 

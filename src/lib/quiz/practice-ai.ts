@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type { AnalysisDetails } from "../types";
 import { hashText } from "./split.ts";
-import type { ChoicePayload, MultiPayload } from "./practice.ts";
+import { cleanDetails, type ChoicePayload, type MultiPayload } from "./practice.ts";
 
 const Opt = z.string().min(2).max(200);
 
@@ -48,7 +48,8 @@ export interface PracticeAiContext {
 const list = (xs: string[]) => xs.map((x) => `- ${x}`).join("\n");
 
 export function buildPracticeAiPrompt(c: PracticeAiContext): string {
-  const d = c.details ?? {};
+  const d = cleanDetails(c.details);
+  const mistakes = (Array.isArray(c.commonMistakes) ? c.commonMistakes : []).filter((x): x is string => typeof x === "string");
   const items = (d.itemExplanations ?? []).map((x) => `### ${x.label}\n정답: ${x.answer}\n근거: ${x.sourcePart}\n해설: ${x.explanation}`).join("\n\n");
   const passage = (d.passageCommentary ?? []).map((p) => `### ${p.part}\n원문: ${p.quote}\n해설: ${p.commentary}`).join("\n\n");
   const concepts = (d.studyConcepts ?? []).map((x) => `- ${x.name}${x.philosopher ? ` (${x.philosopher})` : ""}: ${x.definition}${x.distinction ? ` / 구별: ${x.distinction}` : ""}`).join("\n");
@@ -85,7 +86,7 @@ ${c.questionText ?? "(원문 없음)"}
 ${items || "(없음)"}
 
 ## 모범답안
-${d.modelAnswer ?? "(없음)"}
+${typeof d.modelAnswer === "string" && d.modelAnswer ? d.modelAnswer : "(없음)"}
 
 ## 원문 해설
 ${passage || "(없음)"}
@@ -99,7 +100,7 @@ ${list(confPh) || "(없음)"}
 혼동 개념
 ${list(confCo) || "(없음)"}
 자주 하는 실수
-${list(c.commonMistakes) || "(없음)"}
+${list(mistakes) || "(없음)"}
 `;
 }
 
