@@ -7,13 +7,19 @@ export type Rarity = "common" | "rare" | "epic" | "legendary";
 export const RARITIES: Rarity[] = ["common", "rare", "epic", "legendary"];
 export const RARITY_NAMES: Record<Rarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
 
-/** 새 카드를 준비할 때 등급별 기본 능력치 제안 (관리자가 바꿀 수 있음) */
-export const RARITY_BASE: Record<Rarity, { atk: number; hp: number }> = {
-  common: { atk: 40, hp: 300 },
-  rare: { atk: 46, hp: 340 },
-  epic: { atk: 53, hp: 380 },
-  legendary: { atk: 60, hp: 420 },
-};
+/** 사상가 기본 능력치 제안 (= 일반 Lv.1, 관리자가 사상가별로 바꿀 수 있음) */
+export const DEFAULT_BASE = { atk: 40, hp: 300 };
+
+/** 등급 배율 (관리자 설정 기본값). 등급이 오르면 같은 사상가·같은 레벨에서 능력치가 반드시 오른다 */
+export const DEFAULT_RARITY_MULT: Record<Rarity, number> = { common: 1, rare: 1.2, epic: 1.45, legendary: 1.75 };
+
+export function nextRarity(r: Rarity): Rarity | null {
+  const i = RARITIES.indexOf(r);
+  return i >= 0 && i < RARITIES.length - 1 ? RARITIES[i + 1] : null;
+}
+
+/** 카드를 강화 조각으로 바꿀 때 얻는 조각 (등급이 높을수록 많이) — DB 함수와 같은 값 */
+export const SHARDS_FOR_CARD: Record<Rarity, number> = { common: 1, rare: 2, epic: 4, legendary: 8 };
 
 export type SkillEffect = "strike" | "sweep" | "heal" | "guard" | "stun";
 export const SKILL_EFFECTS: Record<SkillEffect, { name: string; desc: string }> = {
@@ -30,6 +36,37 @@ export const MAX_LEVEL_DEFAULT = 5;
 export function statsAt(base: { atk: number; hp: number }, level: number): { atk: number; hp: number } {
   const m = 1 + 0.12 * (Math.max(1, level) - 1);
   return { atk: Math.round(base.atk * m), hp: Math.round(base.hp * m) };
+}
+
+/** 최종 능력치 = 사상가 기본 × 등급 배율 × 레벨 배율 */
+export function statsFor(
+  base: { atk: number; hp: number },
+  rarity: Rarity,
+  level: number,
+  mult: Record<Rarity, number> = DEFAULT_RARITY_MULT,
+): { atk: number; hp: number } {
+  const r = mult[rarity] ?? 1;
+  return statsAt({ atk: base.atk * r, hp: base.hp * r }, level);
+}
+
+/**
+ * 합성 가능 여부 (화면 미리보기용 · 서버 DB 함수가 최종 확인)
+ * 같은 등급 n 장 (기준 1 + 재료 n-1), 전설은 더 못 올림, 재료는 잠금·대표 카드 불가
+ */
+export function fusionProblem(
+  base: { cardId: string; rarity: Rarity } | null,
+  materials: { cardId: string; rarity: Rarity; locked: boolean }[],
+  opts: { fusionCount: number; featuredId: string | null; coins: number; cost: number },
+): string | null {
+  if (!base) return "기준 카드를 고르세요";
+  if (!nextRarity(base.rarity)) return "전설은 최고 등급입니다";
+  if (materials.length !== opts.fusionCount - 1) return `재료 카드 ${opts.fusionCount - 1}장을 고르세요`;
+  if (materials.some((m) => m.cardId === base.cardId) || new Set(materials.map((m) => m.cardId)).size !== materials.length) return "같은 카드를 두 번 쓸 수 없습니다";
+  if (materials.some((m) => m.rarity !== base.rarity)) return "같은 등급끼리만 합성할 수 있습니다";
+  if (materials.some((m) => m.locked)) return "잠긴 카드는 재료로 쓸 수 없습니다";
+  if (materials.some((m) => m.cardId === opts.featuredId)) return "대표 카드는 재료로 쓸 수 없습니다";
+  if (opts.coins < opts.cost) return "코인이 부족합니다";
+  return null;
 }
 
 /** level → level+1 에 필요한 강화 조각·코인 (확정 성공) */
@@ -99,8 +136,8 @@ export function quizCoins(
   return { base, reconquer: a.reconquered && a.result === "correct" ? rules.reconquer : 0, reason: "" };
 }
 
-/** 확률 표시용: 공개 카드가 있는 등급만으로 다시 나눈 비율 (DB 함수와 같은 계산) */
-export function effectiveRates(rates: Partial<Record<Rarity, number>>, available: Rarity[]): Record<Rarity, number> {
+/** 확률 표시용 비율. 모든 사상가가 모든 등급으로 나오므로 available 은 네 등급 전부 (DB 함수와 같은 계산) */
+export function effectiveRates(rates: Partial<Record<Rarity, number>>, available: Rarity[] = RARITIES): Record<Rarity, number> {
   const out = { common: 0, rare: 0, epic: 0, legendary: 0 };
   const total = available.reduce((n, r) => n + Math.max(0, rates[r] ?? 0), 0);
   if (total <= 0) return out;

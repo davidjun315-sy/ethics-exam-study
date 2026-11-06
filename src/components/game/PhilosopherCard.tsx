@@ -2,7 +2,7 @@
 
 import { useRef, type CSSProperties } from "react";
 import type { CardView } from "@/lib/game/data";
-import { RARITY_NAMES, statsAt } from "@/lib/game/rules";
+import { DEFAULT_RARITY_MULT, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
 
 const Sword = () => (
   <svg viewBox="0 0 24 24" className="h-[1em] w-[1em]" fill="currentColor" aria-hidden>
@@ -17,12 +17,14 @@ const Heart = () => (
 
 /**
  * 철학자 카드. 크기는 부모가 정한 너비를 따르고, 글자는 카드 너비에 비례 (container 단위).
+ * 같은 사상가는 같은 일러스트를 쓰고, 등급(rarity)에 따라 프레임·광택·효과만 달라진다.
  * - 등급별 프레임·광택 (전설은 은은한 광택이 지나감)
  * - PC: 마우스를 올리면 살짝 기울어짐 (동작 줄이기 설정이면 끔)
  * - locked: 미획득 (실루엣)
  */
 export function PhilosopherCard({
   card,
+  rarity,
   level = 1,
   shards,
   shardsNeeded,
@@ -35,8 +37,11 @@ export function PhilosopherCard({
   onClick,
   badge,
   stats,
+  count,
+  locked2,
 }: {
   card: CardView;
+  rarity: Rarity;
   level?: number;
   shards?: number;
   shardsNeeded?: number | null;
@@ -48,11 +53,13 @@ export function PhilosopherCard({
   style?: CSSProperties;
   onClick?: () => void;
   badge?: React.ReactNode;
-  /** 이미 계산된 능력치 (배틀) */
+  /** 이미 계산된 능력치 (서버 계산값). 없으면 기본 배율로 계산 */
   stats?: { atk: number; hp: number };
+  count?: number; // 같은 사상가 보유 장수 (도감 묶음)
+  locked2?: boolean; // 카드 잠금 표시
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const st = stats ?? statsAt({ atk: card.baseAtk, hp: card.baseHp }, level);
+  const st = stats ?? statsFor({ atk: card.baseAtk, hp: card.baseHp }, rarity, level, DEFAULT_RARITY_MULT);
   const canTilt = () => tilt && typeof window !== "undefined" && window.matchMedia("(hover: hover) and (prefers-reduced-motion: no-preference)").matches;
   const onMove = (e: React.MouseEvent) => {
     if (!ref.current || !canTilt()) return;
@@ -69,11 +76,11 @@ export function PhilosopherCard({
     <Tag
       type={onClick ? "button" : undefined}
       onClick={onClick}
-      className={`block text-left ${onClick ? "cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-navy/40 rounded-[14px]" : ""} ${className}`}
+      className={`block text-left ${onClick ? "w-full cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-navy/40 rounded-[14px]" : ""} ${className}`}
       style={style}
-      aria-label={locked ? `미획득 카드 ${card.name}` : `${card.name} · ${RARITY_NAMES[card.rarity]} · Lv.${level}`}
+      aria-label={locked ? `미획득 카드 ${card.name}` : `${card.name} · ${RARITY_NAMES[rarity]} · Lv.${level}`}
     >
-      <div ref={ref} className={`pcard ${locked ? "pcard-locked" : ""}`} data-rarity={card.rarity} onMouseMove={onMove} onMouseLeave={onLeave}>
+      <div ref={ref} className={`pcard ${locked ? "pcard-locked" : ""}`} data-rarity={locked ? "common" : rarity} onMouseMove={onMove} onMouseLeave={onLeave}>
         <div className="pcard-inner">
           {card.artUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -106,7 +113,7 @@ export function PhilosopherCard({
           {/* 아래: 이름 · 등급 · 능력치 · 필살기 */}
           <div className="absolute bottom-[4.5%] left-[6%] right-[6%] z-[3]">
             <div className="text-[5cqw] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--r1)" }}>
-              {RARITY_NAMES[card.rarity]}
+              {locked ? "" : RARITY_NAMES[rarity]}
             </div>
             <div className="truncate text-[11cqw] font-extrabold leading-[1.15] tracking-tight text-white drop-shadow">{card.name}</div>
             {card.originalName && <div className="truncate text-[5cqw] text-white/60">{card.originalName}</div>}
@@ -134,6 +141,12 @@ export function PhilosopherCard({
             )}
           </div>
           {badge && <div className="absolute right-[5%] top-[14%] z-[4]">{badge}</div>}
+          {count !== undefined && count > 1 && (
+            <span className="absolute bottom-[35%] right-[5%] z-[4] rounded-full bg-black/70 px-[3cqw] py-[0.8cqw] text-[5.5cqw] font-bold text-white ring-1 ring-white/20">×{count}</span>
+          )}
+          {locked2 && (
+            <span className="absolute left-[5%] top-[14%] z-[4] rounded-full bg-black/70 px-[2.5cqw] py-[0.6cqw] text-[4.6cqw] font-bold text-white ring-1 ring-white/20" title="잠긴 카드">잠금</span>
+          )}
         </div>
       </div>
     </Tag>

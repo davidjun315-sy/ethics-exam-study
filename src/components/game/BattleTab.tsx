@@ -7,12 +7,15 @@ import { DIFFICULTY_NAMES, type Difficulty } from "@/lib/game/battle";
 import { SKILL_EFFECTS, type SkillEffect } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
+import { byStrength } from "./GameApp";
 
 export function BattleTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
   const [deck, setDeck] = useState<string[]>(() => {
-    const saved = state.deck.filter((id) => state.owned.some((o) => o.philosopherId === id));
+    // 덱은 카드 id로 저장 (같은 사상가의 다른 등급 카드도 따로 넣을 수 있음)
+    const saved = state.deck.filter((id) => state.owned.some((o) => o.cardId === id));
     if (saved.length === 3) return saved;
-    return [...state.owned].sort((a, b) => b.level - a.level).slice(0, 3).map((o) => o.philosopherId);
+    const rest = [...state.owned].sort(byStrength).map((o) => o.cardId).filter((id) => !saved.includes(id));
+    return [...saved, ...rest].slice(0, 3);
   });
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [replay, setReplay] = useState<BattleReplay | null>(null);
@@ -22,8 +25,8 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
   if (state.owned.length < 3)
     return (
       <section className="card p-8 text-center">
-        <h2 className="text-lg font-bold">철학자 3명이 필요합니다</h2>
-        <p className="mt-1 text-sm text-muted">지금 {state.owned.length}명을 보유하고 있습니다. 카드를 더 모아 3 vs 3 배틀에 도전하세요.</p>
+        <h2 className="text-lg font-bold">카드 3장이 필요합니다</h2>
+        <p className="mt-1 text-sm text-muted">지금 {state.owned.length}장을 보유하고 있습니다. 카드를 더 모아 3 vs 3 배틀에 도전하세요.</p>
         <button type="button" className="btn-primary mt-4 px-5 py-2.5" onClick={goDraw}>카드 뽑으러 가기</button>
       </section>
     );
@@ -47,11 +50,11 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
           <span className="text-xs text-faint">대표 카드와 별개로 저장됩니다</span>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-          {[...state.owned].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name)).map((o) => {
-            const at = deck.indexOf(o.philosopherId);
+          {[...state.owned].sort((a, b) => byStrength(a, b) || a.name.localeCompare(b.name)).map((o) => {
+            const at = deck.indexOf(o.cardId);
             return (
-              <div key={o.philosopherId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
-                <PhilosopherCard card={o} level={o.level} maxLevel={state.settings.maxLevel} tilt={false} onClick={() => toggle(o.philosopherId)} />
+              <div key={o.cardId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
+                <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} featured={o.cardId === state.featuredId} tilt={false} onClick={() => toggle(o.cardId)} />
                 {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-white shadow dark:text-[#0f141c]">{at + 1}</span>}
               </div>
             );
@@ -68,7 +71,7 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[11px] text-faint">상대 레벨: 내 덱 평균 레벨 {difficulty === "easy" ? "−1" : difficulty === "hard" ? "+1" : "그대로"}</p>
+          <p className="mt-1.5 text-[11px] text-faint">상대 등급: 내 덱과 같은 구성 · 상대 레벨: 내 덱 평균 레벨 {difficulty === "easy" ? "−1" : difficulty === "hard" ? "+1" : "그대로"}</p>
         </div>
         <div className="flex justify-between rounded-lg bg-surface-2 p-3 text-sm">
           <span className="text-muted">전적</span>
@@ -183,7 +186,8 @@ function BattleArena({ replay, maxLevel, onAgain }: { replay: BattleReplay; maxL
           <div key={`${u.key}-${idx}`} className={`relative ${s.dead ? "faint" : isActor ? (side === "me" ? "lunge-up" : "lunge-down") : hit ? "hit-shake" : ""}`}>
             <div className={`relative rounded-[14px] ${isActor && current?.t === "skill" ? "ring-4" : ""}`} style={isActor && current?.t === "skill" ? { boxShadow: `0 0 26px ${EFFECT_COLOR[current.effect]}`, ["--tw-ring-color" as string]: EFFECT_COLOR[current.effect] } : undefined}>
               <PhilosopherCard
-                card={{ philosopherId: u.philosopherId, name: u.name, originalName: null, tradition: u.tradition, rarity: u.rarity, baseAtk: u.atk, baseHp: u.hp, skillName: u.skillName, skillEffect: u.skillEffect, skillDesc: "", quote: "", artUrl: u.artUrl, artBasis: "portrait", artNote: "", published: true }}
+                card={{ philosopherId: u.philosopherId, name: u.name, originalName: null, tradition: u.tradition, baseAtk: u.atk, baseHp: u.hp, skillName: u.skillName, skillEffect: u.skillEffect, skillDesc: "", quote: "", artUrl: u.artUrl, artBasis: "portrait", artNote: "", published: true }}
+                rarity={u.rarity}
                 level={u.level}
                 stats={{ atk: u.atk, hp: u.hp }}
                 maxLevel={maxLevel}

@@ -1,6 +1,6 @@
 /** 철학자 대난투 규칙 점검.  npm run test:game */
 import { opponentLevel, runBattle, seededRandom, type Fighter } from "../src/lib/game/battle.ts";
-import { canUpgrade, effectiveRates, quizCoins, statsAt, upgradeCost } from "../src/lib/game/rules.ts";
+import { canUpgrade, DEFAULT_RARITY_MULT, effectiveRates, fusionProblem, nextRarity, quizCoins, RARITIES, SHARDS_FOR_CARD, statsAt, statsFor, upgradeCost } from "../src/lib/game/rules.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -25,9 +25,25 @@ check("자동 채점 기입형은 서버 판정이라 제한 없음", q({ selfGr
 check("재정복 +15 (정답일 때만)", q({ reconquered: true }).reconquer === 15 && q({ reconquered: true, result: "wrong" }).reconquer === 0);
 check("같은 문제 같은 날 (경험치 없음) → 코인 0", q({ xpAwarded: false }).base === 0 && q({ xpAwarded: false, reconquered: true }).reconquer === 0);
 
-// 확률
-const er = effectiveRates({ common: 60, rare: 28, epic: 10, legendary: 2 }, ["common", "legendary"]);
-check("공개 카드가 있는 등급만으로 확률 재분배", Math.abs(er.common - 60 / 62) < 1e-9 && Math.abs(er.legendary - 2 / 62) < 1e-9 && er.rare === 0);
+// 확률: 모든 사상가가 네 등급 모두로 나오므로 네 등급 전체 비율
+const er = effectiveRates({ common: 60, rare: 28, epic: 10, legendary: 2 });
+check("등급 확률 (네 등급 합 100%)", Math.abs(er.common - 0.6) < 1e-9 && Math.abs(er.legendary - 0.02) < 1e-9 && Math.abs(RARITIES.reduce((n, r) => n + er[r], 0) - 1) < 1e-9);
+
+// 등급 · 합성
+const base = { atk: 40, hp: 300 };
+check("등급 배율: 일반 1.00 · 희귀 1.20 · 영웅 1.45 · 전설 1.75", JSON.stringify(statsFor(base, "common", 1)) === '{"atk":40,"hp":300}' && JSON.stringify(statsFor(base, "legendary", 1)) === '{"atk":70,"hp":525}');
+check("같은 사상가·같은 레벨이면 등급이 오를수록 능력치 증가 (모든 레벨)", [1, 2, 3, 4, 5].every((lv) => RARITIES.slice(1).every((r, i) => { const lo = statsFor(base, RARITIES[i], lv); const hi = statsFor(base, r, lv); return hi.atk > lo.atk && hi.hp > lo.hp; })));
+check("레벨과 등급은 독립 (희귀 Lv.3 = 기본×1.2×1.24)", JSON.stringify(statsFor(base, "rare", 3)) === JSON.stringify(statsAt({ atk: 48, hp: 360 }, 3)));
+check("진화 단계: 일반→희귀→영웅→전설, 전설은 끝", nextRarity("common") === "rare" && nextRarity("rare") === "epic" && nextRarity("epic") === "legendary" && nextRarity("legendary") === null);
+check("카드→조각: 1·2·4·8", SHARDS_FOR_CARD.common === 1 && SHARDS_FOR_CARD.legendary === 8);
+const fp = (b: Parameters<typeof fusionProblem>[0], m: Parameters<typeof fusionProblem>[1], featured: string | null = null) => fusionProblem(b, m, { fusionCount: 2, featuredId: featured, coins: 0, cost: 0 });
+const C = (id: string, rarity: "common" | "rare" | "epic" | "legendary", locked = false) => ({ cardId: id, rarity, locked });
+check("합성 가능: 같은 등급 2장 (사상가 달라도)", fp(C("a", "common"), [C("b", "common")]) === null);
+check("합성 불가: 다른 등급", fp(C("a", "common"), [C("b", "rare")]) === "같은 등급끼리만 합성할 수 있습니다");
+check("합성 불가: 전설", fp(C("a", "legendary"), [C("b", "legendary")]) === "전설은 최고 등급입니다");
+check("합성 불가: 같은 카드 두 번 · 잠금 · 대표 카드", fp(C("a", "common"), [C("a", "common")]) !== null && fp(C("a", "common"), [C("b", "common", true)]) !== null && fp(C("a", "common"), [C("b", "common")], "b") !== null);
+check("합성 불가: 재료 수", fp(C("a", "common"), []) !== null);
+
 
 // 배틀
 const F = (key: string, atk: number, hp: number, effect: Fighter["skillEffect"] = "strike"): Fighter => ({ key, philosopherId: key, name: key, atk, hp, skillName: `${key} 필살기`, skillEffect: effect });
@@ -63,6 +79,13 @@ check("같은 덱끼리는 승률이 한쪽으로 쏠리지 않음 (20~80%)", wi
 check("난수 범위 0~1", (() => { const r = seededRandom("z"); for (let i = 0; i < 1000; i++) { const v = r(); if (v < 0 || v >= 1) return false; } return true; })());
 check("상대 레벨: 평균 기준 쉬움 -1 · 어려움 +1 (1~최대)", opponentLevel([2, 3, 3], "easy", 5) === 2 && opponentLevel([5, 5, 5], "hard", 5) === 5 && opponentLevel([1, 1, 1], "easy", 5) === 1);
 
+{
+  // 밸런스: 전설 덱 vs 일반 덱 (같은 사상가·레벨) → 전설이 대부분 이김, 일반 덱끼리는 반반
+  const deck = (r: "common" | "legendary", side: string) => (["strike", "heal", "sweep"] as const).map((e, i) => { const st = statsFor(base, r, 1, DEFAULT_RARITY_MULT); return F(`${side}-${i}`, st.atk, st.hp, e); });
+  let w = 0;
+  for (let i = 0; i < 200; i++) if (runBattle(deck("legendary", "me"), deck("common", "foe"), `bal-${i}`).winner === "me") w++;
+  check("밸런스: 전설 덱은 일반 덱을 거의 이김 (등급 의미 있음)", w >= 180, `${w}/200`);
+}
 // 제안
 check("이름·별칭으로 제안 찾기", suggestFor("왕양명", ["왕수인"], "동양윤리").skill === "치양지" && suggestFor("칸트", [], "서양윤리").quote === "오늘의 의무는 다했는가?");
 check("모르는 사상가는 분류별 기본값 + 재구성 표시", suggestFor("가상인물", [], "사회사상").effect === "guard" && suggestFor("가상인물", [], "사회사상").basis === "reconstruction");

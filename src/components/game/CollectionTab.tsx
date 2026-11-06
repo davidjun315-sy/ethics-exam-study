@@ -2,34 +2,41 @@
 
 import { useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
-import { RARITIES } from "@/lib/game/rules";
+import { RARITIES, RARITY_NAMES, nextRarity } from "@/lib/game/rules";
 import { TRADITIONS } from "@/lib/traditions";
 import { PhilosopherCard } from "./PhilosopherCard";
+import { byStrength, gemStyle } from "./GameApp";
 
-type Sort = "rarity" | "level" | "name";
+type Sort = "rarity" | "level" | "name" | "count";
 
-export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (id: string) => void }) {
+/** 카드 도감: 사상가별로 묶어 가장 강한 카드를 대표로 보여 준다. 누르면 그 사상가의 보유 카드 전체 */
+export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (philosopherId: string) => void }) {
   const [tradition, setTradition] = useState<string>("전체");
   const [sort, setSort] = useState<Sort>("rarity");
   const [show, setShow] = useState<"all" | "owned" | "locked">("all");
-  const owned = new Map(state.owned.map((o) => [o.philosopherId, o]));
-  // 공개 카드 + (공개가 내려갔지만) 보유한 카드
-  const all: (CardView & { own?: OwnedCard })[] = [
-    ...state.cards.map((c) => ({ ...c, own: owned.get(c.philosopherId) })),
-    ...state.owned.filter((o) => !state.cards.some((c) => c.philosopherId === o.philosopherId)).map((o) => ({ ...o, own: o })),
+  const byPh = new Map<string, OwnedCard[]>();
+  for (const o of state.owned) byPh.set(o.philosopherId, [...(byPh.get(o.philosopherId) ?? []), o]);
+  for (const list of byPh.values()) list.sort(byStrength);
+  // 공개 사상가 + (공개가 내려갔지만) 보유한 사상가
+  const all: (CardView & { copies: OwnedCard[] })[] = [
+    ...state.cards.map((c) => ({ ...c, copies: byPh.get(c.philosopherId) ?? [] })),
+    ...[...byPh.entries()].filter(([id]) => !state.cards.some((c) => c.philosopherId === id)).map(([, copies]) => ({ ...copies[0], copies })),
   ];
   const traditions = ["전체", ...TRADITIONS.filter((t) => all.some((c) => c.tradition === t)), ...(all.some((c) => !TRADITIONS.includes(c.tradition as never)) ? ["미분류"] : [])];
-  const rank = (c: CardView) => RARITIES.indexOf(c.rarity);
+  const best = (c: { copies: OwnedCard[] }) => c.copies[0];
+  const rank = (c: { copies: OwnedCard[] }) => (best(c) ? RARITIES.indexOf(best(c).rarity) : -1);
+  // 합성 가능: 같은 등급(전설 제외) 잠기지 않은 카드가 합성 장수만큼 (다른 사상가 카드와도 합성 가능)
+  const fusableRarity = new Set(RARITIES.filter((r) => nextRarity(r) && state.owned.filter((o) => o.rarity === r && !o.locked).length >= state.settings.fusionCount));
   const list = all
     .filter((c) => tradition === "전체" || c.tradition === tradition)
-    .filter((c) => (show === "owned" ? c.own : show === "locked" ? !c.own : true))
+    .filter((c) => (show === "owned" ? c.copies.length : show === "locked" ? !c.copies.length : true))
     .sort((a, b) => {
-      if (Boolean(b.own) !== Boolean(a.own)) return b.own ? 1 : -1;
-      if (sort === "level") return (b.own?.level ?? 0) - (a.own?.level ?? 0) || rank(b) - rank(a) || a.name.localeCompare(b.name);
+      if (Boolean(b.copies.length) !== Boolean(a.copies.length)) return b.copies.length ? 1 : -1;
+      if (sort === "level") return (best(b)?.level ?? 0) - (best(a)?.level ?? 0) || rank(b) - rank(a) || a.name.localeCompare(b.name);
+      if (sort === "count") return b.copies.length - a.copies.length || rank(b) - rank(a) || a.name.localeCompare(b.name);
       if (sort === "name") return a.name.localeCompare(b.name);
-      return rank(b) - rank(a) || (b.own?.level ?? 0) - (a.own?.level ?? 0) || a.name.localeCompare(b.name);
+      return rank(b) - rank(a) || (best(b)?.level ?? 0) - (best(a)?.level ?? 0) || a.name.localeCompare(b.name);
     });
-  const canUp = (o?: OwnedCard) => Boolean(o?.upgrade && o.shards >= o.upgrade.shards && state.coins >= o.upgrade.coins);
 
   return (
     <section className="space-y-3">
@@ -43,38 +50,60 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (id
         </div>
         <div className="ml-auto flex gap-2">
           <select className="input !w-auto !py-1 text-xs" value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="보기">
-            <option value="all">전체 카드</option>
-            <option value="owned">보유 카드</option>
+            <option value="all">전체 철학자</option>
+            <option value="owned">보유</option>
             <option value="locked">미획득</option>
           </select>
           <select className="input !w-auto !py-1 text-xs" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="정렬">
             <option value="rarity">등급순</option>
             <option value="level">레벨순</option>
+            <option value="count">보유 수량순</option>
             <option value="name">이름순</option>
           </select>
         </div>
       </div>
       <p className="text-xs text-muted">
-        보유 {state.owned.length} / 공개 {state.cards.length}장 · 카드를 누르면 상세 정보와 대표 카드 설정이 열립니다.
+        보유 카드 {state.owned.length}장 · 철학자 {byPh.size}/{state.cards.length}명 · 카드를 누르면 그 철학자의 모든 등급·보유 카드와 대표 설정이 열립니다.
       </p>
       {list.length === 0 ? (
         <p className="card p-6 text-center text-sm text-muted">조건에 맞는 카드가 없습니다.</p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {list.map((c) => (
-            <PhilosopherCard
-              key={c.philosopherId}
-              card={c}
-              level={c.own?.level ?? 1}
-              locked={!c.own}
-              featured={state.featuredId === c.philosopherId}
-              maxLevel={state.settings.maxLevel}
-              shards={c.own?.shards}
-              shardsNeeded={c.own ? (c.own.upgrade?.shards ?? null) : undefined}
-              onClick={() => onOpen(c.philosopherId)}
-              badge={canUp(c.own) ? <span className="rounded-full bg-ok px-2 py-0.5 text-[10px] font-bold text-white shadow">강화 가능</span> : undefined}
-            />
-          ))}
+          {list.map((c) => {
+            const b = best(c);
+            const featured = c.copies.some((o) => o.cardId === state.featuredId);
+            const fusable = c.copies.some((o) => fusableRarity.has(o.rarity) && !o.locked);
+            return (
+              <div key={c.philosopherId}>
+                <PhilosopherCard
+                  card={c}
+                  rarity={b?.rarity ?? "common"}
+                  level={b?.level ?? 1}
+                  stats={b ? { atk: b.atk, hp: b.hp } : undefined}
+                  locked={!b}
+                  featured={featured && b?.cardId === state.featuredId}
+                  maxLevel={state.settings.maxLevel}
+                  count={c.copies.length}
+                  onClick={() => onOpen(c.philosopherId)}
+                  badge={fusable ? <span className="rounded-full bg-ok px-2 py-0.5 text-[10px] font-bold text-white shadow">합성 가능</span> : undefined}
+                />
+                {c.copies.length > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center justify-center gap-1" aria-label="보유 등급">
+                    {RARITIES.map((r) => {
+                      const n = c.copies.filter((o) => o.rarity === r).length;
+                      return n ? (
+                        <span key={r} className="flex items-center gap-0.5 text-[10px] text-muted" title={`${RARITY_NAMES[r]} ${n}장`}>
+                          <span className="pcard-gem inline-block text-[6px]" style={gemStyle(r)} />
+                          {n}
+                        </span>
+                      ) : null;
+                    })}
+                    {featured && b?.cardId !== state.featuredId && <span className="rounded bg-[#ffd36b] px-1 text-[9px] font-bold text-[#3a2600]">대표 보유</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </section>

@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { GameAdmin } from "@/components/admin/GameAdmin";
 import { PageTitle } from "@/components/ui";
-import { GameError, getGameSettings, listCandidates } from "@/lib/game/data";
+import { freeDrawStats, GameError, getGameSettings, listCandidates } from "@/lib/game/data";
 
 export const metadata = { title: "철학자 대난투 카드 관리" };
 
 export default async function GameAdminPage() {
-  const loaded = await Promise.all([listCandidates(), getGameSettings()]).then(
-    ([candidates, settings]) => ({ candidates, settings, error: null }),
-    (e: unknown) => ({ candidates: null, settings: null, error: e instanceof GameError ? e.message : e instanceof Error ? e.message : String(e) }),
+  const loaded = await Promise.all([listCandidates(), getGameSettings(), freeDrawStats().catch(() => null)]).then(
+    ([candidates, settings, freeDraws]) => ({ candidates, settings, freeDraws, error: null }),
+    (e: unknown) => ({ candidates: null, settings: null, freeDraws: null, error: e instanceof GameError ? e.message : e instanceof Error ? e.message : String(e) }),
   );
   return (
     <div className="space-y-4">
@@ -23,7 +23,7 @@ export default async function GameAdminPage() {
         }
       />
       {loaded.candidates && loaded.settings ? (
-        <GameAdmin candidates={loaded.candidates} settings={loaded.settings} />
+        <GameAdmin candidates={loaded.candidates} settings={loaded.settings} freeDraws={loaded.freeDraws} />
       ) : (
         <p className="card p-4 text-sm text-danger">{loaded.error}</p>
       )}

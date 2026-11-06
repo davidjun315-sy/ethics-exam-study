@@ -6,13 +6,14 @@ import { currentLearner } from "@/lib/quiz/learn";
 
 export const metadata = { title: "철학자 대난투 · 윤리 퀴즈" };
 
-const TABS: Tab[] = ["draw", "collection", "upgrade", "battle"];
+const TABS: Tab[] = ["draw", "collection", "upgrade", "fusion", "battle"];
 
 export default async function GamePage({ searchParams }: PageProps<"/quiz/game">) {
   const learner = await currentLearner();
   if (!learner) redirect("/login?next=/quiz/game");
   const sp = await searchParams;
   const tab = TABS.find((t) => t === sp.tab) ?? "draw";
+  const base = typeof sp.base === "string" && /^[0-9a-f-]{36}$/i.test(sp.base) ? sp.base : null;
   const loaded = await getGameState(learner).then(
     (state) => ({ state, error: null }),
     (e: unknown) => ({ state: null, error: e instanceof GameError ? e.message : "잠시 후 다시 시도하세요." }),
@@ -25,5 +26,5 @@ export default async function GamePage({ searchParams }: PageProps<"/quiz/game">
         <Link href="/quiz" className="btn mt-4 inline-block">윤리 퀴즈로 돌아가기</Link>
       </div>
     );
-  return <GameApp initial={loaded.state} initialTab={tab} />;
+  return <GameApp initial={loaded.state} initialTab={tab} initialBase={base} />;
 }

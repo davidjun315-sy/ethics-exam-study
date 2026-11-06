@@ -6,7 +6,6 @@ import { saveCard } from "@/lib/game/data";
 import { gameJsonError } from "@/lib/game/api";
 
 const Body = z.object({
-  rarity: z.enum(["common", "rare", "epic", "legendary"]),
   base_atk: z.number().int().min(1).max(999),
   base_hp: z.number().int().min(1).max(9999),
   skill_name: z.string().trim().max(40),

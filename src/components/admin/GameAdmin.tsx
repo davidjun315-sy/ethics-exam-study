@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { CandidateRow, CardInput, GameSettings } from "@/lib/game/data";
-import { RARITIES, RARITY_BASE, RARITY_NAMES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
+import { DEFAULT_BASE, RARITIES, RARITY_NAMES, SKILL_EFFECTS, statsFor, type Rarity, type SkillEffect } from "@/lib/game/rules";
 import { artPrompt, faceFor, portraitSearchUrl } from "@/lib/game/suggestions";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
@@ -33,7 +33,7 @@ async function toCardArt(file: Blob): Promise<Blob> {
   return new Promise((ok, bad) => canvas.toBlob((b) => (b ? ok(b) : bad(new Error("이미지 변환 실패"))), "image/webp", 0.88));
 }
 
-export function GameAdmin({ candidates, settings }: { candidates: CandidateRow[]; settings: GameSettings }) {
+export function GameAdmin({ candidates, settings, freeDraws }: { candidates: CandidateRow[]; settings: GameSettings; freeDraws: { used: number; players: number; members: number } | null }) {
   const [filter, setFilter] = useState<"all" | CandidateRow["status"]>("all");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -76,30 +76,39 @@ export function GameAdmin({ candidates, settings }: { candidates: CandidateRow[]
                 {c.duplicateOf && <span className="ml-2 rounded bg-danger-soft px-1.5 text-[11px] text-danger">표기만 다른 같은 사상가? ({c.duplicateOf})</span>}
               </span>
               <span className="ml-auto flex items-center gap-2">
-                {c.card && <span className="text-xs text-muted">{RARITY_NAMES[c.card.rarity]}</span>}
                 <span className={`rounded px-2 py-0.5 text-xs font-semibold ${STATUS[c.status].tone}`}>{STATUS[c.status].label}</span>
                 <span className="text-faint">{open === c.philosopherId ? "▾" : "▸"}</span>
               </span>
             </button>
-            {open === c.philosopherId && <CardEditor c={c} />}
+            {open === c.philosopherId && <CardEditor c={c} settingsMult={settings.rarity_mult} />}
           </li>
         ))}
         {list.length === 0 && <li className="card p-6 text-center text-sm text-muted">조건에 맞는 후보가 없습니다.</li>}
       </ul>
 
       <SettingsForm initial={settings} />
+      {freeDraws && (
+        <section className="card p-4">
+          <h2 className="text-[15px] font-bold">최초 무료 뽑기</h2>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-center text-sm">
+            <div className="rounded-lg bg-surface-2 p-2"><div className="text-xl font-black tabular-nums">{freeDraws.used}</div><div className="text-xs text-muted">사용한 계정</div></div>
+            <div className="rounded-lg bg-surface-2 p-2"><div className="text-xl font-black tabular-nums">{Math.max(0, freeDraws.members - freeDraws.used)}</div><div className="text-xs text-muted">아직 안 쓴 회원</div></div>
+            <div className="rounded-lg bg-surface-2 p-2"><div className="text-xl font-black tabular-nums">{freeDraws.members}</div><div className="text-xs text-muted">전체 회원</div></div>
+          </div>
+          <p className="mt-2 text-[11px] text-faint">계정당 1회, 코인 없이 일반 뽑기와 같은 확률로 1장. 기존 회원도 한 번 받을 수 있습니다.</p>
+        </section>
+      )}
     </div>
   );
 }
 
-function CardEditor({ c }: { c: CandidateRow }) {
+function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record<Rarity, number> }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const s = c.suggestion;
   const [d, setD] = useState<CardInput>(() =>
     c.card
       ? {
-          rarity: c.card.rarity,
           base_atk: c.card.baseAtk,
           base_hp: c.card.baseHp,
           skill_name: c.card.skillName,
@@ -111,7 +120,7 @@ function CardEditor({ c }: { c: CandidateRow }) {
           art_note: c.card.artNote,
           published: c.card.published,
         }
-      : { rarity: s.rarity, base_atk: RARITY_BASE[s.rarity].atk, base_hp: RARITY_BASE[s.rarity].hp, skill_name: "", skill_effect: s.effect, skill_desc: "", quote: "", art_url: null, art_basis: s.basis, art_note: "", published: false },
+      : { base_atk: DEFAULT_BASE.atk, base_hp: DEFAULT_BASE.hp, skill_name: "", skill_effect: s.effect, skill_desc: "", quote: "", art_url: null, art_basis: s.basis, art_note: "", published: false },
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -210,7 +219,6 @@ function CardEditor({ c }: { c: CandidateRow }) {
     name: c.name,
     originalName: c.originalName,
     tradition: c.tradition,
-    rarity: d.rarity,
     baseAtk: d.base_atk,
     baseHp: d.base_hp,
     skillName: d.skill_name || "필살기 이름",
@@ -226,7 +234,10 @@ function CardEditor({ c }: { c: CandidateRow }) {
   return (
     <div className="grid gap-4 border-t border-line p-4 md:grid-cols-[13rem_1fr]">
       <div className="space-y-2">
-        <PhilosopherCard card={preview} level={1} tilt={false} />
+        <div className="grid grid-cols-2 gap-1.5">
+          {RARITIES.map((r) => <PhilosopherCard key={r} card={preview} rarity={r} level={1} stats={statsFor({ atk: d.base_atk, hp: d.base_hp }, r, 1, settingsMult)} tilt={false} />)}
+        </div>
+        <p className="text-center text-[10px] text-faint">같은 일러스트 · 등급별 프레임 (Lv.1)</p>
         {!d.art_url && <p className="text-center text-xs text-warn">일러스트가 없어 공개할 수 없습니다</p>}
         <button type="button" className="btn-primary w-full py-2 text-sm font-semibold" disabled={busy !== null} onClick={copyForChat}>
           {busy === "copy" ? "실제 초상 찾는 중…" : copied ? "✓ 복사됨 · ChatGPT 에 붙여넣기" : "ChatGPT용 프롬프트 복사"}
@@ -291,9 +302,8 @@ function CardEditor({ c }: { c: CandidateRow }) {
             onClick={() =>
               setD((x) => ({
                 ...x,
-                rarity: s.rarity,
-                base_atk: RARITY_BASE[s.rarity].atk,
-                base_hp: RARITY_BASE[s.rarity].hp,
+                base_atk: DEFAULT_BASE.atk,
+                base_hp: DEFAULT_BASE.hp,
                 skill_name: s.skill,
                 skill_effect: s.effect,
                 skill_desc: s.skillDesc,
@@ -304,26 +314,20 @@ function CardEditor({ c }: { c: CandidateRow }) {
           >
             제안 채우기
           </button>
-          <span className="text-[11px] text-faint">필살기·대사는 게임용 창작 문구 제안입니다. 등급은 출제 빈도와 무관하게 게임 균형으로 정하세요.</span>
+          <span className="text-[11px] text-faint">필살기·대사는 게임용 창작 문구 제안입니다. 등급은 사상가가 아니라 카드마다 정해집니다 (뽑기 확률·합성).</span>
         </div>
-        <div className="grid gap-2 sm:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-3">
           <label className="block">
-            <span className="label">등급</span>
-            <select className="input" value={d.rarity} onChange={(e) => set("rarity", e.target.value as Rarity)}>
-              {RARITIES.map((r) => <option key={r} value={r}>{RARITY_NAMES[r]}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="label">기본 공격력</span>
+            <span className="label">기본 공격력 (일반 Lv.1 기준)</span>
             <input type="number" className="input" min={1} max={999} value={d.base_atk} onChange={(e) => set("base_atk", Number(e.target.value))} />
           </label>
           <label className="block">
-            <span className="label">기본 체력</span>
+            <span className="label">기본 체력 (일반 Lv.1 기준)</span>
             <input type="number" className="input" min={1} max={9999} value={d.base_hp} onChange={(e) => set("base_hp", Number(e.target.value))} />
           </label>
           <div className="flex items-end">
-            <button type="button" className="btn w-full !py-1.5 text-xs" onClick={() => setD((x) => ({ ...x, base_atk: RARITY_BASE[x.rarity].atk, base_hp: RARITY_BASE[x.rarity].hp }))}>
-              등급 기본값
+            <button type="button" className="btn w-full !py-1.5 text-xs" onClick={() => setD((x) => ({ ...x, base_atk: DEFAULT_BASE.atk, base_hp: DEFAULT_BASE.hp }))}>
+              기본값 ({DEFAULT_BASE.atk}/{DEFAULT_BASE.hp})
             </button>
           </div>
         </div>
@@ -416,11 +420,26 @@ function SettingsForm({ initial }: { initial: GameSettings }) {
   );
   return (
     <section className="card space-y-4 p-4">
-      <h2 className="text-[15px] font-bold">뽑기 · 강화 · 코인 설정</h2>
+      <h2 className="text-[15px] font-bold">뽑기 · 강화 · 합성 · 코인 설정</h2>
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="block"><span className="label">뽑기 1회 비용</span><input type="number" min={1} className="input" value={s.draw_cost} onChange={(e) => setS({ ...s, draw_cost: Math.max(1, num(e.target.value)) })} /></label>
         <label className="block"><span className="label">최대 레벨</span><input type="number" min={2} max={20} className="input" value={s.max_level} onChange={(e) => setS({ ...s, max_level: Math.min(20, Math.max(2, num(e.target.value))) })} /></label>
-        <label className="block"><span className="label">최대 레벨 중복 환급 코인</span><input type="number" min={0} className="input" value={s.dup_refund} onChange={(e) => setS({ ...s, dup_refund: num(e.target.value) })} /></label>
+      </div>
+      <div>
+        <div className="label">등급 능력치 배율 (일반 → 전설 순으로 커야 함)</div>
+        <div className="grid gap-2 sm:grid-cols-4">
+          {RARITIES.map((r) => (
+            <label key={r} className="block">
+              <span className="text-xs text-muted">{RARITY_NAMES[r]} ×{s.rarity_mult[r]}</span>
+              <input type="number" min={0.5} max={5} step={0.05} className="input" value={s.rarity_mult[r]} onChange={(e) => setS({ ...s, rarity_mult: { ...s.rarity_mult, [r]: Math.round((Number(e.target.value) || 0) * 100) / 100 } })} />
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-faint">카드 능력치 = 사상가 기본값 × 등급 배율 × 레벨 보정. 레벨과 등급은 따로 오릅니다.</p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="block"><span className="label">합성에 필요한 카드 수 (기준 포함)</span><input type="number" min={2} max={5} className="input" value={s.fusion_count} onChange={(e) => setS({ ...s, fusion_count: Math.min(5, Math.max(2, num(e.target.value))) })} /></label>
+        <label className="block"><span className="label">합성 비용 (코인)</span><input type="number" min={0} className="input" value={s.fusion_cost} onChange={(e) => setS({ ...s, fusion_cost: num(e.target.value) })} /></label>
       </div>
       <div>
         <div className="label">등급별 확률 (가중치 · 합계 {total})</div>
@@ -432,7 +451,7 @@ function SettingsForm({ initial }: { initial: GameSettings }) {
             </label>
           ))}
         </div>
-        <p className="mt-1 text-[11px] text-faint">공개 카드가 없는 등급은 실제 뽑기에서 빠지고 나머지 비율로 다시 나뉩니다.</p>
+        <p className="mt-1 text-[11px] text-faint">먼저 등급을 이 확률로 정하고, 그다음 공개된 사상가 중 한 명을 고릅니다. 모든 사상가가 모든 등급으로 나올 수 있습니다.</p>
       </div>
       <div>
         <div className="label">학습 코인 지급 기준</div>

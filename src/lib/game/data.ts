@@ -4,23 +4,42 @@ import { classifyPhilosopher } from "@/lib/traditions";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, type BattleEvent, type Difficulty, type Fighter } from "./battle";
-import { DEFAULT_COIN_RULES, effectiveRates, MAX_LEVEL_DEFAULT, quizCoins, RARITIES, statsAt, upgradeCost, type CoinRules, type Rarity, type SkillEffect } from "./rules";
+import {
+  DEFAULT_COIN_RULES,
+  DEFAULT_RARITY_MULT,
+  effectiveRates,
+  MAX_LEVEL_DEFAULT,
+  quizCoins,
+  statsFor,
+  upgradeCost,
+  type CoinRules,
+  type Rarity,
+  type SkillEffect,
+} from "./rules";
 import { suggestFor } from "./suggestions";
 
 /**
  * 철학자 대난투 서버 데이터.
- * - 사상가 원본(philosophers · question_philosophers)은 읽기만 한다. 카드 정보는 game_cards 에 따로
- * - 코인·뽑기·강화는 DB 함수(game_grant · game_draw · game_upgrade) 안에서 한 번에 처리 (008)
+ * - 사상가 원본(philosophers · question_philosophers)은 읽기만 한다. 사상가 카드 정보(일러스트·필살기·기본 능력치)는 game_cards
+ * - 보유 카드는 한 장마다 고유 id (game_user_cards): 같은 사상가의 여러 등급·여러 장 가능 (009)
+ * - 코인·뽑기·레벨업·합성은 DB 함수 안에서 잔액 행을 잠그고 요청 id 로 한 번만 처리
  */
 export const GAME_MIGRATION_HINT = "철학자 대난투 테이블이 없습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/008_philosopher_game.sql 을 실행하세요.";
+export const GAME_009_HINT = "카드 합성·무료 뽑기용 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/009_game_cards_fusion.sql 을 실행하세요.";
 
 const MESSAGES: Record<string, string> = {
   GAME_NOT_ENOUGH_COINS: "코인이 부족합니다. 윤리 퀴즈를 풀어 코인을 모아 보세요.",
   GAME_NO_CARDS: "아직 공개된 카드가 없습니다. 관리자가 카드 일러스트를 준비하면 열립니다.",
-  GAME_NOT_OWNED: "보유하지 않은 카드입니다.",
+  GAME_NOT_OWNED: "보유하지 않은 카드이거나 이미 사용한 카드입니다.",
   GAME_MAX_LEVEL: "이미 최대 레벨입니다.",
   GAME_LEVEL_CHANGED: "다른 화면에서 이미 강화되었습니다. 새로고침 후 다시 시도하세요.",
   GAME_NOT_ENOUGH_SHARDS: "강화 조각이 부족합니다.",
+  GAME_FREE_USED: "무료 뽑기는 계정당 1회입니다. 이미 사용했습니다.",
+  GAME_FUSION_COUNT: "합성할 카드 수가 맞지 않습니다.",
+  GAME_FUSION_MAX: "전설은 최고 등급이라 더 진화할 수 없습니다.",
+  GAME_FUSION_RARITY: "같은 등급의 보유 카드끼리만 합성할 수 있습니다.",
+  GAME_FUSION_LOCKED: "잠긴 카드는 재료로 쓸 수 없습니다. 잠금을 풀어 주세요.",
+  GAME_FUSION_FEATURED: "대표 카드는 재료로 쓸 수 없습니다. 대표 카드를 바꾼 뒤 다시 시도하세요.",
 };
 
 export class GameError extends Error {
@@ -35,6 +54,7 @@ export class GameError extends Error {
 export function gameError(message: string): GameError {
   const code = message.match(/GAME_[A-Z_]+/)?.[0];
   if (code && MESSAGES[code]) return new GameError(MESSAGES[code], code === "GAME_NO_CARDS" ? 409 : 400);
+  if (/(game_user_cards|game_free_draws|game_draw_card|game_fuse|game_level_up|game_card_to_shards|featured_card_id|deck_cards|rarity_mult|fusion_)/.test(message) && /(does not exist|schema cache|Could not find)/i.test(message)) return new GameError(GAME_009_HINT, 503);
   if (/game_|function public\.game/.test(message) && /(does not exist|schema cache|Could not find)/i.test(message)) return new GameError(GAME_MIGRATION_HINT, 503);
   return new GameError(message, 500);
 }
@@ -47,7 +67,10 @@ export interface GameSettings {
   rates: Record<Rarity, number>;
   coin_rules: CoinRules;
   max_level: number;
-  dup_refund: number;
+  dup_refund: number; // 008 값 (더 이상 쓰지 않음, 보존)
+  rarity_mult: Record<Rarity, number>;
+  fusion_count: number;
+  fusion_cost: number;
 }
 const DEFAULT_SETTINGS: GameSettings = {
   draw_cost: 100,
@@ -55,6 +78,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   coin_rules: DEFAULT_COIN_RULES,
   max_level: MAX_LEVEL_DEFAULT,
   dup_refund: 20,
+  rarity_mult: DEFAULT_RARITY_MULT,
+  fusion_count: 2,
+  fusion_cost: 0,
 };
 
 export async function getGameSettings(): Promise<GameSettings> {
@@ -67,10 +93,16 @@ export async function getGameSettings(): Promise<GameSettings> {
     coin_rules: { ...DEFAULT_COIN_RULES, ...(d.coin_rules ?? {}) },
     max_level: d.max_level ?? DEFAULT_SETTINGS.max_level,
     dup_refund: d.dup_refund ?? DEFAULT_SETTINGS.dup_refund,
+    rarity_mult: { ...DEFAULT_RARITY_MULT, ...(d.rarity_mult ?? {}) },
+    fusion_count: d.fusion_count ?? DEFAULT_SETTINGS.fusion_count,
+    fusion_cost: d.fusion_cost ?? DEFAULT_SETTINGS.fusion_cost,
   };
 }
 
-export async function saveGameSettings(s: GameSettings) {
+export async function saveGameSettings(s: Omit<GameSettings, "dup_refund">) {
+  // 등급이 오르면 능력치도 반드시 오르도록
+  const m = s.rarity_mult;
+  if (!(m.common > 0 && m.rare > m.common && m.epic > m.rare && m.legendary > m.epic)) throw new GameError("등급 배율은 일반 < 희귀 < 영웅 < 전설 순으로 커야 합니다.");
   const { error } = await getAdminClient()
     .from("game_settings")
     .upsert({ id: 1, ...s, updated_at: new Date().toISOString() }, { onConflict: "id" });
@@ -78,15 +110,14 @@ export async function saveGameSettings(s: GameSettings) {
 }
 
 // ---------------------------------------------------------------------
-// 카드
+// 사상가 카드 정보 (등급과 무관: 일러스트·필살기·기본 능력치)
 // ---------------------------------------------------------------------
 export interface CardView {
   philosopherId: string;
   name: string;
   originalName: string | null;
   tradition: string; // 동양윤리 · 서양윤리 …
-  rarity: Rarity;
-  baseAtk: number;
+  baseAtk: number; // 일반 Lv.1 기준
   baseHp: number;
   skillName: string;
   skillEffect: SkillEffect;
@@ -100,7 +131,6 @@ export interface CardView {
 
 type CardRow = {
   philosopher_id: string;
-  rarity: Rarity;
   base_atk: number;
   base_hp: number;
   skill_name: string;
@@ -120,7 +150,6 @@ const toView = (c: CardRow, p: PhRow): CardView => ({
   name: p.name,
   originalName: p.original_name,
   tradition: classifyPhilosopher({ name: p.name, tradition: p.tradition }),
-  rarity: c.rarity,
   baseAtk: c.base_atk,
   baseHp: c.base_hp,
   skillName: c.skill_name,
@@ -158,7 +187,7 @@ async function loadCards(ids?: string[]): Promise<{ cards: CardRow[]; philosophe
   return { cards, philosophers: new Map(((ps ?? []) as PhRow[]).map((p) => [p.id, p])) };
 }
 
-/** 뽑기에 나오는 카드 (공개 + 일러스트 + 기출 연결). DB 함수와 같은 조건 */
+/** 뽑기에 나오는 사상가 (공개 + 일러스트 + 기출 연결). DB 함수와 같은 조건 */
 export async function publishedCards(): Promise<CardView[]> {
   const { data, error } = await getAdminClient().rpc("game_draw_pool");
   if (error) throw gameError(error.message);
@@ -171,9 +200,11 @@ export async function publishedCards(): Promise<CardView[]> {
 // 학습자 상태
 // ---------------------------------------------------------------------
 export interface OwnedCard extends CardView {
+  cardId: string;
+  rarity: Rarity;
   level: number;
-  shards: number;
-  copies: number;
+  locked: boolean;
+  source: "legacy" | "draw" | "free";
   atk: number;
   hp: number;
   upgrade: { shards: number; coins: number } | null; // null = 최대 레벨
@@ -181,68 +212,102 @@ export interface OwnedCard extends CardView {
 
 export interface GameState {
   coins: number;
-  settings: { drawCost: number; maxLevel: number; dupRefund: number; rates: Record<Rarity, number>; effectiveRates: Record<Rarity, number>; coinRules: CoinRules };
-  cards: CardView[]; // 공개 카드 (도감)
-  owned: OwnedCard[]; // 보유 카드 (공개가 내려가도 일러스트가 있으면 계속 보유)
-  featuredId: string | null;
-  deck: string[];
+  settings: {
+    drawCost: number;
+    maxLevel: number;
+    rates: Record<Rarity, number>;
+    effectiveRates: Record<Rarity, number>;
+    coinRules: CoinRules;
+    rarityMult: Record<Rarity, number>;
+    fusionCount: number;
+    fusionCost: number;
+  };
+  cards: CardView[]; // 공개 사상가 (도감)
+  owned: OwnedCard[]; // 보유 카드 한 장씩 (공개가 내려가도 일러스트가 있으면 계속 보유)
+  shards: Record<string, number>; // 사상가별 강화 조각
+  featuredId: string | null; // 대표 카드 id
+  deck: string[]; // 배틀 덱 카드 id
   record: { wins: number; losses: number };
+  freeDraw: { available: boolean };
 }
+
+type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free"; created_at: string };
 
 export async function getGameState(learner: string): Promise<GameState> {
   const db = getAdminClient();
-  const [settings, cards, wallet, col, prof] = await Promise.all([
+  const [settings, cards, wallet, uc, col, prof, free] = await Promise.all([
     getGameSettings(),
     publishedCards(),
     db.from("game_wallets").select("coins").eq("learner", learner).maybeSingle(),
-    db.from("game_collection").select("*").eq("learner", learner),
-    db.from("game_profiles").select("*").eq("learner", learner).maybeSingle(),
+    db.from("game_user_cards").select("id, philosopher_id, rarity, level, locked, source, created_at").eq("learner", learner).eq("status", "owned").order("created_at"),
+    db.from("game_collection").select("philosopher_id, shards").eq("learner", learner),
+    db.from("game_profiles").select("featured_card_id, deck_cards, wins, losses").eq("learner", learner).maybeSingle(),
+    db.from("game_free_draws").select("learner").eq("learner", learner).maybeSingle(),
   ]);
-  for (const r of [wallet, col, prof]) if (r.error) throw gameError(r.error.message);
-  const colRows = (col.data ?? []) as { philosopher_id: string; level: number; shards: number; copies: number }[];
-  const missing = colRows.map((r) => r.philosopher_id).filter((id) => !cards.some((c) => c.philosopherId === id));
+  for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
+  const rows = (uc.data ?? []) as UserCardRow[];
+  const missing = [...new Set(rows.map((r) => r.philosopher_id))].filter((id) => !cards.some((c) => c.philosopherId === id));
   const extra = missing.length ? await loadCards(missing) : { cards: [], philosophers: new Map<string, PhRow>() };
   const known = new Map<string, CardView>([
     ...cards.map((c) => [c.philosopherId, c] as const),
     ...extra.cards.filter((c) => c.art_url && extra.philosophers.has(c.philosopher_id)).map((c) => [c.philosopher_id, toView(c, extra.philosophers.get(c.philosopher_id)!)] as const),
   ]);
-  const owned: OwnedCard[] = colRows
+  const owned: OwnedCard[] = rows
     .filter((r) => known.has(r.philosopher_id))
     .map((r) => {
       const c = known.get(r.philosopher_id)!;
-      const st = statsAt({ atk: c.baseAtk, hp: c.baseHp }, r.level);
-      return { ...c, level: r.level, shards: r.shards, copies: r.copies, atk: st.atk, hp: st.hp, upgrade: r.level >= settings.max_level ? null : upgradeCost(r.level) };
+      const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, r.rarity, r.level, settings.rarity_mult);
+      return { ...c, cardId: r.id, rarity: r.rarity, level: r.level, locked: r.locked, source: r.source, atk: st.atk, hp: st.hp, upgrade: r.level >= settings.max_level ? null : upgradeCost(r.level) };
     });
-  const p = prof.data as { featured_philosopher_id: string | null; deck: string[]; wins: number; losses: number } | null;
-  const ownedIds = new Set(owned.map((o) => o.philosopherId));
+  const p = prof.data as { featured_card_id: string | null; deck_cards: string[] | null; wins: number; losses: number } | null;
+  const ownedIds = new Set(owned.map((o) => o.cardId));
   return {
     coins: (wallet.data as { coins: number } | null)?.coins ?? 0,
     settings: {
       drawCost: settings.draw_cost,
       maxLevel: settings.max_level,
-      dupRefund: settings.dup_refund,
       rates: settings.rates,
-      effectiveRates: effectiveRates(settings.rates, RARITIES.filter((r) => cards.some((c) => c.rarity === r))),
+      effectiveRates: effectiveRates(settings.rates),
       coinRules: settings.coin_rules,
+      rarityMult: settings.rarity_mult,
+      fusionCount: settings.fusion_count,
+      fusionCost: settings.fusion_cost,
     },
     cards,
     owned,
-    featuredId: p?.featured_philosopher_id && ownedIds.has(p.featured_philosopher_id) ? p.featured_philosopher_id : null,
-    deck: (p?.deck ?? []).filter((id) => ownedIds.has(id)).slice(0, 3),
+    shards: Object.fromEntries(((col.data ?? []) as { philosopher_id: string; shards: number }[]).map((r) => [r.philosopher_id, r.shards])),
+    featuredId: p?.featured_card_id && ownedIds.has(p.featured_card_id) ? p.featured_card_id : null,
+    deck: (p?.deck_cards ?? []).filter((id) => ownedIds.has(id)).slice(0, 3),
     record: { wins: p?.wins ?? 0, losses: p?.losses ?? 0 },
+    freeDraw: { available: !free.data },
   };
 }
 
+export interface FeaturedSummary {
+  coins: number;
+  featured: OwnedCard | null;
+  ownedCount: number;
+  cardCount: number;
+  maxLevel: number;
+  freeDraw: boolean;
+  shards: number; // 대표 카드 사상가의 강화 조각
+  fusable: number; // 대표 카드와 같은 등급의 다른 보유 카드 수 (합성 재료 후보)
+}
+
 /** 퀴즈 홈의 '나의 철학자' (테이블이 없으면 null → 퀴즈는 그대로 동작) */
-export async function getFeatured(learner: string): Promise<{ coins: number; featured: OwnedCard | null; ownedCount: number; cardCount: number; maxLevel: number } | null> {
+export async function getFeatured(learner: string): Promise<FeaturedSummary | null> {
   try {
     const s = await getGameState(learner);
+    const f = s.owned.find((o) => o.cardId === s.featuredId) ?? null;
     return {
       coins: s.coins,
-      featured: s.owned.find((o) => o.philosopherId === s.featuredId) ?? null,
+      featured: f,
       ownedCount: s.owned.length,
       cardCount: s.cards.length,
       maxLevel: s.settings.maxLevel,
+      freeDraw: s.freeDraw.available,
+      shards: f ? (s.shards[f.philosopherId] ?? 0) : 0,
+      fusable: f ? s.owned.filter((o) => o.cardId !== f.cardId && o.rarity === f.rarity && !o.locked).length : 0,
     };
   } catch {
     return null;
@@ -250,37 +315,42 @@ export async function getFeatured(learner: string): Promise<{ coins: number; fea
 }
 
 // ---------------------------------------------------------------------
-// 뽑기 · 강화 · 대표 카드 · 덱
+// 뽑기 · 레벨업 · 합성 · 조각 전환 · 잠금 · 대표 카드 · 덱
 // ---------------------------------------------------------------------
 export interface DrawResult {
-  card: CardView;
-  isNew: boolean;
-  level: number;
-  shards: number;
-  copies: number;
-  refund: number;
+  card: OwnedCard;
+  isNewPhilosopher: boolean;
+  free: boolean;
+  autoFeatured: boolean;
   coins: number;
   replayed: boolean;
 }
 
-export async function drawCard(learner: string, requestId: string): Promise<DrawResult> {
-  const { data, error } = await getAdminClient().rpc("game_draw", { p_learner: learner, p_ref: `draw:${requestId}`, p_day: kstDay() });
-  if (error) throw gameError(error.message);
-  const r = data as { philosopherId: string; isNew: boolean; level: number; shards: number; copies: number; refund: number; coins: number; replayed: boolean };
-  const { cards, philosophers } = await loadCards([r.philosopherId]);
-  if (!cards[0] || !philosophers.get(r.philosopherId)) throw new GameError("카드 정보를 찾을 수 없습니다.", 500);
-  return { card: toView(cards[0], philosophers.get(r.philosopherId)!), isNew: r.isNew, level: r.level, shards: r.shards, copies: r.copies, refund: r.refund, coins: r.coins, replayed: r.replayed };
+async function ownedCard(learner: string, cardId: string): Promise<OwnedCard> {
+  const s = await getGameState(learner);
+  const c = s.owned.find((o) => o.cardId === cardId);
+  if (!c) throw new GameError("카드 정보를 찾을 수 없습니다.", 500);
+  return c;
 }
 
-export async function upgradeCard(learner: string, philosopherId: string, requestId: string) {
+/** 카드 뽑기. free = 계정당 최초 1회 무료 (비용은 서버가 정함, 클라이언트가 바꿀 수 없음) */
+export async function drawCard(learner: string, requestId: string, free: boolean): Promise<DrawResult> {
+  const { data, error } = await getAdminClient().rpc("game_draw_card", { p_learner: learner, p_ref: `${free ? "free" : "draw"}:${requestId}`, p_day: kstDay(), p_free: free });
+  if (error) throw gameError(error.message);
+  const r = data as { cardId: string; isNewPhilosopher?: boolean; free: boolean; autoFeatured?: boolean; coins: number; replayed: boolean };
+  return { card: await ownedCard(learner, r.cardId), isNewPhilosopher: Boolean(r.isNewPhilosopher), free: r.free, autoFeatured: Boolean(r.autoFeatured), coins: r.coins, replayed: r.replayed };
+}
+
+/** 레벨업: 사상가별 강화 조각 + 코인 (확정 성공) */
+export async function levelUpCard(learner: string, cardId: string, requestId: string) {
   const db = getAdminClient();
-  const { data: row, error } = await db.from("game_collection").select("level, shards").eq("learner", learner).eq("philosopher_id", philosopherId).maybeSingle();
+  const { data: row, error } = await db.from("game_user_cards").select("level").eq("learner", learner).eq("id", cardId).eq("status", "owned").maybeSingle();
   if (error) throw gameError(error.message);
   if (!row) throw new GameError(MESSAGES.GAME_NOT_OWNED);
   const cost = upgradeCost(row.level as number);
-  const { data, error: e } = await db.rpc("game_upgrade", {
+  const { data, error: e } = await db.rpc("game_level_up", {
     p_learner: learner,
-    p_philosopher: philosopherId,
+    p_card: cardId,
     p_ref: `upgrade:${requestId}`,
     p_day: kstDay(),
     p_from_level: row.level,
@@ -288,27 +358,48 @@ export async function upgradeCard(learner: string, philosopherId: string, reques
     p_coins: cost.coins,
   });
   if (e) throw gameError(e.message);
-  return data as { fromLevel: number; level: number; shards: number; coins: number; replayed: boolean };
+  return data as { fromLevel: number; level: number; coins: number; replayed: boolean };
+}
+
+/** 합성(진화): 기준 카드 + 같은 등급 재료 → 기준 카드가 한 단계 위 등급 (확정) */
+export async function fuseCards(learner: string, baseId: string, materialIds: string[], requestId: string) {
+  const { data, error } = await getAdminClient().rpc("game_fuse", { p_learner: learner, p_base: baseId, p_materials: materialIds, p_ref: `fusion:${requestId}`, p_day: kstDay() });
+  if (error) throw gameError(error.message);
+  const r = data as { cardId: string; rarity: Rarity; level: number; coins: number; replayed: boolean };
+  return { ...r, card: await ownedCard(learner, r.cardId) };
+}
+
+/** 카드 → 같은 사상가 강화 조각 (카드는 소모, 다시 합성에 못 씀) */
+export async function cardToShards(learner: string, cardId: string) {
+  const { data, error } = await getAdminClient().rpc("game_card_to_shards", { p_learner: learner, p_card: cardId });
+  if (error) throw gameError(error.message);
+  return data as { shardsGained: number; shards: number; philosopherId: string };
+}
+
+export async function setLocked(learner: string, cardId: string, locked: boolean) {
+  const { data, error } = await getAdminClient().from("game_user_cards").update({ locked, updated_at: new Date().toISOString() }).eq("learner", learner).eq("id", cardId).eq("status", "owned").select("id");
+  if (error) throw gameError(error.message);
+  if (!data?.length) throw new GameError(MESSAGES.GAME_NOT_OWNED);
 }
 
 async function assertOwned(learner: string, ids: string[]) {
-  const { data, error } = await getAdminClient().from("game_collection").select("philosopher_id").eq("learner", learner).in("philosopher_id", ids);
+  const { data, error } = await getAdminClient().from("game_user_cards").select("id").eq("learner", learner).eq("status", "owned").in("id", ids);
   if (error) throw gameError(error.message);
   if ((data ?? []).length !== new Set(ids).size) throw new GameError(MESSAGES.GAME_NOT_OWNED);
 }
 
-export async function setFeatured(learner: string, philosopherId: string | null) {
-  if (philosopherId) await assertOwned(learner, [philosopherId]);
+export async function setFeatured(learner: string, cardId: string | null) {
+  if (cardId) await assertOwned(learner, [cardId]);
   const { error } = await getAdminClient()
     .from("game_profiles")
-    .upsert({ learner, featured_philosopher_id: philosopherId, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+    .upsert({ learner, featured_card_id: cardId, updated_at: new Date().toISOString() }, { onConflict: "learner" });
   if (error) throw gameError(error.message);
 }
 
 export async function setDeck(learner: string, ids: string[]) {
   if (new Set(ids).size !== ids.length || ids.length > 3) throw new GameError("서로 다른 카드 3장까지 고르세요.");
   if (ids.length) await assertOwned(learner, ids);
-  const { error } = await getAdminClient().from("game_profiles").upsert({ learner, deck: ids, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  const { error } = await getAdminClient().from("game_profiles").upsert({ learner, deck_cards: ids, updated_at: new Date().toISOString() }, { onConflict: "learner" });
   if (error) throw gameError(error.message);
 }
 
@@ -317,6 +408,7 @@ export async function setDeck(learner: string, ids: string[]) {
 // ---------------------------------------------------------------------
 export interface BattleCard {
   key: string;
+  cardId: string | null;
   philosopherId: string;
   name: string;
   rarity: Rarity;
@@ -341,21 +433,21 @@ export interface BattleReplay {
 
 export async function playBattle(learner: string, deckIds: string[], difficulty: Difficulty): Promise<BattleReplay> {
   if (deckIds.length !== 3 || new Set(deckIds).size !== 3) throw new GameError("서로 다른 카드 3장으로 덱을 구성하세요.");
-  const state = await getGameState(learner);
-  const mine = deckIds.map((id) => state.owned.find((o) => o.philosopherId === id));
+  const [state, settings] = await Promise.all([getGameState(learner), getGameSettings()]);
+  const mine = deckIds.map((id) => state.owned.find((o) => o.cardId === id));
   if (mine.some((m) => !m)) throw new GameError(MESSAGES.GAME_NOT_OWNED);
   if (state.cards.length < 3) throw new GameError("상대 덱을 만들 공개 카드가 아직 3장 미만입니다.", 409);
   const seed = crypto.randomUUID();
-  // 상대: 공개 카드 중 무작위 3장 (시드로 섞음), 레벨은 내 덱 기준
+  // 상대: 공개 사상가 중 무작위 3명. 등급은 내 덱과 같은 구성(섞어서), 레벨은 내 덱 기준 ± 난이도
   const lv = opponentLevel(mine.map((m) => m!.level), difficulty, state.settings.maxLevel);
   const shuffled = [...state.cards].map((c, i) => ({ c, k: hashSeed(`${seed}:${i}`) })).sort((a, b) => a.k - b.k).map((x) => x.c);
-  const foeCards = shuffled.slice(0, 3);
-  const asBattle = (c: CardView, level: number, key: string): BattleCard => {
-    const st = statsAt({ atk: c.baseAtk, hp: c.baseHp }, level);
-    return { key, philosopherId: c.philosopherId, name: c.name, rarity: c.rarity, level, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, artUrl: c.artUrl, tradition: c.tradition };
+  const foeRarities = mine.map((m) => m!.rarity).sort((a, b) => hashSeed(`${seed}:r:${a}`) - hashSeed(`${seed}:r:${b}`));
+  const asBattle = (c: CardView, rarity: Rarity, level: number, key: string, cardId: string | null): BattleCard => {
+    const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, level, settings.rarity_mult);
+    return { key, cardId, philosopherId: c.philosopherId, name: c.name, rarity, level, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, artUrl: c.artUrl, tradition: c.tradition };
   };
-  const me = mine.map((m, i) => asBattle(m!, m!.level, `me-${i}`));
-  const foe = foeCards.map((c, i) => asBattle(c, lv, `foe-${i}`));
+  const me = mine.map((m, i) => asBattle(m!, m!.rarity, m!.level, `me-${i}`, m!.cardId));
+  const foe = shuffled.slice(0, 3).map((c, i) => asBattle(c, foeRarities[i], lv, `foe-${i}`, null));
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
   const r = runBattle(me.map(toFighter), foe.map(toFighter), seed);
 
@@ -367,7 +459,7 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
     .single();
   if (error) throw gameError(error.message);
   const record = { wins: state.record.wins + (r.winner === "me" ? 1 : 0), losses: state.record.losses + (r.winner === "me" ? 0 : 1) };
-  await db.from("game_profiles").upsert({ learner, deck: deckIds, wins: record.wins, losses: record.losses, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  await db.from("game_profiles").upsert({ learner, deck_cards: deckIds, wins: record.wins, losses: record.losses, updated_at: new Date().toISOString() }, { onConflict: "learner" });
   return { id: saved.id as string, difficulty, me, foe, first: r.first, winner: r.winner, events: r.events, record };
 }
 
@@ -463,7 +555,6 @@ export async function listCandidates(): Promise<CandidateRow[]> {
 }
 
 export interface CardInput {
-  rarity: Rarity;
   base_atk: number;
   base_hp: number;
   skill_name: string;
@@ -485,4 +576,16 @@ export async function saveCard(philosopherId: string, input: CardInput) {
     .from("game_cards")
     .upsert({ philosopher_id: philosopherId, ...input, updated_at: new Date().toISOString() }, { onConflict: "philosopher_id" });
   if (error) throw gameError(error.message);
+}
+
+/** 관리자: 최초 무료 뽑기 사용 현황 */
+export async function freeDrawStats(): Promise<{ used: number; players: number; members: number }> {
+  const db = getAdminClient();
+  const [used, players, members] = await Promise.all([
+    db.from("game_free_draws").select("learner", { count: "exact", head: true }),
+    db.from("game_wallets").select("learner", { count: "exact", head: true }),
+    db.from("members").select("id", { count: "exact", head: true }),
+  ]);
+  if (used.error) throw gameError(used.error.message);
+  return { used: used.count ?? 0, players: players.count ?? 0, members: members.count ?? 0 };
 }

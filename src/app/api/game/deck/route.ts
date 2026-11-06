@@ -7,7 +7,7 @@ import { gameJsonError } from "@/lib/game/api";
 
 const Body = z.object({ ids: z.array(z.string().uuid()).max(3) });
 
-/** 배틀 덱 저장 (대표 카드와 별개) */
+/** 배틀 덱 저장 (보유 카드 id, 대표 카드와 별개) */
 export async function POST(req: Request) {
   const { learner, denied } = await requireLearner();
   if (denied) return denied;

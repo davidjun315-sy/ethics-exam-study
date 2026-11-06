@@ -20,10 +20,12 @@ const Body = z.object({
     essay_min_chars: n(1000),
   }),
   max_level: z.number().int().min(2).max(20),
-  dup_refund: n(10000),
+  rarity_mult: z.object({ common: z.number().min(0.1).max(10), rare: z.number().min(0.1).max(10), epic: z.number().min(0.1).max(10), legendary: z.number().min(0.1).max(10) }),
+  fusion_count: z.number().int().min(2).max(5),
+  fusion_cost: n(100000),
 });
 
-/** 관리자: 뽑기 비용 · 확률 · 코인 지급 기준 */
+/** 관리자: 뽑기 비용 · 확률 · 등급 배율 · 합성 · 코인 지급 기준 */
 export async function PUT(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;

@@ -30,7 +30,9 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
   const [flipped, setFlipped] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cost = state.settings.drawCost;
-  const enough = state.coins >= cost;
+  // 무료 뽑기 결과를 받으면 상태를 다시 읽기 전에도 곧바로 일반 뽑기로 전환
+  const free = state.freeDraw.available && !result?.free;
+  const enough = free || state.coins >= cost;
 
   async function draw() {
     if (phase === "drawing") return;
@@ -40,7 +42,8 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
     setPhase("drawing");
     const requestId = crypto.randomUUID();
     try {
-      const [r] = await Promise.all([postWithRetry<DrawResult>("/api/game/draw", { requestId }), new Promise((ok) => setTimeout(ok, 700))]);
+      // 무료 여부는 서버가 DB 기록으로 판단한다 (화면은 '무료 뽑기 요청'만 보냄)
+      const [r] = await Promise.all([postWithRetry<DrawResult>("/api/game/draw", { requestId, free }), new Promise((ok) => setTimeout(ok, 700))]);
       setResult(r);
       setPhase("reveal");
       setTimeout(() => setFlipped(true), 150);
@@ -59,7 +62,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
           {phase === "idle" && !result ? (
             <div className="card-enter flex flex-col items-center">
               <CardBack className="card-float w-44 sm:w-52" />
-              <p className="mt-4 text-sm text-muted">퀴즈로 모은 코인으로 철학자를 영입하세요</p>
+              <p className="mt-4 text-sm text-muted">{free ? "첫 카드는 코인 없이 뽑을 수 있어요" : "퀴즈로 모은 코인으로 철학자를 영입하세요"}</p>
             </div>
           ) : (
             <div className="flip-scene relative w-52 sm:w-60">
@@ -69,7 +72,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
                   <CardBack />
                 </div>
                 <div className="flip-face front">
-                  {result && <PhilosopherCard card={result.card} level={result.level} tilt={false} maxLevel={state.settings.maxLevel} />}
+                  {result && <PhilosopherCard card={result.card} rarity={result.card.rarity} level={result.card.level} stats={{ atk: result.card.atk, hp: result.card.hp }} tilt={false} maxLevel={state.settings.maxLevel} />}
                 </div>
               </div>
             </div>
@@ -81,27 +84,41 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
               <div className="quiz-rise space-y-1">
                 <div className="text-xs font-bold uppercase tracking-[0.2em] text-muted">{RARITY_NAMES[result.card.rarity]}</div>
                 <div className="text-xl font-black">{result.card.name}</div>
-                <p className={`text-sm font-semibold ${result.isNew ? "text-ok" : "text-navy"}`}>
-                  {result.isNew
-                    ? "NEW! 도감에 추가되었습니다"
-                    : result.refund > 0
-                      ? `이미 최대 레벨 · 코인 ${result.refund} 환급`
-                      : `중복 획득 · 강화 조각 +1 (보유 ${result.shards}개)`}
+                <p className={`text-sm font-semibold ${result.free || result.isNewPhilosopher ? "text-ok" : "text-navy"}`}>
+                  {result.free
+                    ? "첫 철학자 획득!"
+                    : result.isNewPhilosopher
+                      ? "NEW! 새 철학자가 도감에 추가되었습니다"
+                      : "같은 철학자의 카드를 한 장 더 얻었습니다 · 합성 재료로 쓸 수 있어요"}
                 </p>
+                {result.autoFeatured && <p className="text-xs text-muted">대표 카드로 설정되어 윤리 퀴즈 메인에 표시됩니다.</p>}
               </div>
             )}
           </div>
 
+          {free && phase !== "drawing" && (
+            <div className="quiz-rise w-full max-w-sm rounded-2xl border border-ok/40 bg-ok-soft/60 p-4 text-center">
+              <div className="text-lg font-black text-ok">첫 카드 뽑기 무료!</div>
+              <p className="text-xs text-muted">코인이 없어도 지금 바로 철학자를 영입할 수 있어요. 일반·희귀·영웅·전설 모두 나올 수 있습니다.</p>
+              <button type="button" className="btn-primary mt-3 w-full py-3.5 text-base font-bold" onClick={draw}>
+                무료로 첫 카드 뽑기
+              </button>
+              <p className="mt-1.5 text-[11px] font-semibold text-ok">계정당 1회 한정 · 남은 무료 뽑기 1회</p>
+            </div>
+          )}
           <div className="flex flex-wrap justify-center gap-2">
-            <button type="button" className="btn-primary px-6 py-3 text-base font-bold" disabled={!enough || phase === "drawing"} onClick={draw}>
-              {phase === "drawing" ? "뽑는 중…" : result ? "한 번 더 뽑기" : "카드 뽑기"} · {cost}코인
-            </button>
+            {!free && (
+              <button type="button" className="btn-primary px-6 py-3 text-base font-bold" disabled={!enough || phase === "drawing"} onClick={draw}>
+                {phase === "drawing" ? "뽑는 중…" : result ? "한 번 더 뽑기" : "카드 뽑기"} · {cost}코인
+              </button>
+            )}
             {result && flipped && (
               <button type="button" className="btn px-4 py-3" onClick={() => onOpen(result.card.philosopherId)}>
                 카드 보기
               </button>
             )}
           </div>
+          {!free && <p className="text-[11px] text-faint">무료 뽑기 사용 완료 · 남은 무료 뽑기 0회</p>}
           {!enough && <p className="text-sm text-muted">코인이 {cost - state.coins} 부족합니다. 윤리 퀴즈 한 세트를 풀면 모을 수 있어요.</p>}
           {error && <p className="rounded bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         </div>
@@ -131,12 +148,12 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
                 <span className="pcard-gem inline-block text-[9px]" style={{ ["--r1" as string]: r === "common" ? "#a7b0bd" : r === "rare" ? "#8fd0ff" : r === "epic" ? "#d8b4ff" : "#ffe39a", ["--r2" as string]: r === "common" ? "#5d6673" : r === "rare" ? "#2a6fd6" : r === "epic" ? "#7b3fe4" : "#b9780f" }} />
                 <span className="w-10">{RARITY_NAMES[r]}</span>
                 <span className="ml-auto tabular-nums text-muted">{(state.settings.effectiveRates[r] * 100).toFixed(state.settings.effectiveRates[r] < 0.1 ? 1 : 0)}%</span>
-                <span className="w-12 text-right text-[11px] text-faint">{state.cards.filter((c) => c.rarity === r).length}종</span>
+
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-faint">공개된 카드가 있는 등급만으로 나눈 실제 확률입니다. 결과는 서버에서 정해집니다.</p>
-          <p className="mt-1 text-[11px] text-faint">중복 카드는 강화 조각이 되고, 최대 레벨 카드의 중복은 코인 {state.settings.dupRefund}을 돌려받습니다.</p>
+          <p className="mt-2 text-[11px] text-faint">모든 철학자({state.cards.length}명)가 네 등급 모두로 나올 수 있습니다. 등급을 먼저 정하고 철학자를 고르며, 결과는 서버에서 정해집니다.</p>
+          <p className="mt-1 text-[11px] text-faint">같은 카드가 또 나와도 카드로 보관됩니다. 같은 등급 {state.settings.fusionCount}장을 합성하면 한 단계 위 등급으로 진화해요.</p>
         </section>
       </aside>
     </div>
