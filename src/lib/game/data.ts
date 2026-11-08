@@ -3,13 +3,16 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { classifyPhilosopher } from "@/lib/traditions";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
-import { opponentLevel, runBattle, type BattleEvent, type Difficulty, type Fighter } from "./battle";
+import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type Difficulty, type Fighter } from "./battle";
+import { DEFAULT_DUEL_RULES, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
+import { chooseDuelAction } from "./duelAi";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
   DEFAULT_RARITY_MULT,
   effectiveRates,
   fusionMaterials,
+  RARITIES,
   MAX_LEVEL_DEFAULT,
   quizCoins,
   statsFor,
@@ -599,4 +602,127 @@ export async function freeDrawStats(): Promise<{ used: number; players: number; 
   ]);
   if (used.error) throw gameError(used.error.message);
   return { used: used.count ?? 0, players: players.count ?? 0, members: members.count ?? 0 };
+}
+
+// ---------------------------------------------------------------------
+// 논쟁 대전 (턴제 카드 배틀, 012). 보상 없음 — 전적만
+// ---------------------------------------------------------------------
+export const GAME_012_HINT = "논쟁 대전 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/012_game_duel.sql 을 실행하세요.";
+
+const duelError = (message: string) =>
+  /(game_duels|duel_deck|duel_wins|duel_losses|duel_draws)/.test(message) && /(does not exist|schema cache|Could not find)/i.test(message) ? new GameError(GAME_012_HINT, 503) : gameError(message);
+
+export interface DuelSetup {
+  me: DuelCardDef[];
+  foe: DuelCardDef[];
+  seed: string;
+  rules: DuelRules;
+}
+
+/**
+ * 대전 덱 12장: 저장한 대전 덱이 있으면 그것, 없으면 보유 카드 중 강한 순으로.
+ * 보유 카드가 12장보다 적으면 같은 카드를 다시 넣어 채운다 (같은 사상가 최대 3장, 모자라면 그 이상).
+ */
+export function pickDuelDeck(owned: OwnedCard[], saved: string[], size: number): OwnedCard[] {
+  const byId = new Map(owned.map((o) => [o.cardId, o]));
+  const out = saved.map((id) => byId.get(id)).filter((o): o is OwnedCard => Boolean(o)).slice(0, size);
+  const pool = [...owned].sort((a, b) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level || a.name.localeCompare(b.name));
+  const count = (ph: string) => out.filter((x) => x.philosopherId === ph).length;
+  // 강한 카드부터 한 바퀴씩 돌며 채운다. 같은 사상가 3장이 모두 차면 상한을 하나씩 늘린다 (보유 카드가 적을 때)
+  for (let cap = 3; out.length < size && pool.length; cap++) {
+    let progress = true;
+    while (out.length < size && progress) {
+      progress = false;
+      for (const o of pool) {
+        if (out.length >= size) break;
+        if (count(o.philosopherId) >= cap) continue;
+        out.push(o);
+        progress = true;
+      }
+    }
+  }
+  return out;
+}
+
+export async function startDuel(learner: string, difficulty: Difficulty): Promise<{ duelId: string; difficulty: Difficulty } & DuelSetup> {
+  const [state, settings, prof] = await Promise.all([
+    getGameState(learner),
+    getGameSettings(),
+    getAdminClient().from("game_profiles").select("duel_deck").eq("learner", learner).maybeSingle(),
+  ]);
+  if (prof.error && !/duel_deck/.test(prof.error.message)) throw duelError(prof.error.message);
+  if (prof.error) throw new GameError(GAME_012_HINT, 503);
+  if (state.owned.length < 3) throw new GameError("논쟁 대전은 카드 3장 이상부터 할 수 있습니다. 카드를 더 모아 보세요.", 409);
+  if (state.cards.length < 3) throw new GameError("상대 덱을 만들 공개 카드가 아직 3장 미만입니다.", 409);
+  const rules = DEFAULT_DUEL_RULES;
+  const mine = pickDuelDeck(state.owned, ((prof.data?.duel_deck as string[] | null) ?? []).filter(Boolean), rules.deckSize);
+  const seed = crypto.randomUUID();
+  const me = mine.map((o, i) =>
+    toDuelCard({ uid: `m${i}`, cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, tradition: o.tradition, rarity: o.rarity, level: o.level, effect: o.skillEffect, skillName: o.skillName, artUrl: o.artUrl, statAtk: o.atk, statHp: o.hp }, rules),
+  );
+  // 상대: 공개 사상가 중 무작위, 등급 구성은 내 덱과 같게(섞어서), 레벨은 내 덱 평균 ± 난이도
+  const lv = opponentLevel(mine.map((o) => o.level), difficulty, state.settings.maxLevel);
+  const r = seededRandomFor(seed);
+  const rarities = mine.map((o) => o.rarity).sort(() => r() - 0.5);
+  const foe = rarities.map((rarity, i) => {
+    const c = state.cards[Math.floor(r() * state.cards.length)];
+    const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, lv, settings.rarity_mult);
+    return toDuelCard({ uid: `f${i}`, cardId: null, philosopherId: c.philosopherId, name: c.name, tradition: c.tradition, rarity, level: lv, effect: c.skillEffect, skillName: c.skillName, artUrl: c.artUrl, statAtk: st.atk, statHp: st.hp }, rules);
+  });
+  const setup: DuelSetup = { me, foe, seed, rules };
+  const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules }, seed }).select("id").single();
+  if (error) throw duelError(error.message);
+  return { duelId: data.id as string, difficulty, ...setup };
+}
+
+export interface DuelOutcome {
+  result: "win" | "lose" | "draw";
+  turns: number;
+  record: { wins: number; losses: number; draws: number };
+  replayed: boolean;
+}
+
+/** 대전 결과 확인: 서버가 처음부터 다시 계산 (내 행동 = 기록, 상대 행동 = 같은 컴퓨터 규칙). 이미 끝난 대전이면 그 결과 */
+export async function finishDuel(learner: string, duelId: string, actions: DuelAction[]): Promise<DuelOutcome> {
+  const db = getAdminClient();
+  const { data: row, error } = await db.from("game_duels").select("*").eq("id", duelId).eq("learner", learner).maybeSingle();
+  if (error) throw duelError(error.message);
+  if (!row) throw new GameError("대전을 찾을 수 없습니다.", 404);
+  const record = async () => {
+    const { data: p } = await db.from("game_profiles").select("duel_wins, duel_losses, duel_draws").eq("learner", learner).maybeSingle();
+    return { wins: (p?.duel_wins as number) ?? 0, losses: (p?.duel_losses as number) ?? 0, draws: (p?.duel_draws as number) ?? 0 };
+  };
+  if (row.status !== "open") {
+    if (row.status === "void") throw new GameError("기록이 맞지 않아 무효 처리된 대전입니다.");
+    return { result: row.status as DuelOutcome["result"], turns: (row.turns as number) ?? 0, record: await record(), replayed: true };
+  }
+  const setup = row.setup as { me: DuelCardDef[]; foe: DuelCardDef[]; rules: DuelRules };
+  const level = row.difficulty as Difficulty;
+  let outcome: ReturnType<typeof replayDuel>;
+  try {
+    outcome = replayDuel({ ...setup, seed: row.seed as string }, actions, (s, side) => chooseDuelAction(s, side, level));
+  } catch (e) {
+    await db.from("game_duels").update({ status: "void", log: actions, finished_at: new Date().toISOString() }).eq("id", duelId).eq("status", "open");
+    throw new GameError(`대전 기록이 규칙과 맞지 않습니다 (${e instanceof Error ? e.message : String(e)}).`);
+  }
+  if (!outcome.finished) throw new GameError("대전이 아직 끝나지 않았습니다.");
+  const w = outcome.state.winner;
+  const result: DuelOutcome["result"] = w === "me" ? "win" : w === "foe" ? "lose" : "draw";
+  // 상태가 open 일 때만 확정 (같은 요청이 두 번 와도 전적은 한 번)
+  const { data: done, error: e2 } = await db
+    .from("game_duels")
+    .update({ status: result, log: actions.slice(0, outcome.used), turns: outcome.state.turn, finished_at: new Date().toISOString() })
+    .eq("id", duelId)
+    .eq("status", "open")
+    .select("id");
+  if (e2) throw duelError(e2.message);
+  if (done?.length) {
+    const key = result === "win" ? "wins" : result === "lose" ? "losses" : "draws";
+    const next = { ...(await record()) };
+    next[key]++;
+    const { error: e3 } = await db.from("game_profiles").upsert({ learner, [`duel_${key}`]: next[key], updated_at: new Date().toISOString() }, { onConflict: "learner" });
+    if (e3) throw duelError(e3.message);
+    return { result, turns: outcome.state.turn, record: next, replayed: false };
+  }
+  return { result, turns: outcome.state.turn, record: await record(), replayed: true };
 }
