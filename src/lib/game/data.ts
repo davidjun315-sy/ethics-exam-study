@@ -6,6 +6,7 @@ import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type Difficulty, type Fighter } from "./battle";
 import { DEFAULT_DUEL_RULES, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
+import { pickDuelDeck } from "./duelDeck";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -234,6 +235,8 @@ export interface GameState {
   featuredId: string | null; // 대표 카드 id
   deck: string[]; // 배틀 덱 카드 id
   record: { wins: number; losses: number };
+  /** 논쟁 대전 전적 (ready=false 면 012 적용 전) */
+  duel: { ready: boolean; wins: number; losses: number; draws: number };
   freeDraw: { available: boolean };
 }
 
@@ -247,7 +250,8 @@ export async function getGameState(learner: string): Promise<GameState> {
     db.from("game_wallets").select("coins").eq("learner", learner).maybeSingle(),
     db.from("game_user_cards").select("id, philosopher_id, rarity, level, locked, source, created_at").eq("learner", learner).eq("status", "owned").order("created_at"),
     db.from("game_collection").select("philosopher_id, shards").eq("learner", learner),
-    db.from("game_profiles").select("featured_card_id, deck_cards, wins, losses").eq("learner", learner).maybeSingle(),
+    // * : 012(논쟁 대전) 전이면 duel_* 열이 없으므로 있는 열만 읽는다
+    db.from("game_profiles").select("*").eq("learner", learner).maybeSingle(),
     db.from("game_free_draws").select("learner").eq("learner", learner).maybeSingle(),
   ]);
   for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
@@ -285,6 +289,12 @@ export async function getGameState(learner: string): Promise<GameState> {
     featuredId: p?.featured_card_id && ownedIds.has(p.featured_card_id) ? p.featured_card_id : null,
     deck: (p?.deck_cards ?? []).filter((id) => ownedIds.has(id)).slice(0, 3),
     record: { wins: p?.wins ?? 0, losses: p?.losses ?? 0 },
+    duel: {
+      ready: p ? "duel_wins" in p : true,
+      wins: (p as { duel_wins?: number } | null)?.duel_wins ?? 0,
+      losses: (p as { duel_losses?: number } | null)?.duel_losses ?? 0,
+      draws: (p as { duel_draws?: number } | null)?.duel_draws ?? 0,
+    },
     freeDraw: { available: !free.data },
   };
 }
@@ -619,30 +629,6 @@ export interface DuelSetup {
   rules: DuelRules;
 }
 
-/**
- * 대전 덱 12장: 저장한 대전 덱이 있으면 그것, 없으면 보유 카드 중 강한 순으로.
- * 보유 카드가 12장보다 적으면 같은 카드를 다시 넣어 채운다 (같은 사상가 최대 3장, 모자라면 그 이상).
- */
-export function pickDuelDeck(owned: OwnedCard[], saved: string[], size: number): OwnedCard[] {
-  const byId = new Map(owned.map((o) => [o.cardId, o]));
-  const out = saved.map((id) => byId.get(id)).filter((o): o is OwnedCard => Boolean(o)).slice(0, size);
-  const pool = [...owned].sort((a, b) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level || a.name.localeCompare(b.name));
-  const count = (ph: string) => out.filter((x) => x.philosopherId === ph).length;
-  // 강한 카드부터 한 바퀴씩 돌며 채운다. 같은 사상가 3장이 모두 차면 상한을 하나씩 늘린다 (보유 카드가 적을 때)
-  for (let cap = 3; out.length < size && pool.length; cap++) {
-    let progress = true;
-    while (out.length < size && progress) {
-      progress = false;
-      for (const o of pool) {
-        if (out.length >= size) break;
-        if (count(o.philosopherId) >= cap) continue;
-        out.push(o);
-        progress = true;
-      }
-    }
-  }
-  return out;
-}
 
 export async function startDuel(learner: string, difficulty: Difficulty): Promise<{ duelId: string; difficulty: Difficulty } & DuelSetup> {
   const [state, settings, prof] = await Promise.all([

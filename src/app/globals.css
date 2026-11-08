@@ -342,3 +342,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sheet-up, .sheet-fade, .rise-in { animation: none !important; }
 }
+
+/* 논쟁 대전: 할 일이 없을 때 '턴 종료' 버튼을 살짝 강조 */
+@keyframes duel-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 211, 107, 0.6); } 50% { box-shadow: 0 0 0 6px rgba(255, 211, 107, 0); } }
+.duel-pulse { animation: duel-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .duel-pulse { animation: none !important; }
+}

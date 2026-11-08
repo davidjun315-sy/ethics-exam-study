@@ -11,6 +11,7 @@ import { CollectionTab } from "./CollectionTab";
 import { UpgradeTab } from "./UpgradeTab";
 import { FusionTab } from "./FusionTab";
 import { BattleTab } from "./BattleTab";
+import { DuelTab } from "./DuelTab";
 
 export type Tab = "draw" | "collection" | "upgrade" | "fusion" | "battle";
 const TABS: { key: Tab; label: string; short: string }[] = [
@@ -101,7 +102,7 @@ export function GameApp({ initial, initialTab, initialBase }: { initial: GameSta
       ) : tab === "fusion" ? (
         <FusionTab state={state} reload={reload} initialBase={fusionBase} />
       ) : (
-        <BattleTab state={state} reload={reload} goDraw={() => go("draw")} />
+        <ArenaTab state={state} reload={reload} goDraw={() => go("draw")} />
       )}
 
       {detail && (
@@ -267,4 +268,31 @@ function PhilosopherSheet({
 export function gemStyle(r: OwnedCard["rarity"]): React.CSSProperties {
   const c = { common: ["#a7b0bd", "#5d6673"], rare: ["#8fd0ff", "#2a6fd6"], epic: ["#d8b4ff", "#7b3fe4"], legendary: ["#ffe39a", "#b9780f"] }[r];
   return { ["--r1" as string]: c[0], ["--r2" as string]: c[1] };
+}
+
+/** 배틀 아레나: 논쟁 대전(턴제 카드 배틀)과 빠른 대전(자동 전투) */
+function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
+  const [mode, setMode] = useState<"duel" | "quick">("duel");
+  const modes = [
+    { key: "duel" as const, label: "논쟁 대전" },
+    { key: "quick" as const, label: "빠른 대전" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div role="tablist" className="inline-flex w-full gap-1 rounded-xl bg-surface-2 p-1 sm:w-auto">
+        {modes.map((m) => (
+          <button
+            key={m.key}
+            role="tab"
+            aria-selected={mode === m.key}
+            onClick={() => setMode(m.key)}
+            className={`flex-1 rounded-lg px-4 py-2 text-center text-sm transition-colors sm:flex-none ${mode === m.key ? "bg-surface font-semibold text-ink shadow-soft" : "text-muted hover:text-ink"}`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {mode === "duel" ? <DuelTab state={state} reload={reload} goDraw={goDraw} /> : <BattleTab state={state} reload={reload} goDraw={goDraw} />}
+    </div>
+  );
 }
