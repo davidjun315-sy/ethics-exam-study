@@ -4,7 +4,7 @@ import { classifyPhilosopher } from "@/lib/traditions";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type Difficulty, type Fighter } from "./battle";
-import { DEFAULT_DUEL_RULES, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
+import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
 import {
@@ -78,6 +78,10 @@ export interface GameSettings {
   rarity_mult: Record<Rarity, number>;
   fusion_count: number;
   fusion_cost: number;
+  /** 논쟁 대전 조정값 (013, 없으면 기본값) */
+  duel_rules: DuelRules;
+  /** 013 적용 여부 (duel_rules 열이 있는지) */
+  duel_rules_ready: boolean;
 }
 const DEFAULT_SETTINGS: GameSettings = {
   draw_cost: 100,
@@ -88,6 +92,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   rarity_mult: DEFAULT_RARITY_MULT,
   fusion_count: 2,
   fusion_cost: 0,
+  duel_rules: normalizeDuelRules(null),
+  duel_rules_ready: false,
 };
 
 export async function getGameSettings(): Promise<GameSettings> {
@@ -103,10 +109,27 @@ export async function getGameSettings(): Promise<GameSettings> {
     rarity_mult: { ...DEFAULT_RARITY_MULT, ...(d.rarity_mult ?? {}) },
     fusion_count: d.fusion_count ?? DEFAULT_SETTINGS.fusion_count,
     fusion_cost: d.fusion_cost ?? DEFAULT_SETTINGS.fusion_cost,
+    duel_rules: normalizeDuelRules(d.duel_rules),
+    duel_rules_ready: Boolean(data && "duel_rules" in data),
   };
 }
 
-export async function saveGameSettings(s: Omit<GameSettings, "dup_refund">) {
+export const GAME_013_HINT = "논쟁 대전 조정값 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/013_game_duel_rules.sql 을 실행하세요.";
+
+/** 관리자: 논쟁 대전 조정값. 이미 시작한 대전은 시작할 때의 규칙 그대로 (대전마다 규칙 스냅샷) */
+export async function saveDuelRules(rules: DuelRules) {
+  const why = duelRulesError(rules);
+  if (why) throw new GameError(why);
+  const db = getAdminClient();
+  const { data, error } = await db.from("game_settings").update({ duel_rules: rules, updated_at: new Date().toISOString() }).eq("id", 1).select("id");
+  if (error) throw /duel_rules/.test(error.message) ? new GameError(GAME_013_HINT, 503) : gameError(error.message);
+  if (!data?.length) {
+    const ins = await db.from("game_settings").upsert({ id: 1, duel_rules: rules, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    if (ins.error) throw /duel_rules/.test(ins.error.message) ? new GameError(GAME_013_HINT, 503) : gameError(ins.error.message);
+  }
+}
+
+export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready">) {
   // 등급이 오르면 능력치도 반드시 오르도록
   const m = s.rarity_mult;
   if (!(m.common > 0 && m.rare > m.common && m.epic > m.rare && m.legendary > m.epic)) throw new GameError("등급 배율은 일반 < 희귀 < 영웅 < 전설 순으로 커야 합니다.");
@@ -228,6 +251,7 @@ export interface GameState {
     rarityMult: Record<Rarity, number>;
     fusionCount: number;
     fusionCost: number;
+    duelRules: DuelRules;
   };
   cards: CardView[]; // 공개 사상가 (도감)
   owned: OwnedCard[]; // 보유 카드 한 장씩 (공개가 내려가도 일러스트가 있으면 계속 보유)
@@ -237,6 +261,8 @@ export interface GameState {
   record: { wins: number; losses: number };
   /** 논쟁 대전 전적 (ready=false 면 012 적용 전) */
   duel: { ready: boolean; wins: number; losses: number; draws: number };
+  /** 논쟁 대전 덱 (보유 카드 id, 비어 있으면 자동) */
+  duelDeck: string[];
   freeDraw: { available: boolean };
 }
 
@@ -282,6 +308,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       rarityMult: settings.rarity_mult,
       fusionCount: settings.fusion_count,
       fusionCost: settings.fusion_cost,
+      duelRules: settings.duel_rules,
     },
     cards,
     owned,
@@ -295,6 +322,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       losses: (p as { duel_losses?: number } | null)?.duel_losses ?? 0,
       draws: (p as { duel_draws?: number } | null)?.duel_draws ?? 0,
     },
+    duelDeck: (((p as { duel_deck?: string[] } | null)?.duel_deck ?? []) as string[]).filter((id) => ownedIds.has(id)).slice(0, settings.duel_rules.deckSize),
     freeDraw: { available: !free.data },
   };
 }
@@ -640,7 +668,7 @@ export async function startDuel(learner: string, difficulty: Difficulty): Promis
   if (prof.error) throw new GameError(GAME_012_HINT, 503);
   if (state.owned.length < 3) throw new GameError("논쟁 대전은 카드 3장 이상부터 할 수 있습니다. 카드를 더 모아 보세요.", 409);
   if (state.cards.length < 3) throw new GameError("상대 덱을 만들 공개 카드가 아직 3장 미만입니다.", 409);
-  const rules = DEFAULT_DUEL_RULES;
+  const rules = settings.duel_rules;
   const mine = pickDuelDeck(state.owned, ((prof.data?.duel_deck as string[] | null) ?? []).filter(Boolean), rules.deckSize);
   const seed = crypto.randomUUID();
   const me = mine.map((o, i) =>
@@ -659,6 +687,16 @@ export async function startDuel(learner: string, difficulty: Difficulty): Promis
   const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules }, seed }).select("id").single();
   if (error) throw duelError(error.message);
   return { duelId: data.id as string, difficulty, ...setup };
+}
+
+/** 논쟁 대전 덱 저장: 서로 다른 보유 카드 최대 덱 크기만큼 (빈 목록 = 자동). 모자란 칸은 대전 때 자동으로 채운다 */
+export async function setDuelDeck(learner: string, ids: string[]) {
+  const { duel_rules: rules } = await getGameSettings();
+  if (new Set(ids).size !== ids.length) throw new GameError("같은 카드를 두 번 넣을 수 없습니다.");
+  if (ids.length > rules.deckSize) throw new GameError(`덱은 최대 ${rules.deckSize}장입니다.`);
+  if (ids.length) await assertOwned(learner, ids);
+  const { error } = await getAdminClient().from("game_profiles").upsert({ learner, duel_deck: ids, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  if (error) throw duelError(error.message);
 }
 
 export interface DuelOutcome {

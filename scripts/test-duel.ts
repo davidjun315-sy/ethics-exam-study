@@ -1,6 +1,9 @@
 /** 논쟁 대전(턴제 카드 배틀) 엔진 · 컴퓨터 상대 · 균형 점검.  npm run test:duel */
 import { applyAction, createDuel, DEFAULT_DUEL_RULES, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelSide, type DuelState } from "../src/lib/game/duel.ts";
 import { chooseDuelAction } from "../src/lib/game/duelAi.ts";
+import { activeResonances, duelRulesError, normalizeDuelRules } from "../src/lib/game/duel.ts";
+import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
+import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
 import { statsFor, type Rarity, type SkillEffect } from "../src/lib/game/rules.ts";
 
@@ -215,6 +218,58 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     if (aiGame(d, mirror, `hard-${i}`, { me: "hard", foe: "easy" }).s.winner === "me") h++;
   }
   check("컴퓨터 난이도: 같은 덱이면 어려움이 쉬움에 우세", h >= 165, `${h}/300`);
+}
+
+// ---------------- 관리자 조정값 (013) ----------------
+{
+  check("조정값 없음({}·null) → 기본값", JSON.stringify(normalizeDuelRules({})) === JSON.stringify(DEFAULT_DUEL_RULES) && JSON.stringify(normalizeDuelRules(null)) === JSON.stringify(DEFAULT_DUEL_RULES));
+  const n = normalizeDuelRules({ heroHp: 999, fieldSize: 9, turnLimit: 41, cost: { epic: "x" }, rarityBoost: { legendary: 2 } });
+  check("범위 밖 값은 허용 범위로 · 깨진 값은 기본값 · 일부만 있어도 나머지 기본", n.heroHp === 100 && n.fieldSize === 5 && n.turnLimit === 42 && n.cost.epic === 3 && n.rarityBoost.legendary === 2 && n.maxMana === 7);
+  check("기본값은 저장 가능", duelRulesError(DEFAULT_DUEL_RULES) === null);
+  check("비용 > 최대 사유력 거절", duelRulesError({ ...DEFAULT_DUEL_RULES, maxMana: 3 }) !== null);
+  check("등급 순서가 거꾸로면 거절 (비용·보정)", duelRulesError({ ...DEFAULT_DUEL_RULES, cost: { common: 3, rare: 2, epic: 3, legendary: 4 } }) !== null && duelRulesError({ ...DEFAULT_DUEL_RULES, rarityBoost: { common: 1, rare: 1.5, epic: 1.2, legendary: 2 } }) !== null);
+  check("범위 밖 값 거절 (필드 9칸)", duelRulesError({ ...DEFAULT_DUEL_RULES, fieldSize: 9 }) !== null);
+  // 바꾼 규칙으로도 대전이 끝까지 진행되고, 같은 기록이면 서버 재계산도 같다
+  const custom = normalizeDuelRules({ heroHp: 25, maxMana: 8, fieldSize: 5, deckSize: 15, handSize: 8, turnLimit: 40 });
+  let ok = true;
+  for (let i = 0; i < 40; i++) {
+    const me = simDeck("m", `c${i}`, custom);
+    const foe = simDeck("f", `cf${i}`, custom);
+    const s = simGame(me, foe, `cs${i}`, custom);
+    if (!s.winner || me.length !== 15 || s.players.me.field.length > 5 || s.players.foe.field.length > 5) ok = false;
+  }
+  check("바꾼 규칙(필드 5 · 덱 15 · 신념 25)으로 40판 모두 끝나고 필드 상한 지킴", ok);
+  {
+    let s = createDuel({ me: simDeck("m", "rp", custom), foe: simDeck("f", "rpf", custom), seed: "rp", rules: custom }).state;
+    const log: DuelAction[] = [];
+    while (!s.winner) {
+      const a = chooseDuelAction(s, s.active, "normal");
+      if (s.active === "me") log.push(a);
+      s = step(s, s.active, a);
+    }
+    const r = replayDuel({ me: simDeck("m", "rp", custom), foe: simDeck("f", "rpf", custom), seed: "rp", rules: custom }, log, (st, side) => chooseDuelAction(st, side, "normal"));
+    check("바꾼 규칙도 서버 재계산이 같은 결과 (규칙은 대전마다 스냅샷)", r.finished && r.state.winner === s.winner && r.state.turn === s.turn);
+  }
+  const b = simulateBalance(DEFAULT_DUEL_RULES, 60);
+  check("관리자 시뮬레이션: 기본값에서 끝나지 않은 판 없음 · 전설 덱 우세", b.stuck === 0 && b.legendVsCommon >= 0.6, JSON.stringify({ first: b.firstWin, legend: b.legendVsCommon, hard: b.hardVsEasy, turns: b.avgTurns }));
+}
+
+// ---------------- 덱 만들기 · 공명 ----------------
+{
+  const owned = Array.from({ length: 15 }, (_, i) => ({ cardId: `c${i}`, philosopherId: `p${i % 6}`, name: `n${i}`, rarity: (["common", "rare", "epic", "legendary"] as const)[i % 4], level: 1 + (i % 3) }));
+  const saved = ["c0", "c5", "c9"];
+  const d = pickDuelDeck(owned, saved, 12);
+  check("직접 고른 카드가 먼저 · 나머지는 자동으로 12장", d.length === 12 && d.slice(0, 3).map((o) => o.cardId).join() === "c0,c5,c9");
+  check("보유 카드가 충분하면 자동으로 채운 카드도 겹치지 않음", new Set(d.map((o) => o.cardId)).size === 12);
+  check("보유하지 않은(지운) 카드 id 는 무시", pickDuelDeck(owned, ["gone", "c1"], 12)[0].cardId === "c1");
+  const few = pickDuelDeck(owned.slice(0, 4), [], 12);
+  check("보유 4장 → 같은 카드를 반복해 12장", few.length === 12);
+}
+{
+  const west = (uid: string) => card(uid, { tradition: "서양윤리" });
+  let s = setupFixed([west("w1"), west("w2"), card("e1", { tradition: "동양윤리", effect: "guard" })], []);
+  for (const uid of ["w1", "w2", "e1"]) s = step(s, "me", { t: "play", uid });
+  check("켜진 공명 목록: 서양 2명 → [서양윤리], 동양 1명 → 꺼짐", JSON.stringify(activeResonances(s, "me")) === JSON.stringify(["서양윤리"]) && activeResonances(s, "foe").length === 0);
 }
 
 console.log(failed ? `\n${failed}개 실패` : "\n모두 통과");

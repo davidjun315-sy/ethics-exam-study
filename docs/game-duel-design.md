@@ -88,7 +88,7 @@
 - `game_duels` (새 표) — 대전 한 판: 서버가 만든 덱 스냅샷·시드, 상태(open/win/lose/draw/void), 내 행동 기록
 - `game_profiles.duel_deck uuid[]` — 대전 덱 12장 (비어 있으면 강한 카드로 자동). 기존 `deck_cards`(빠른 대전 3장)는 그대로
 - `game_profiles.duel_wins / duel_losses / duel_draws` — 논쟁 대전 전적
-- 관리자 조정값(변환 계수·비용·신념)은 3단계에서 `game_settings` 에 추가 (지금은 코드의 기본값)
+- 관리자 조정값은 마이그레이션 013 의 `game_settings.duel_rules` (비어 있으면 코드의 기본값, 대전마다 규칙 스냅샷)
 - 기존 카드·보유·코인·전적 데이터는 바꾸지 않는다
 
 ## 9. 화면
@@ -115,3 +115,12 @@
 ## 12. 진행 상황
 - **1단계 완료**: 엔진 `src/lib/game/duel.ts`, 컴퓨터 `src/lib/game/duelAi.ts`, 테스트 `npm run test:duel`,
   서버 `startDuel` / `finishDuel` (`src/lib/game/data.ts`), API `POST /api/game/duel` · `POST /api/game/duel/[id]`, 마이그레이션 012
+- **2단계 완료**: 배틀 탭 '논쟁 대전 / 빠른 대전' 전환, 로비 · 대전 보드 (`src/components/game/DuelTab.tsx`) · 결과 · 전적 · 이어 하기 · 항복
+- **3단계 완료**:
+  - 덱 만들기 `src/components/game/DuelDeckBuilder.tsx` — 보유 카드에서 최대 덱 크기만큼 (같은 카드 1번), 모자란 칸은 대전 때 자동.
+    비용 분포 · 분야(공명) 분포 요약은 `DuelParts.tsx` 의 `DeckSummary`. 저장 `POST /api/game/duel-deck` → `game_profiles.duel_deck`
+  - 자동 채우기는 아직 넣지 않은 카드부터 (보유 카드가 덱보다 적을 때만 같은 카드 반복)
+  - 공명 표시: 대전 화면 논자 막대에 켜진 공명 (`activeResonances`)
+  - 관리자 조정값 `src/components/admin/DuelRulesForm.tsx` — 저장 `PUT /api/admin/game/duel-rules` (범위·등급 순서 확인 `duelRulesError`),
+    저장 전 브라우저에서 균형 시뮬레이션 (`src/lib/game/duelSim.ts`: 선공 승률 · 전설 vs 일반 · 어려움 vs 쉬움 · 평균 길이 · 제한 턴 종료)
+  - 마이그레이션 013 (`game_settings.duel_rules`, 추가만). 적용 전에는 기본값으로 대전하고 저장만 막힘

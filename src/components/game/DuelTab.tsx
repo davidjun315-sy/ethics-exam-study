@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flag, Heart, Shield, Sparkles, Swords, Zap } from "lucide-react";
+import { Flag, Heart, Shield, Sparkles, Swords } from "lucide-react";
 import type { GameState } from "@/lib/game/data";
 import { DIFFICULTY_NAMES, type Difficulty } from "@/lib/game/battle";
 import {
   applyAction,
   attackOf,
   createDuel,
-  DEFAULT_DUEL_RULES,
+  activeResonances,
   EFFECT_TEXT,
   effectPower,
   illegal,
@@ -16,7 +16,6 @@ import {
   needsTarget,
   replayDuel,
   RESONANCE,
-  toDuelCard,
   type DuelAction,
   type DuelCardDef,
   type DuelEvent,
@@ -30,6 +29,8 @@ import { chooseDuelAction } from "@/lib/game/duelAi";
 import { pickDuelDeck } from "@/lib/game/duelDeck";
 import { RARITY_NAMES, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
+import { DeckSummary, duelCardOf, FRAME, HandCard, shortTradition } from "./DuelParts";
+import { DuelDeckBuilder } from "./DuelDeckBuilder";
 
 interface Setup {
   duelId: string;
@@ -49,12 +50,6 @@ interface Saved extends Setup {
 }
 
 const SAVE_KEY = "ees:duel";
-const FRAME: Record<Rarity, string> = {
-  common: "ring-[#9aa4b5]",
-  rare: "ring-[#5aa2ff]",
-  epic: "ring-[#b07cff]",
-  legendary: "ring-[#ffc94a]",
-};
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 const loadSaved = (): Saved | null => {
   try {
@@ -80,6 +75,8 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [building, setBuilding] = useState(false);
+  const rules = state.settings.duelRules;
 
   // 이어 하기 (새로고침해도 진행 중인 대전을 이어서)
   useEffect(() => {
@@ -91,10 +88,7 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
   }, []);
 
   // 로비의 덱 미리보기 (서버와 같은 규칙)
-  const preview = useMemo(() => {
-    const deck = pickDuelDeck(state.owned, [], DEFAULT_DUEL_RULES.deckSize);
-    return deck.map((o, i) => toDuelCard({ uid: `p${i}`, cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, tradition: o.tradition, rarity: o.rarity, level: o.level, effect: o.skillEffect, skillName: o.skillName, artUrl: o.artUrl, statAtk: o.atk, statHp: o.hp }));
-  }, [state.owned]);
+  const preview = useMemo(() => pickDuelDeck(state.owned, state.duelDeck, rules.deckSize).map((o, i) => duelCardOf(o, rules, `p${i}`)), [state.owned, state.duelDeck, rules]);
 
   if (state.owned.length < 3)
     return (
@@ -138,6 +132,11 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
           setSetup(null);
           setOutcome(null);
         }}
+        onEditDeck={() => {
+          setSetup(null);
+          setOutcome(null);
+          setBuilding(true);
+        }}
         onAgain={() => {
           setSetup(null);
           setOutcome(null);
@@ -146,33 +145,48 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
       />
     );
 
-  const costs = [2, 3, 4].map((c) => preview.filter((x) => x.cost === c).length);
+  if (building) return <DuelDeckBuilder state={state} onClose={() => setBuilding(false)} onSaved={reload} />;
+
+  const custom = state.duelDeck.length;
+  const costText = (() => {
+    // 비용이 같은 등급끼리 묶기: "일반·희귀 2 · 영웅 3 · 전설 4"
+    const groups = new Map<number, string[]>();
+    for (const r of ["common", "rare", "epic", "legendary"] as Rarity[]) groups.set(rules.cost[r], [...(groups.get(rules.cost[r]) ?? []), RARITY_NAMES[r]]);
+    return [...groups].map(([c, names]) => `${names.join("·")} ${c}`).join(" · ");
+  })();
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <section className="card space-y-4 p-4 sm:p-5">
         <div>
           <h2 className="text-lg font-black">논쟁 대전</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            사유력으로 사상가를 내고, 상대 사상가와 논자를 공격하세요. 상대 논자의 신념 {DEFAULT_DUEL_RULES.heroHp}을 먼저 0으로 만들면 승리합니다.
+            사유력으로 사상가를 내고, 상대 사상가와 논자를 공격하세요. 상대 논자의 신념 {rules.heroHp}을 먼저 0으로 만들면 승리합니다.
           </p>
         </div>
         <ul className="grid gap-2 text-[13px] leading-5 text-muted sm:grid-cols-2">
-          <li><b className="text-ink">사유력</b> 턴마다 최대치 +1 (최대 {DEFAULT_DUEL_RULES.maxMana}). 비용: 일반·희귀 2 · 영웅 3 · 전설 4</li>
-          <li><b className="text-ink">필드</b> 내 쪽 최대 {DEFAULT_DUEL_RULES.fieldSize}명. 낸 턴에는 공격할 수 없습니다</li>
+          <li><b className="text-ink">사유력</b> 턴마다 최대치 +1 (최대 {rules.maxMana}). 비용: {costText}</li>
+          <li><b className="text-ink">필드</b> 내 쪽 최대 {rules.fieldSize}명. 낸 턴에는 공격할 수 없습니다</li>
           <li><b className="text-ink">수호</b> 상대에 수호가 있으면 그 사상가부터 공격해야 합니다</li>
           <li><b className="text-ink">공명</b> 같은 분야 2명 이상: {Object.entries(RESONANCE).map(([k, v]) => `${k.replace("윤리", "")} ${v}`).join(" · ")}</li>
         </ul>
         <div>
           <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-sm font-bold">내 덱 (자동 · 강한 카드 {preview.length}장)</h3>
-            <span className="text-[11px] text-faint">비용 2: {costs[0]} · 3: {costs[1]} · 4: {costs[2]}</span>
+            <h3 className="text-sm font-bold">
+              내 덱 {custom ? `(직접 ${custom}장${preview.length > custom ? ` + 자동 ${preview.length - custom}장` : ""})` : `(자동 · 강한 카드 ${preview.length}장)`}
+            </h3>
+            <button type="button" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold hover:bg-surface-2" onClick={() => setBuilding(true)}>
+              덱 만들기
+            </button>
+          </div>
+          <div className="mb-3">
+            <DeckSummary deck={preview} rules={rules} />
           </div>
           <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
             {preview.map((c) => (
               <HandCard key={c.uid} c={c} playable compact />
             ))}
           </div>
-          <p className="mt-1.5 text-[11px] text-faint">보유 카드가 12장보다 적으면 같은 카드를 여러 장 넣습니다. 덱 직접 만들기는 다음 업데이트에서.</p>
+          <p className="mt-1.5 text-[11px] text-faint">보유 카드가 {rules.deckSize}장보다 적으면 같은 카드를 여러 장 넣습니다. 같은 분야 사상가를 모으면 공명을 자주 켤 수 있습니다.</p>
         </div>
       </section>
       <aside className="card space-y-4 p-4 lg:sticky lg:top-20 lg:self-start">
@@ -249,6 +263,7 @@ function DuelBoard({
   onOutcome,
   onLeave,
   onAgain,
+  onEditDeck,
 }: {
   setup: Setup;
   initialLog: DuelAction[];
@@ -256,6 +271,7 @@ function DuelBoard({
   onOutcome: (o: Outcome) => void;
   onLeave: () => void;
   onAgain: () => void;
+  onEditDeck: () => void;
 }) {
   const level = setup.difficulty;
   const [s, setS] = useState<DuelState>(() => {
@@ -396,7 +412,7 @@ function DuelBoard({
   return (
     <section ref={boardRef} className="relative mx-auto max-w-2xl scroll-mt-16 overflow-hidden rounded-2xl border border-line bg-[radial-gradient(90%_70%_at_50%_45%,#26324d,#0c111b)] p-2.5 text-white sm:p-4">
       {/* 상대 */}
-      <HeroBar side="foe" p={foe} rules={s.rules} active={s.active === "foe" && !s.winner} targetable={targets.has("foe:hero")} onClick={() => pickHero("foe")} flashes={fl("foe:hero")} />
+      <HeroBar side="foe" p={foe} rules={s.rules} resonance={activeResonances(s, "foe")} active={s.active === "foe" && !s.winner} targetable={targets.has("foe:hero")} onClick={() => pickHero("foe")} flashes={fl("foe:hero")} />
       <Field s={s} side="foe" units={foe.field} sel={sel} targets={targets} onPick={(uid) => pickUnit("foe", uid)} flashes={fl} myTurn={myTurn} />
 
       {/* 가운데: 안내 · 턴 종료 */}
@@ -418,7 +434,7 @@ function DuelBoard({
 
       {/* 나 */}
       <Field s={s} side="me" units={me.field} sel={sel} targets={targets} onPick={(uid) => pickUnit("me", uid)} flashes={fl} myTurn={myTurn} />
-      <HeroBar side="me" p={me} rules={s.rules} active={myTurn} targetable={targets.has("me:hero")} onClick={() => pickHero("me")} flashes={fl("me:hero")} />
+      <HeroBar side="me" p={me} rules={s.rules} resonance={activeResonances(s, "me")} active={myTurn} targetable={targets.has("me:hero")} onClick={() => pickHero("me")} flashes={fl("me:hero")} />
 
       {/* 손패 */}
       <div className="-mx-2.5 mt-2 flex gap-2 overflow-x-auto px-2.5 pb-1 [&::-webkit-scrollbar]:hidden sm:-mx-4 sm:px-4" aria-label="내 손패">
@@ -464,6 +480,7 @@ function DuelBoard({
               <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={onLeave}>로비로</button>
               <button type="button" className="btn-primary py-2.5 font-bold" onClick={onAgain}>다시 대전</button>
             </div>
+            <button type="button" className="mt-2 text-xs text-white/60 underline-offset-2 hover:underline" onClick={onEditDeck}>덱 수정</button>
           </div>
         </div>
       )}
@@ -483,7 +500,7 @@ function FlashBadges({ flashes }: { flashes: Flash[] }) {
   );
 }
 
-function HeroBar({ side, p, rules, active, targetable, onClick, flashes }: { side: DuelSide; p: DuelState["players"]["me"]; rules: DuelRules; active: boolean; targetable: boolean; onClick: () => void; flashes: Flash[] }) {
+function HeroBar({ side, p, rules, resonance, active, targetable, onClick, flashes }: { side: DuelSide; p: DuelState["players"]["me"]; rules: DuelRules; resonance: string[]; active: boolean; targetable: boolean; onClick: () => void; flashes: Flash[] }) {
   const ratio = Math.max(0, p.hero) / rules.heroHp;
   return (
     <button
@@ -502,6 +519,11 @@ function HeroBar({ side, p, rules, active, targetable, onClick, flashes }: { sid
             덱 {p.deck.length}
             {side === "foe" ? ` · 손패 ${p.hand.length}` : ""}
           </span>
+          {resonance.map((t) => (
+            <span key={t} className="truncate rounded bg-[#ffd36b]/20 px-1 text-[10px] font-semibold text-[#ffd36b]" title={`${t} 공명: ${RESONANCE[t]}`}>
+              {shortTradition(t)} 공명 · {RESONANCE[t]}
+            </span>
+          ))}
         </span>
         <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-black/40">
           <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${ratio * 100}%`, background: ratio > 0.5 ? "#5fd08f" : ratio > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
@@ -525,7 +547,7 @@ function HeroBar({ side, p, rules, active, targetable, onClick, flashes }: { sid
 
 function Field({ s, side, units, sel, targets, onPick, flashes, myTurn }: { s: DuelState; side: DuelSide; units: Minion[]; sel: Select; targets: Set<string>; onPick: (uid: string) => void; flashes: (key: string) => Flash[]; myTurn: boolean }) {
   return (
-    <div className="my-1.5 grid min-h-[5.5rem] grid-cols-4 sm:my-2 sm:min-h-[7.5rem] gap-1.5 sm:gap-3" aria-label={side === "me" ? "내 필드" : "상대 필드"}>
+    <div className="my-1.5 grid min-h-[5.5rem] gap-1.5 sm:my-2 sm:min-h-[7.5rem] sm:gap-3" style={{ gridTemplateColumns: `repeat(${s.rules.fieldSize}, minmax(0, 1fr))` }} aria-label={side === "me" ? "내 필드" : "상대 필드"}>
       {units.map((m) => (
         <Unit key={m.uid} s={s} side={side} m={m} selected={sel?.kind === "unit" && sel.uid === m.uid} targetable={targets.has(`${side}:${m.uid}`)} ready={side === "me" && myTurn && m.canAttack && attackOf(s, side, m) > 0} onClick={() => onPick(m.uid)} flashes={flashes(`${side}:${m.uid}`)} />
       ))}
@@ -584,34 +606,5 @@ function Unit({ s, side, m, selected, targetable, ready, onClick, flashes }: { s
       </span>
       <FlashBadges flashes={flashes} />
     </button>
-  );
-}
-
-function HandCard({ c, playable, compact = false }: { c: DuelCardDef; playable: boolean; compact?: boolean }) {
-  const power = effectPower(c);
-  return (
-    <div className={`relative flex flex-col overflow-hidden rounded-xl bg-[#1a2234] text-white ring-2 ${FRAME[c.rarity]} ${compact ? "w-full" : "w-[5.5rem] sm:w-[6.25rem]"} ${playable ? "" : "opacity-55"}`}>
-      <div className={`relative ${compact ? "h-12" : "h-11 sm:h-16"} bg-[#24304a]`}>
-        {c.artUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.artUrl} alt="" className="h-full w-full object-cover" draggable={false} />
-        )}
-        <span className="absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#3b6fd8] text-[13px] font-black shadow ring-2 ring-white/70">{c.cost}</span>
-        <span className="absolute right-1 top-1 rounded bg-black/55 px-1 text-[9px]">{RARITY_NAMES[c.rarity]}</span>
-      </div>
-      <div className="flex flex-1 flex-col px-1.5 pb-1.5 pt-1">
-        <span className="truncate text-[11px] font-bold">{c.name}</span>
-        {!compact && (
-          <span className="mt-0.5 line-clamp-2 min-h-[1.9rem] text-[9.5px] leading-[1.15rem] text-white/70">
-            <Zap className="mr-0.5 inline h-2.5 w-2.5 text-[#ffd36b]" aria-hidden />
-            {EFFECT_TEXT[c.effect](power).replace("등장 시: ", "")}
-          </span>
-        )}
-        <span className="mt-auto flex justify-between text-[12px] font-black tabular-nums">
-          <span className="text-[#ffb0a0]">{c.atk}</span>
-          <span className="text-[#9ff0bf]">{c.hp}</span>
-        </span>
-      </div>
-    </div>
   );
 }

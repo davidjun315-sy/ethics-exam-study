@@ -12,16 +12,21 @@ export function pickDuelDeck<T extends DeckCard>(owned: T[], saved: string[], si
   const out = saved.map((id) => byId.get(id)).filter((o): o is T => Boolean(o)).slice(0, size);
   const pool = [...owned].sort((a, b) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level || a.name.localeCompare(b.name));
   const count = (ph: string) => out.filter((x) => x.philosopherId === ph).length;
-  // 강한 카드부터 한 바퀴씩 돌며 채운다. 같은 사상가 3장이 모두 차면 상한을 하나씩 늘린다 (보유 카드가 적을 때)
-  for (let cap = 3; out.length < size && pool.length; cap++) {
-    let progress = true;
-    while (out.length < size && progress) {
-      progress = false;
-      for (const o of pool) {
-        if (out.length >= size) break;
-        if (count(o.philosopherId) >= cap) continue;
-        out.push(o);
-        progress = true;
+  // 1) 아직 넣지 않은 카드부터 강한 순으로 (같은 사상가 최대 3장, 모자라면 상한을 늘림)
+  // 2) 그래도 모자라면(보유 카드가 덱보다 적으면) 같은 카드를 다시 넣는다
+  for (const allowRepeat of [false, true]) {
+    for (let cap = 3; out.length < size && cap <= size; cap++) {
+      let progress = true;
+      while (out.length < size && progress) {
+        progress = false;
+        for (const o of pool) {
+          if (out.length >= size) break;
+          if (count(o.philosopherId) >= cap) continue;
+          if (!allowRepeat && out.includes(o)) continue;
+          out.push(o);
+          progress = true;
+          if (!allowRepeat) break; // 다시 강한 카드부터 (사상가 상한을 고르게)
+        }
       }
     }
   }

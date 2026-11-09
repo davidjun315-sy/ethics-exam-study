@@ -39,6 +39,74 @@ export const DEFAULT_DUEL_RULES: DuelRules = {
   rarityBoost: { common: 1, rare: 1.2, epic: 1.45, legendary: 1.75 },
 };
 
+/** 관리자 조정값의 허용 범위 (화면 크기·한 판 길이를 지키는 선) */
+export const DUEL_RULE_LIMITS = {
+  heroHp: [10, 100],
+  maxMana: [3, 10],
+  fieldSize: [3, 5],
+  handSize: [5, 10], // 처음 손패 4장 + 첫 뽑기
+  deckSize: [8, 20],
+  turnLimit: [20, 100],
+  atkDiv: [4, 40],
+  hpDiv: [20, 200],
+  cost: [1, 10],
+  rarityBoost: [0.5, 4],
+} as const;
+
+const RARITY_KEYS: Rarity[] = ["common", "rare", "epic", "legendary"];
+
+/** 저장된 값(일부만 있거나 깨졌을 수 있음) → 완전한 규칙. 범위 밖이면 가장 가까운 허용값 */
+export function normalizeDuelRules(raw: unknown): DuelRules {
+  const d = DEFAULT_DUEL_RULES;
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (v: unknown, [lo, hi]: readonly [number, number], fallback: number, int = true) => {
+    const n = typeof v === "number" && Number.isFinite(v) ? v : fallback;
+    const c = Math.min(hi, Math.max(lo, n));
+    return int ? Math.round(c) : Math.round(c * 100) / 100;
+  };
+  const per = (v: unknown, lim: readonly [number, number], fb: Record<Rarity, number>, int: boolean) => {
+    const src = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    return Object.fromEntries(RARITY_KEYS.map((r) => [r, num(src[r], lim, fb[r], int)])) as Record<Rarity, number>;
+  };
+  const turnLimit = num(o.turnLimit, DUEL_RULE_LIMITS.turnLimit, d.turnLimit);
+  return {
+    heroHp: num(o.heroHp, DUEL_RULE_LIMITS.heroHp, d.heroHp),
+    maxMana: num(o.maxMana, DUEL_RULE_LIMITS.maxMana, d.maxMana),
+    fieldSize: num(o.fieldSize, DUEL_RULE_LIMITS.fieldSize, d.fieldSize),
+    handSize: num(o.handSize, DUEL_RULE_LIMITS.handSize, d.handSize),
+    deckSize: num(o.deckSize, DUEL_RULE_LIMITS.deckSize, d.deckSize),
+    turnLimit: turnLimit % 2 ? turnLimit + 1 : turnLimit, // 양쪽 같은 턴 수
+    atkDiv: num(o.atkDiv, DUEL_RULE_LIMITS.atkDiv, d.atkDiv, false),
+    hpDiv: num(o.hpDiv, DUEL_RULE_LIMITS.hpDiv, d.hpDiv, false),
+    cost: per(o.cost, DUEL_RULE_LIMITS.cost, d.cost, true),
+    rarityBoost: per(o.rarityBoost, DUEL_RULE_LIMITS.rarityBoost, d.rarityBoost, false),
+  };
+}
+
+/** 저장 전 확인: 문제가 있으면 이유, 없으면 null */
+export function duelRulesError(r: DuelRules): string | null {
+  const n = normalizeDuelRules(r);
+  const names: Record<keyof DuelRules, string> = {
+    heroHp: "논자 신념",
+    maxMana: "최대 사유력",
+    fieldSize: "필드 칸 수",
+    handSize: "손패 최대",
+    deckSize: "덱 크기",
+    turnLimit: "제한 턴(짝수)",
+    atkDiv: "공격 변환 계수",
+    hpDiv: "체력 변환 계수",
+    cost: "등급별 비용(정수)",
+    rarityBoost: "등급별 보정",
+  };
+  for (const k of Object.keys(n) as (keyof DuelRules)[]) {
+    if (JSON.stringify(n[k]) !== JSON.stringify(r[k])) return `${names[k]} 값이 허용 범위를 벗어났습니다.`;
+  }
+  if (RARITY_KEYS.some((x) => r.cost[x] > r.maxMana)) return "카드 비용은 최대 사유력보다 클 수 없습니다.";
+  if (RARITY_KEYS.some((x, i) => i > 0 && r.cost[x] < r.cost[RARITY_KEYS[i - 1]])) return "비용은 일반 ≤ 희귀 ≤ 영웅 ≤ 전설 순이어야 합니다.";
+  if (RARITY_KEYS.some((x, i) => i > 0 && r.rarityBoost[x] < r.rarityBoost[RARITY_KEYS[i - 1]])) return "등급 보정은 일반 ≤ 희귀 ≤ 영웅 ≤ 전설 순이어야 합니다.";
+  return null;
+}
+
 const RI: Record<Rarity, number> = { common: 0, rare: 1, epic: 2, legendary: 3 };
 /** 필살기 → 등장 효과 크기 (일반 → 전설) */
 export const EFFECT_POWER = {
@@ -177,6 +245,8 @@ export function attackOf(s: DuelState, side: DuelSide, m: Minion): number {
   return m.atk + (tr === "서양윤리" && resonating(s, side, tr) ? 1 : 0);
 }
 export const isResonating = (s: DuelState, side: DuelSide, uid: string) => resonating(s, side, s.cards[uid].tradition);
+/** 지금 켜진 공명 분야 (필드에 같은 분야 2명 이상) */
+export const activeResonances = (s: DuelState, side: DuelSide) => Object.keys(RESONANCE).filter((tr) => resonating(s, side, tr));
 
 // ---------------------------------------------------------------------
 // 시작
