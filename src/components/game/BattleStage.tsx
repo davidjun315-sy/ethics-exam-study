@@ -14,6 +14,8 @@ import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
  */
 
 const RING: Record<Rarity, string> = { common: "#b9c0cb", rare: "#5aa2ff", epic: "#b07cff", legendary: "#ffc94a" };
+const RAR_TEXT: Record<Rarity, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
+const RARITY_LABEL: Record<Rarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
 // 내 팀 자리 (전장 안 %, 아래쪽일수록 앞) · 크기
 const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
   { left: 17, bottom: 3, scale: 0.95 },
@@ -298,7 +300,7 @@ export function BattleStage({
         <div className="absolute bottom-full left-1/2 mb-1 w-[max(4.5rem,110%)] -translate-x-1/2 text-center" style={{ opacity: s.dead ? 0.35 : 1 }}>
           <div className="truncate text-[10px] font-bold text-white drop-shadow sm:text-xs">
             {boss && <span className="mr-1 rounded bg-[#ef6a5a] px-1 text-[9px]">보스</span>}
-            {u.name} <span className="font-normal text-white/70">Lv.{u.level}</span>
+            <span style={{ color: RAR_TEXT[u.rarity] }}>{RARITY_LABEL[u.rarity]}</span> {u.name} <span className="font-normal text-white/70">Lv.{u.level}</span>
           </div>
           <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/20">
             <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
@@ -311,7 +313,19 @@ export function BattleStage({
         <div className={`relative h-full ${s.dead ? "" : "bs-idle"}`} style={{ animationDelay: `${-i * 0.37}s` }}>
           <div key={`${u.key}-${idx}-${hit ? 1 : 0}`} className={`h-full ${anim}`}>
             <div className={`h-full ${isActor && skill ? "bs-aura" : ""}`} style={isActor && skill && theme ? { ["--aura" as string]: theme.colors[0] } : undefined}>
-              <Figure u={u} boss={boss} />
+              <div className={`bs-rar bs-rar-${u.rarity} relative h-full`}>
+                {/* 등급 기운: 바닥 빛 · 뒤 광채 · (영웅·전설) 떠오르는 빛가루 · (전설) 후광 */}
+                {u.rarity !== "common" && <span className="bs-rar-floor" aria-hidden />}
+                {(u.rarity === "epic" || u.rarity === "legendary") && (
+                  <span className="bs-rar-motes" aria-hidden>
+                    {[0, 1, 2, 3, 4].map((k) => (
+                      <i key={k} style={{ left: `${14 + k * 17}%`, animationDelay: `${(k * 0.43 + i * 0.2) % 2}s` }} />
+                    ))}
+                  </span>
+                )}
+                {u.rarity === "legendary" && <span className="bs-rar-halo" aria-hidden />}
+                <Figure u={u} boss={boss} />
+              </div>
             </div>
           </div>
         </div>

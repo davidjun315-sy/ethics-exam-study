@@ -585,7 +585,7 @@ export async function playStage(learner: string, bossId: string, deckIds: string
 
   const seed = crypto.randomUUID();
   const me: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
-  const bs = stageBossStats(stage, card, settings.rarity_mult);
+  const bs = stageBossStats(stage, settings.rarity_mult);
   const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition, battleArtUrl: card.battleArtUrl ?? null };
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
   const r = runBattle(me.map(toFighter), [stageBoss(stage, card, settings.rarity_mult)], seed);

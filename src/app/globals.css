@@ -336,11 +336,16 @@ body {
   -webkit-mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
   mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
 }
-/* 가만히 있을 때: 광택이 천천히 지나감 / 포인터를 올리면 포인터를 따라감 */
-.pcard:not(.is-active) .pcard-foil { animation: pcard-sweep 4.2s ease-in-out infinite; }
-.pcard[data-rarity="rare"]:not(.is-active) .pcard-foil { animation-duration: 5s; }
-.pcard[data-rarity="legendary"]:not(.is-active) .pcard-foil { animation-duration: 3.6s; }
-.pcard.is-active .pcard-foil { transform: translate3d(calc(var(--px) * -45%), calc(var(--py) * -30%), 0); transition: transform 0.08s linear; }
+/* 광택은 항상 천천히 지나감 (포인터를 올려도 멈추지 않음). 포인터를 올리면 그 위치에 빛 반사가 더해짐 */
+.pcard .pcard-foil { animation: pcard-sweep 4.2s ease-in-out infinite; }
+.pcard[data-rarity="rare"] .pcard-foil { animation-duration: 5s; }
+.pcard[data-rarity="legendary"] .pcard-foil { animation-duration: 3.6s; }
+.pcard-glare {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 0.25s ease;
+  background: radial-gradient(circle at calc(50% + var(--px) * 100%) calc(50% + var(--py) * 100%), rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.08) 28%, transparent 52%);
+  mix-blend-mode: soft-light;
+}
+.pcard.is-active .pcard-glare { opacity: 1; }
 @keyframes pcard-sweep {
   0%, 12% { transform: translate3d(34%, 11%, 0); }
   78%, 100% { transform: translate3d(-34%, -11%, 0); }
@@ -516,6 +521,28 @@ body {
 @keyframes bs-stars { to { transform: translateX(-50%) rotate(360deg); } }
 .bs-stars { pointer-events: none; z-index: 35; animation: bs-stars 1.6s linear infinite; text-shadow: 0 0 6px #ffe68a; }
 
+/* 전장 캐릭터 등급 모습: 일반(그대로) · 희귀(푸른 윤곽빛) · 영웅(보랏빛 기운 + 빛가루) · 전설(금빛 기운 + 후광 + 빛가루, 조금 더 크게) */
+.bs-rar > img, .bs-rar > div:last-child { position: relative; z-index: 1; }
+.bs-rar-rare > img, .bs-rar-rare > div:last-child { filter: drop-shadow(0 0 2px #8fc6ff) drop-shadow(0 0 6px rgba(90, 162, 255, .7)); }
+.bs-rar-epic > img, .bs-rar-epic > div:last-child { filter: drop-shadow(0 0 3px #d9b8ff) drop-shadow(0 0 10px rgba(176, 124, 255, .85)); animation: bs-rar-pulse 2.2s ease-in-out infinite; }
+.bs-rar-legendary { transform: scale(1.07); transform-origin: 50% 100%; }
+.bs-rar-legendary > img, .bs-rar-legendary > div:last-child { filter: drop-shadow(0 0 3px #fff3c4) drop-shadow(0 0 12px rgba(255, 201, 74, .95)) drop-shadow(0 0 22px rgba(255, 170, 40, .5)); animation: bs-rar-pulse 1.8s ease-in-out infinite; }
+@keyframes bs-rar-pulse { 0%, 100% { filter: var(--rar-f0, none) brightness(1); } 50% { filter: var(--rar-f0, none) brightness(1.12); } }
+.bs-rar-epic { --rar-f0: drop-shadow(0 0 3px #d9b8ff) drop-shadow(0 0 10px rgba(176, 124, 255, .85)); }
+.bs-rar-legendary { --rar-f0: drop-shadow(0 0 3px #fff3c4) drop-shadow(0 0 12px rgba(255, 201, 74, .95)) drop-shadow(0 0 22px rgba(255, 170, 40, .5)); }
+.bs-rar-floor { position: absolute; left: 50%; bottom: -4%; width: 92%; height: 16%; translate: -50% 0; border-radius: 50%; z-index: 0; pointer-events: none; }
+.bs-rar-rare .bs-rar-floor { background: radial-gradient(ellipse, rgba(90, 162, 255, .55), transparent 70%); }
+.bs-rar-epic .bs-rar-floor { background: radial-gradient(ellipse, rgba(176, 124, 255, .7), transparent 70%); box-shadow: 0 0 0 2px rgba(217, 184, 255, .35); animation: bs-floor 2.2s ease-in-out infinite; }
+.bs-rar-legendary .bs-rar-floor { background: radial-gradient(ellipse, rgba(255, 211, 107, .85), rgba(255, 170, 40, .3) 55%, transparent 72%); box-shadow: 0 0 0 2px rgba(255, 232, 160, .5), 0 0 18px rgba(255, 201, 74, .6); animation: bs-floor 1.8s ease-in-out infinite; }
+@keyframes bs-floor { 0%, 100% { opacity: .75; scale: 1; } 50% { opacity: 1; scale: 1.08; } }
+.bs-rar-motes { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.bs-rar-motes i { position: absolute; bottom: 4%; width: 5px; height: 5px; border-radius: 50%; opacity: 0; animation: bs-mote 2s ease-out infinite; }
+.bs-rar-epic .bs-rar-motes i { background: #e6d2ff; box-shadow: 0 0 6px #b07cff; }
+.bs-rar-legendary .bs-rar-motes i { background: #fff3c4; box-shadow: 0 0 8px #ffc94a; }
+@keyframes bs-mote { 0% { opacity: 0; translate: 0 0; } 20% { opacity: 1; } 100% { opacity: 0; translate: 0 -70%; scale: .4; } }
+.bs-rar-halo { position: absolute; left: 50%; top: -2%; width: 46%; height: 10%; translate: -50% 0; border-radius: 50%; z-index: 0; border: 3px solid rgba(255, 228, 140, .9); box-shadow: 0 0 10px #ffc94a, inset 0 0 8px #ffc94a; animation: bs-halo 2.4s ease-in-out infinite; pointer-events: none; }
+@keyframes bs-halo { 0%, 100% { translate: -50% 0; opacity: .85; } 50% { translate: -50% -6%; opacity: 1; } }
+
 /* 전장 연출 (BattleStage): 위치는 left/top 이 중심점, 시간은 --t(1배속=1, 2배속=0.5) 배 */
 .fx-rays, .fx-ring, .fx-shard, .fx-swing, .fx-crescent, .fx-beam, .fx-orb, .fx-rain, .fx-pillar, .fx-sigil, .fx-ally-glow { position: absolute; pointer-events: none; animation-fill-mode: both; }
 .fx-rays {
@@ -612,7 +639,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bs-idle, .bs-lunge-r, .bs-lunge-l, .bs-hit, .bs-cast, .bs-aura, .bs-slash, .bs-wave, .bs-spark, .bs-heal, .bs-dome, .bs-stars { animation: none !important; }
+  .bs-idle, .bs-lunge-r, .bs-lunge-l, .bs-hit, .bs-cast, .bs-aura, .bs-slash, .bs-wave, .bs-spark, .bs-heal, .bs-dome, .bs-stars,
+  .bs-rar > img, .bs-rar > div:last-child, .bs-rar-floor, .bs-rar-motes i, .bs-rar-halo { animation: none !important; }
   .bs-faint { animation: none !important; filter: grayscale(1) brightness(0.45); opacity: 0.4; }
 }
 

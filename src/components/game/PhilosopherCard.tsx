@@ -192,6 +192,7 @@ export function PhilosopherCard({
             <img src={card.artUrl} alt="" className="pcard-art" loading="lazy" draggable={false} />
           )}
           <div className="pcard-shade" />
+          {fancy && <div className="pcard-glare" aria-hidden />}
           {fancy && (
             <div className="pcard-foilwrap" aria-hidden>
               <div className="pcard-foil" />

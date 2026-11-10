@@ -2,10 +2,12 @@
  * 사상가 도장깨기 (순수 계산: 서버·화면·테스트가 같은 규칙)
  *  - 공개된 사상가마다 한 관. 순서: 분야(동양 → 한국 → 서양 → 사회사상) 안에서 태어난 해 순
  *  - 한 관 = 그 사상가 한 명(보스). 내 배틀 덱 3장과 자동 배틀 (3 vs 1, battle.ts)
- *  - 뒤 관일수록 보스의 등급·레벨·체력·공격 배율이 오른다. 앞 관을 모두 깨야 다음 관이 열린다
+ *  - 보스 레벨 = 관 번호 (매 관 오름), 등급은 일반 → 희귀 → 영웅 → 전설
+ *  - 보스 능력치는 모든 사상가의 평균 기본 능력치로 계산 → 뒤 관이 언제나 앞 관보다 강함 (사상가마다 기본값이 달라도)
+ *  - 앞 관을 모두 깨야 다음 관이 열린다
  */
 import type { Fighter } from "./battle.ts";
-import { DEFAULT_RARITY_MULT, statsFor, type Rarity, type SkillEffect } from "./rules.ts";
+import { DEFAULT_RARITY_MULT, type Rarity, type SkillEffect } from "./rules.ts";
 
 export interface StageCard {
   philosopherId: string;
@@ -25,10 +27,14 @@ export interface CampaignStage {
   tradition: string;
   tier: number; // 0~4 (별 1~5개)
   rarity: Rarity;
+  /** 보스 레벨 (= 관 번호, 매 관 오름) */
   level: number;
-  /** 보스 능력치 = 그 등급·레벨 카드 능력치 × 배율 (보스 혼자 3장과 싸우므로 체력이 큼) */
+  /** 능력치 계산용 레벨 (1 → 카드 최대 레벨, 연속값) */
+  statLevel: number;
+  /** 보스 능력치 = 평균 기본 능력치 × 등급 배율 × 레벨 배율 × 보스 배율 (혼자 3장과 싸우므로 체력이 큼) */
   hpMul: number;
   atkMul: number;
+  base: { atk: number; hp: number };
 }
 
 /** 첫 관 클리어 보상: 보스 사상가 강화 조각 */
@@ -76,9 +82,13 @@ const rarityAt = (t: number): Rarity => (t < 0.2 ? "common" : t < 0.45 ? "rare" 
 const lerp = ([a, b]: [number, number], t: number) => Math.round((a + (b - a) * t) * 100) / 100;
 
 /** 모든 관 */
-export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition">>(cards: T[], maxLevel: number, tune = BOSS_TUNE): CampaignStage[] {
+export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition"> & Partial<Pick<StageCard, "baseAtk" | "baseHp">>>(cards: T[], maxLevel: number, tune = BOSS_TUNE): CampaignStage[] {
   const ordered = orderStageCards(cards);
   const n = ordered.length;
+  const withBase = cards.filter((c) => c.baseAtk && c.baseHp);
+  const base = withBase.length
+    ? { atk: withBase.reduce((s, c) => s + c.baseAtk!, 0) / withBase.length, hp: withBase.reduce((s, c) => s + c.baseHp!, 0) / withBase.length }
+    : { atk: 40, hp: 300 };
   return ordered.map((boss, i) => {
     const t = n > 1 ? i / (n - 1) : 0;
     const tier = Math.min(4, Math.floor(t * 5));
@@ -89,9 +99,11 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
       tradition: boss.tradition,
       tier,
       rarity: rarityAt(t),
-      level: Math.max(1, Math.min(maxLevel, 1 + Math.round(t * (maxLevel - 1)))),
+      level: i + 1,
+      statLevel: 1 + t * (maxLevel - 1),
       hpMul: lerp(tune.hp, t),
       atkMul: lerp(tune.atk, t),
+      base,
     };
   });
 }
@@ -116,14 +128,15 @@ export const canPlayStage = (stages: CampaignStage[], cleared: Set<string>, boss
   return i >= 0 && stageStatuses(stages, cleared)[i] !== "locked";
 };
 
-/** 관 보스 능력치 */
-export function stageBossStats(stage: CampaignStage, c: Pick<StageCard, "baseAtk" | "baseHp">, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
-  const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, stage.rarity, stage.level, mult);
-  return { atk: Math.round(st.atk * stage.atkMul), hp: Math.round(st.hp * stage.hpMul) };
+/** 관 보스 능력치 (평균 기본값 기준이라 관 번호가 클수록 언제나 강함) */
+export function stageBossStats(stage: CampaignStage, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
+  const r = mult[stage.rarity] ?? 1;
+  const lv = 1 + 0.12 * (stage.statLevel - 1); // statsAt 과 같은 레벨 배율 (연속값)
+  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul), hp: Math.round(stage.base.hp * r * lv * stage.hpMul) };
 }
 
 /** 관 보스 → 배틀 참가자 */
 export function stageBoss(stage: CampaignStage, c: StageCard, mult?: Record<Rarity, number>): Fighter {
-  const st = stageBossStats(stage, c, mult);
+  const st = stageBossStats(stage, mult);
   return { key: "foe-0", philosopherId: c.philosopherId, name: c.name, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, scale: stage.hpMul };
 }

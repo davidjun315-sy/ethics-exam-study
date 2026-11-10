@@ -283,8 +283,15 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   const name = (id: string) => byId.get(id)!.name;
   const st = buildCampaign(cards, 5);
   check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,밀,롤스,노직", st.map((x) => name(x.bossId)).join(","));
-  const power = st.map((x) => stageBossStats(x, { baseAtk: 40, baseHp: 300 }));
-  check("관마다 보스 한 명 · 뒤로 갈수록 강해짐 (체력·공격 줄지 않음, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || (p.hp >= power[i - 1].hp && p.atk >= power[i - 1].atk)) && power[9].hp > power[0].hp * 3, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
+  const power = st.map((x) => stageBossStats(x));
+  check("관마다 보스 한 명 · 매 관 더 강해짐 (체력은 매번 늘고 공격은 줄지 않음, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || (p.hp > power[i - 1].hp && p.atk >= power[i - 1].atk)) && power[9].hp > power[0].hp * 3, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
+  check("보스 레벨 = 관 번호 (매 관 오름) · 등급은 내려가지 않음", st.every((x, i) => x.level === i + 1) && st.every((x, i) => i === 0 || ["common", "rare", "epic", "legendary"].indexOf(x.rarity) >= ["common", "rare", "epic", "legendary"].indexOf(st[i - 1].rarity)));
+  {
+    // 사상가마다 기본 능력치가 달라도 뒤 관이 약해지지 않음
+    const uneven = cards.map((c, i) => ({ ...c, baseAtk: 30 + ((i * 13) % 25), baseHp: 220 + ((i * 71) % 160) }));
+    const p2 = buildCampaign(uneven, 5).map((x) => stageBossStats(x));
+    check("사상가 기본값이 제각각이어도 보스는 매 관 강해짐", p2.every((p, i) => i === 0 || p.hp > p2[i - 1].hp));
+  }
   check("보스 등급: 일반 → 희귀 → 영웅 → 전설", st[0].rarity === "common" && st[9].rarity === "legendary" && st.some((x) => x.rarity === "rare") && st.some((x) => x.rarity === "epic"));
   const none = stageStatuses(st, new Set());
   check("처음엔 1관만 열림", none[0] === "current" && none.slice(1).every((x) => x === "locked"));

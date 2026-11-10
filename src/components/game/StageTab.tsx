@@ -10,6 +10,8 @@ import { PhilosopherCard } from "./PhilosopherCard";
 import { initialTeam, TeamPicker } from "./BattleTab";
 import { BattleStage } from "./BattleStage";
 
+const TILE_RING: Record<string, string> = { common: "ring-[#9aa4b5]/70", rare: "ring-[#5aa2ff]", epic: "ring-[#b07cff]", legendary: "ring-[#ffc94a]" };
+const TILE_TEXT: Record<string, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
 const stars = (tier: number) => "★".repeat(tier + 1) + "☆".repeat(4 - tier);
 const tShort = (t: string) => t.replace("윤리", "");
 
@@ -80,6 +82,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
     const nextStage = win && current && current.bossId !== replay.stage.bossId ? current : null;
     return (
       <BattleStage
+        key={replay.id}
         replay={replay}
         tradition={boss?.tradition ?? ""}
         bgUrl={boss ? state.settings.battleBg?.[boss.tradition] : undefined}
@@ -152,7 +155,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   const sel: CampaignStage = stages.find((s) => s.bossId === picked) ?? current ?? stages[stages.length - 1];
   const selStatus: StageStatus = statuses[sel.index];
   const boss = byId.get(sel.bossId)!;
-  const bossStats = stageBossStats(sel, boss, state.settings.rarityMult);
+  const bossStats = stageBossStats(sel, state.settings.rarityMult);
   const teamCards = team.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
   const teamPower = teamCards.reduce((n, o) => ({ atk: n.atk + o.atk, hp: n.hp + o.hp }), { atk: 0, hp: 0 });
   const allClear = clearedCount === stages.length;
@@ -273,10 +276,10 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                     type="button"
                     onClick={() => setPicked(s.bossId)}
                     aria-pressed={on}
-                    aria-label={`${s.no}관 ${c?.name} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
+                    aria-label={`${s.no}관 ${c?.name} · ${RARITY_NAMES[s.rarity]} Lv.${s.level} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
                     className={`relative block w-full rounded-xl text-left ${on ? "ring-2 ring-navy ring-offset-2 ring-offset-surface" : ""}`}
                   >
-                    <Portrait c={c} className={`aspect-[3/4] w-full rounded-xl ${st === "current" ? "ring-2 ring-[#ffd36b] duel-pulse" : ""}`} dim={st === "locked"} />
+                    <Portrait c={c} className={`aspect-[3/4] w-full rounded-xl ring-2 ${st === "current" ? "ring-[#ffd36b] duel-pulse" : TILE_RING[s.rarity]}`} dim={st === "locked"} />
                     <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-bold text-white">{s.no}</span>
                     {st === "cleared" && (
                       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ok text-white shadow">
@@ -284,8 +287,11 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                       </span>
                     )}
                     {st === "locked" && <Lock className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-white/70" aria-hidden />}
-                    <span className={`absolute inset-x-0 bottom-0 truncate rounded-b-xl bg-gradient-to-t from-black/85 to-transparent px-1 pb-1 pt-3 text-center text-[11px] font-bold ${st === "locked" ? "text-white/50" : "text-white"}`}>
-                      {c?.name}
+                    <span className={`absolute inset-x-0 bottom-0 rounded-b-xl bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1 pb-1 pt-4 text-center leading-tight`}>
+                      <span className={`block truncate text-[11px] font-bold ${st === "locked" ? "text-white/60" : "text-white"}`}>{c?.name}</span>
+                      <span className="block truncate text-[9.5px] font-semibold" style={{ color: TILE_TEXT[s.rarity] }}>
+                        {RARITY_NAMES[s.rarity]} Lv.{s.level}
+                      </span>
                     </span>
                   </button>
                 </li>
