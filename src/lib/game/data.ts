@@ -44,7 +44,7 @@ const MESSAGES: Record<string, string> = {
   GAME_NOT_OWNED: "보유하지 않은 카드이거나 이미 사용한 카드입니다.",
   GAME_MAX_LEVEL: "이미 최대 레벨입니다.",
   GAME_LEVEL_CHANGED: "다른 화면에서 이미 강화되었습니다. 새로고침 후 다시 시도하세요.",
-  GAME_NOT_ENOUGH_SHARDS: "강화 조각이 부족합니다.",
+  GAME_NOT_ENOUGH_SHARDS: "강화 재료(강화석·조각)가 부족합니다.",
   GAME_FREE_USED: "무료 뽑기는 계정당 1회입니다. 이미 사용했습니다.",
   GAME_FUSION_COUNT: "합성할 카드 수가 맞지 않습니다.",
   GAME_FUSION_MAX: "전설은 최고 등급이라 더 진화할 수 없습니다.",
@@ -90,6 +90,8 @@ export interface GameSettings {
   /** 도장깨기 전장 배경 (분야 → 그림 주소, 016) */
   battle_bg: Record<string, string>;
   battle_bg_ready: boolean;
+  /** 018: 강화 재료를 강화석 하나로 통일 */
+  stones_unified: boolean;
 }
 const DEFAULT_SETTINGS: GameSettings = {
   draw_cost: 100,
@@ -104,13 +106,22 @@ const DEFAULT_SETTINGS: GameSettings = {
   duel_rules_ready: false,
   battle_bg: {},
   battle_bg_ready: false,
+  stones_unified: false,
 };
 
 /**
  * 게임 설정 · 공개 카드: 모든 학습자에게 같으므로 서버에 저장해 두고 재사용 (메인·퀴즈·게임 화면을 열 때마다 DB 를 여러 번 왕복하지 않게).
  * 관리자가 카드·설정을 저장하면 바로 비운다 (invalidateContent). 관리자 화면은 loadGameSettings 로 항상 최신을 읽는다.
  */
-export const getGameSettings = cached("game-settings", () => loadGameSettings());
+// 설정 모양이 바뀌면 이름(v2)도 바꿔 예전 저장분을 쓰지 않게 한다 (018 stones_unified)
+export const getGameSettings = cached("game-settings-v2", () => loadGameSettings());
+
+/** 쓰기 직전엔 저장분이 아닌 DB 값으로 강화석 통일 여부를 확인 (SQL 018 을 막 실행한 직후에도 맞게). 다르면 저장분을 비운다 */
+async function freshStonesUnified(): Promise<boolean> {
+  const [fresh, saved] = await Promise.all([loadGameSettings(), getGameSettings()]);
+  if (fresh.stones_unified !== saved.stones_unified) invalidateContent();
+  return fresh.stones_unified;
+}
 
 export async function loadGameSettings(): Promise<GameSettings> {
   const { data, error } = await getAdminClient().from("game_settings").select("*").eq("id", 1).maybeSingle();
@@ -129,6 +140,7 @@ export async function loadGameSettings(): Promise<GameSettings> {
     duel_rules_ready: Boolean(data && "duel_rules" in data),
     battle_bg: cleanBattleBg((d as { battle_bg?: unknown }).battle_bg),
     battle_bg_ready: Boolean(data && "battle_bg" in data),
+    stones_unified: Boolean(data && "stones_unified" in data && (data as { stones_unified?: boolean }).stones_unified !== false),
   };
 }
 
@@ -169,7 +181,7 @@ export async function saveDuelRules(rules: DuelRules) {
   invalidateContent();
 }
 
-export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready">) {
+export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready" | "stones_unified">) {
   // 등급이 오르면 능력치도 반드시 오르도록
   const m = s.rarity_mult;
   if (!(m.common > 0 && m.rare > m.common && m.epic > m.rare && m.legendary > m.epic)) throw new GameError("등급 배율은 일반 < 희귀 < 영웅 < 전설 순으로 커야 합니다.");
@@ -301,6 +313,8 @@ export interface GameState {
     rarityMult: Record<Rarity, number>;
     fusionCount: number;
     fusionCost: number;
+    /** 강화 재료가 강화석 하나 (018). false 면 사상가별 조각 */
+    stonesUnified: boolean;
     duelRules: DuelRules;
     battleBg: Record<string, string>;
   };
@@ -326,7 +340,8 @@ type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: 
 export async function getGameState(learner: string): Promise<GameState> {
   const db = getAdminClient();
   const [settings, cards, wallet, uc, col, prof, free, camp] = await Promise.all([
-    getGameSettings(),
+    // 강화석 통일(018) 전이라고 저장돼 있으면 DB 를 다시 확인 → SQL 실행 즉시 반영 (통일 후엔 추가 조회 없음)
+    getGameSettings().then((s) => (s.stones_unified ? s : freshStonesUnified().then((u) => ({ ...s, stones_unified: u })))),
     publishedCards(),
     db.from("game_wallets").select("coins").eq("learner", learner).maybeSingle(),
     db.from("game_user_cards").select("id, philosopher_id, rarity, level, locked, source, created_at").eq("learner", learner).eq("status", "owned").order("created_at"),
@@ -364,6 +379,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       rarityMult: settings.rarity_mult,
       fusionCount: settings.fusion_count,
       fusionCost: settings.fusion_cost,
+      stonesUnified: settings.stones_unified,
       duelRules: settings.duel_rules,
       battleBg: settings.battle_bg,
     },
@@ -396,7 +412,8 @@ export interface FeaturedSummary {
   cardCount: number;
   maxLevel: number;
   freeDraw: boolean;
-  shards: number; // 대표 카드 사상가의 강화 조각
+  shards: number; // 대표 카드 레벨업 재료 보유량 (통일 후 = 강화석, 전 = 그 사상가 조각)
+  stonesUnified: boolean;
   fusable: number; // 대표 카드와 같은 사상가 · 같은 등급의 재료 후보 수 (합성 장수-1 이상일 때만, 아니면 0)
 }
 
@@ -412,7 +429,8 @@ export async function getFeatured(learner: string): Promise<FeaturedSummary | nu
       cardCount: s.cards.length,
       maxLevel: s.settings.maxLevel,
       freeDraw: s.freeDraw.available,
-      shards: f ? (s.shards[f.philosopherId] ?? 0) : 0,
+      shards: f ? (s.settings.stonesUnified ? s.stones.count : (s.shards[f.philosopherId] ?? 0)) : 0,
+      stonesUnified: s.settings.stonesUnified,
       fusable: f && canFuseCard(f, s.owned, s.featuredId, s.settings.fusionCount) ? fusionMaterials(f, s.owned, s.featuredId).length : 0,
     };
   } catch {
@@ -454,15 +472,12 @@ export async function levelUpCard(learner: string, cardId: string, requestId: st
   if (error) throw gameError(error.message);
   if (!row) throw new GameError(MESSAGES.GAME_NOT_OWNED);
   const cost = upgradeCost(row.level as number);
-  const { data, error: e } = await db.rpc("game_level_up", {
-    p_learner: learner,
-    p_card: cardId,
-    p_ref: `upgrade:${requestId}`,
-    p_day: kstDay(),
-    p_from_level: row.level,
-    p_shards: cost.shards,
-    p_coins: cost.coins,
-  });
+  // 018 이후: 강화석으로, 전: 사상가별 조각으로
+  const stones_unified = await freshStonesUnified();
+  const common = { p_learner: learner, p_card: cardId, p_ref: `upgrade:${requestId}`, p_day: kstDay(), p_from_level: row.level, p_coins: cost.coins };
+  const { data, error: e } = stones_unified
+    ? await db.rpc("game_level_up_stones", { ...common, p_stones: cost.shards })
+    : await db.rpc("game_level_up", { ...common, p_shards: cost.shards });
   if (e) throw gameError(e.message);
   return data as { fromLevel: number; level: number; coins: number; replayed: boolean };
 }
@@ -483,11 +498,17 @@ export async function fuseCards(learner: string, baseId: string, materialIds: st
   return { ...r, card: await ownedCard(learner, r.cardId) };
 }
 
-/** 카드 → 같은 사상가 강화 조각 (카드는 소모, 다시 합성에 못 씀) */
+/** 카드 → 강화 재료 (018 이후 강화석, 전에는 같은 사상가 조각). 카드는 소모, 다시 합성에 못 씀 */
 export async function cardToShards(learner: string, cardId: string) {
+  if (await freshStonesUnified()) {
+    const { data, error } = await getAdminClient().rpc("game_card_to_stones", { p_learner: learner, p_card: cardId });
+    if (error) throw gameError(error.message);
+    const d = data as { stonesGained: number; stones: number; philosopherId: string };
+    return { shardsGained: d.stonesGained, shards: d.stones, philosopherId: d.philosopherId, unit: "stones" as const };
+  }
   const { data, error } = await getAdminClient().rpc("game_card_to_shards", { p_learner: learner, p_card: cardId });
   if (error) throw gameError(error.message);
-  return data as { shardsGained: number; shards: number; philosopherId: string };
+  return { ...(data as { shardsGained: number; shards: number; philosopherId: string }), unit: "shards" as const };
 }
 
 export async function setLocked(learner: string, cardId: string, locked: boolean) {

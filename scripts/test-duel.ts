@@ -6,7 +6,7 @@ import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
 import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
 import { buildCampaign, canPlayStage, stageBoss, stageBossStats, stageStatuses, stageStones, type StageCard } from "../src/lib/game/campaign.ts";
 import { chargeAt, runBattle, SKILL_READY, type Fighter } from "../src/lib/game/battle.ts";
-import { isDefaultBase, roleBase } from "../src/lib/game/rules.ts";
+import { isDefaultBase, roleBase, upgradeCost } from "../src/lib/game/rules.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
 import { statsFor, type Rarity, type SkillEffect } from "../src/lib/game/rules.ts";
 
@@ -358,6 +358,35 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   check("새내기 팀으로는 마지막 관을 못 깸 (뽑기·강화가 필요)", wl <= 5, `${wl}/100`);
   const wt = rate("legendary", 5, 9);
   check("전설 Lv.5 팀은 마지막 관도 깰 수 있음", wt >= 15, `${wt}/100`);
+  // 강화석 성장만으로는 보스를 못 넘음: 깬 관 강화석을 덱 3장 레벨업에 모두 쓴 일반 팀 (코인 무제한 가정)
+  {
+    const lvFrom = (stones: number) => {
+      const lv = [1, 1, 1];
+      for (let moved = true; moved; ) {
+        moved = false;
+        const i = lv.indexOf(Math.min(...lv));
+        if (lv[i] < 5 && stones >= upgradeCost(lv[i]).shards) {
+          stones -= upgradeCost(lv[i]).shards;
+          lv[i]++;
+          moved = true;
+        }
+      }
+      return lv;
+    };
+    let stones = 0;
+    let k = 0;
+    for (; k < st.length; k++) {
+      const lv = lvFrom(stones);
+      let w = 0;
+      for (let g = 0; g < 60; g++) {
+        const t = team("common", 1, g).map((f, i) => ({ ...f, ...statsFor({ atk: f.atk, hp: f.hp }, "common", lv[i]) }));
+        if (runBattle(t, [stageBoss(st[k], byId.get(st[k].bossId)!)], `grow${k}-${g}`).winner === "me") w++;
+      }
+      if (w < 30) break;
+      stones += stageStones(k + 1);
+    }
+    check("일반 카드는 강화석만으로 키워도 앞 절반을 못 넘음 (뽑기·합성으로 등급을 올려야 함)", k < st.length / 2, `${k}/${st.length}관에서 막힘`);
+  }
   check("첫 클리어 강화석: 뒤 관일수록 많음 (1관 2개 … 10관 6개)", stageStones(1) === 2 && stageStones(10) === 6 && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n, i, a) => i === 0 || stageStones(n) >= stageStones(a[i - 1])));
 }
 

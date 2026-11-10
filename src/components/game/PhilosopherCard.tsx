@@ -110,6 +110,7 @@ export function PhilosopherCard({
   level = 1,
   shards,
   shardsNeeded,
+  shardsLabel = "조각",
   maxLevel = 5,
   locked = false,
   featured = false,
@@ -128,6 +129,8 @@ export function PhilosopherCard({
   level?: number;
   shards?: number;
   shardsNeeded?: number | null;
+  /** 강화 재료 이름 (통일 후 "강화석") */
+  shardsLabel?: string;
   maxLevel?: number;
   locked?: boolean;
   featured?: boolean;
@@ -265,7 +268,7 @@ export function PhilosopherCard({
                 </div>
                 {shards !== undefined && shardsNeeded !== undefined && (
                   <div className="mt-[1.5cqw] text-right text-[4.6cqw] tabular-nums text-white/60">
-                    {shardsNeeded === null ? "최대 레벨" : `조각 ${shards}/${shardsNeeded}`}
+                    {shardsNeeded === null ? "최대 레벨" : `${shardsLabel} ${shards}/${shardsNeeded}`}
                   </div>
                 )}
               </>

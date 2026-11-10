@@ -1,5 +1,6 @@
 "use client";
 
+import { bankOf } from "@/lib/game/bank";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
@@ -54,7 +55,7 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
     setTab(t);
     window.history.replaceState(null, "", `/quiz/game?tab=${t}`);
   };
-  const levelable = state.owned.filter((o) => o.upgrade && (state.shards[o.philosopherId] ?? 0) >= o.upgrade.shards && state.coins >= o.upgrade.coins).length;
+  const levelable = state.owned.filter((o) => o.upgrade && bankOf(state, o.philosopherId) >= o.upgrade.shards && state.coins >= o.upgrade.coins).length;
   // 합성 가능한 (사상가 · 등급) 묶음 수
   const fusable = new Set(state.owned.filter((o) => canFuseCard(o, state.owned, state.featuredId, state.settings.fusionCount)).map((o) => `${o.philosopherId}:${o.rarity}`)).size;
 
@@ -212,7 +213,7 @@ export function PhilosopherSheet({
             <div>
               <div className="mb-1.5 flex items-baseline justify-between">
                 <h3 className="text-sm font-bold">보유 카드 {copies.length}장</h3>
-                <span className="text-xs text-muted">강화 조각 {state.shards[card.philosopherId] ?? 0}개</span>
+                <span className="text-xs text-muted">{state.settings.stonesUnified ? "강화석" : "강화 조각"} {bankOf(state, card.philosopherId)}개</span>
               </div>
               {copies.length === 0 ? (
                 <p className="rounded-lg bg-surface-2 p-3 text-sm text-muted">아직 없습니다. 카드 뽑기에서 일반~전설 등급으로 나올 수 있어요.</p>
@@ -236,7 +237,7 @@ export function PhilosopherSheet({
                           <button type="button" className="btn !px-2 !py-0.5 text-xs" disabled={featured || busy !== null} onClick={() => act(`f-${c.cardId}`, () => quizApi("/api/game/featured", "POST", { cardId: c.cardId }), "대표 카드로 설정했습니다. 윤리 퀴즈 메인에 표시됩니다.")}>
                             {featured ? "대표 카드" : "대표로"}
                           </button>
-                          <button type="button" className="btn !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => act(`l-${c.cardId}`, () => quizApi("/api/game/lock", "POST", { cardId: c.cardId, locked: !c.locked }), c.locked ? "잠금을 풀었습니다" : "잠갔습니다 (합성 재료·조각 전환에서 보호)")}>
+                          <button type="button" className="btn !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => act(`l-${c.cardId}`, () => quizApi("/api/game/lock", "POST", { cardId: c.cardId, locked: !c.locked }), c.locked ? "잠금을 풀었습니다" : "잠갔습니다 (합성 재료·강화 재료 전환에서 보호)")}>
                             {c.locked ? "잠금 해제" : "잠금"}
                           </button>
                           {c.upgrade && <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => onLevelUp(c.cardId)}>레벨업</button>}
@@ -248,12 +249,12 @@ export function PhilosopherSheet({
                           {!featured && !c.locked && (
                             confirm === c.cardId ? (
                               <span className="flex items-center gap-1 text-xs">
-                                <span className="text-warn">이 카드를 없애고 조각 {SHARDS_FOR_CARD[c.rarity]}개로?</span>
-                                <button type="button" className="btn-danger !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => act(`s-${c.cardId}`, () => quizApi("/api/game/shards", "POST", { cardId: c.cardId }), `강화 조각 +${SHARDS_FOR_CARD[c.rarity]}`)}>바꾸기</button>
+                                <span className="text-warn">이 카드를 없애고 {state.settings.stonesUnified ? "강화석" : "조각"} {SHARDS_FOR_CARD[c.rarity]}개로?</span>
+                                <button type="button" className="btn-danger !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => act(`s-${c.cardId}`, () => quizApi("/api/game/shards", "POST", { cardId: c.cardId }), `${state.settings.stonesUnified ? "강화석" : "강화 조각"} +${SHARDS_FOR_CARD[c.rarity]}`)}>바꾸기</button>
                                 <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => setConfirm(null)}>취소</button>
                               </span>
                             ) : (
-                              <button type="button" className="btn !px-2 !py-0.5 text-xs text-muted" onClick={() => setConfirm(c.cardId)}>조각으로 바꾸기</button>
+                              <button type="button" className="btn !px-2 !py-0.5 text-xs text-muted" onClick={() => setConfirm(c.cardId)}>{state.settings.stonesUnified ? "강화석으로 바꾸기" : "조각으로 바꾸기"}</button>
                             )
                           )}
                         </div>

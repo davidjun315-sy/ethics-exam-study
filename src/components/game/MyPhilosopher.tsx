@@ -25,7 +25,7 @@ const RARITY_TONE: Record<string, string> = {
 
 /**
  * 대표 사상가 카드 위젯 — 메인 홈과 윤리 퀴즈가 같은 데이터(getFeatured: game_profiles.featured_card_id → game_user_cards)를 쓴다.
- * - 카드 성장 = 카드 레벨 + 같은 사상가의 강화 조각 (학습자 레벨·XP 와는 별개)
+ * - 카드 성장 = 카드 레벨 + 강화석 (통일 전: 같은 사상가의 강화 조각) (학습자 레벨·XP 와는 별개)
  * - compact: 메인 홈 (가로형, 핵심 정보만) / full: 윤리 퀴즈 (대사·뽑기·합성·배틀 바로가기)
  */
 export function FeaturedPhilosopher({ game, variant, children }: { game: FeaturedSummary; variant: "compact" | "full"; children?: React.ReactNode }) {
@@ -85,6 +85,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
         featured
         shards={game.shards}
         shardsNeeded={f.upgrade?.shards ?? null}
+        shardsLabel={game.stonesUnified ? "강화석" : "조각"}
         tilt={!compact}
         className={compact ? "" : "card-float"}
       />
@@ -118,7 +119,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
             {f.upgrade ? (
               <>
                 <div className="mb-1 flex justify-between gap-2">
-                  <span>카드 성장 · 강화 조각</span>
+                  <span>카드 성장 · {game.stonesUnified ? "강화석" : "강화 조각"}</span>
                   <span className="num shrink-0 font-semibold text-ink">{game.shards}/{f.upgrade.shards}</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="카드 성장 진행률">

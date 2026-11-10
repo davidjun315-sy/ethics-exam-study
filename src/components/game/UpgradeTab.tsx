@@ -4,12 +4,14 @@ import { useState } from "react";
 import type { GameState, OwnedCard } from "@/lib/game/data";
 import { canUpgrade, RARITY_NAMES, SHARDS_FOR_CARD, statsFor } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
+import { bankName, bankOf } from "@/lib/game/bank";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, Coins } from "./GameApp";
 
-/** 레벨업: 카드마다 레벨이 따로. 같은 사상가의 강화 조각 + 코인 (확정 성공). 등급 진화는 '카드 합성' 탭 */
+/** 레벨업: 카드마다 레벨이 따로. 강화석(통일 전: 같은 사상가의 강화 조각) + 코인 (확정 성공). 등급 진화는 '카드 합성' 탭 */
 export function UpgradeTab({ state, reload, initialCard }: { state: GameState; reload: () => Promise<GameState>; initialCard?: string | null }) {
-  const bank = (o: OwnedCard) => state.shards[o.philosopherId] ?? 0;
+  const unified = state.settings.stonesUnified;
+  const bank = (o: OwnedCard) => bankOf(state, o.philosopherId);
   const ok = (o: OwnedCard) => canUpgrade({ level: o.level, shards: bank(o) }, state.coins, state.settings.maxLevel).ok;
   const sorted = [...state.owned].sort((a, b) => Number(ok(b)) - Number(ok(a)) || byStrength(a, b));
   const [selected, setSelected] = useState<string | null>(initialCard ?? sorted[0]?.cardId ?? null);
@@ -23,8 +25,14 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
 
   const check = card ? canUpgrade({ level: card.level, shards: bank(card) }, state.coins, state.settings.maxLevel) : null;
   const next = card && card.level < state.settings.maxLevel ? statsFor({ atk: card.baseAtk, hp: card.baseHp }, card.rarity, card.level + 1, state.settings.rarityMult) : null;
-  // 같은 사상가의 다른 카드 → 조각 (대표·잠금·이 카드 제외)
-  const spare = card ? state.owned.filter((o) => o.philosopherId === card.philosopherId && o.cardId !== card.cardId && o.cardId !== state.featuredId && !o.locked).sort((a, b) => -byStrength(a, b)) : [];
+  // 다른 카드 → 강화석/조각 (대표·잠금·이 카드 제외). 통일 후엔 어느 사상가 카드든, 약한 카드부터
+  const spare = card
+    ? state.owned
+        .filter((o) => (unified || o.philosopherId === card.philosopherId) && o.cardId !== card.cardId && o.cardId !== state.featuredId && !o.locked)
+        .sort((a, b) => -byStrength(a, b))
+        .slice(0, unified ? 12 : undefined)
+    : [];
+  const unit = unified ? "강화석" : "조각";
 
   async function levelUp() {
     if (!card || busy) return;
@@ -69,7 +77,7 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
     try {
       const r = await quizApi<{ shardsGained: number; shards: number }>("/api/game/shards", "POST", { cardId: o.cardId });
       await reload();
-      setMsg({ ok: true, text: `${RARITY_NAMES[o.rarity]} ${o.name} 카드를 조각 ${r.shardsGained}개로 바꿨습니다 (보유 ${r.shards}개)` });
+      setMsg({ ok: true, text: `${RARITY_NAMES[o.rarity]} ${o.name} 카드를 ${unit} ${r.shardsGained}개로 바꿨습니다 (보유 ${r.shards}개)` });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -96,6 +104,7 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
                 maxLevel={state.settings.maxLevel}
                 shards={bank(o)}
                 shardsNeeded={o.upgrade?.shards ?? null}
+                shardsLabel={unit}
                 featured={o.cardId === state.featuredId}
                 locked2={o.locked}
                 tilt={false}
@@ -115,7 +124,7 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
         <section className="card space-y-4 p-4 lg:sticky lg:top-20 lg:self-start">
           <div className="mx-auto w-44">
             <div key={anim} className={anim ? "rounded-[14px] upgrade-glow" : ""}>
-              <PhilosopherCard card={card} rarity={card.rarity} level={card.level} stats={{ atk: card.atk, hp: card.hp }} maxLevel={state.settings.maxLevel} shards={bank(card)} shardsNeeded={card.upgrade?.shards ?? null} tilt={false} />
+              <PhilosopherCard card={card} rarity={card.rarity} level={card.level} stats={{ atk: card.atk, hp: card.hp }} maxLevel={state.settings.maxLevel} shards={bank(card)} shardsNeeded={card.upgrade?.shards ?? null} shardsLabel={unit} tilt={false} />
             </div>
           </div>
           <div className="text-center">
@@ -135,13 +144,13 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
               </table>
               <div className="grid grid-cols-2 gap-2 text-center text-sm">
                 <div className={`rounded-lg p-2 ${bank(card) >= card.upgrade!.shards ? "bg-ok-soft text-ok" : "bg-surface-2 text-muted"}`}>
-                  {card.name} 조각 <b className="tabular-nums">{bank(card)}/{card.upgrade!.shards}</b>
+                  {bankName(state, card.name)} <b className="tabular-nums">{bank(card)}/{card.upgrade!.shards}</b>
                 </div>
                 <div className={`rounded-lg p-2 ${state.coins >= card.upgrade!.coins ? "bg-ok-soft text-ok" : "bg-surface-2 text-muted"}`}>
                   코인 <b className="tabular-nums">{card.upgrade!.coins}</b>
                 </div>
               </div>
-              {state.stones.ready && (
+              {state.stones.ready && !unified && (
                 <div className="flex items-center gap-2 rounded-lg border border-[#7fd0ff]/40 bg-[#7fd0ff]/10 px-3 py-2 text-sm">
                   <span className="font-semibold text-[#2b7fbf] dark:text-[#9fd8ff]">◆ 강화석 {state.stones.count}</span>
                   {bank(card) < card.upgrade!.shards && state.stones.count > 0 ? (
@@ -166,23 +175,25 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
             <p className="rounded-lg bg-warn-soft p-3 text-center text-sm font-semibold text-warn">최대 레벨입니다. 등급은 &apos;카드 합성&apos;으로 올릴 수 있어요.</p>
           )}
           <div className="border-t border-line pt-3">
-            <h3 className="text-sm font-bold">조각 만들기</h3>
-            <p className="mb-2 text-[11px] text-faint">{card.name}의 다른 카드를 강화 조각으로 바꿉니다 (일반 1 · 희귀 2 · 영웅 4 · 전설 8). 바꾼 카드는 사라져 합성에 쓸 수 없습니다.</p>
+            <h3 className="text-sm font-bold">{unified ? "강화석 만들기" : "조각 만들기"}</h3>
+            <p className="mb-2 text-[11px] text-faint">
+              {unified ? "남는 카드를 강화석으로 바꿉니다. 강화석은 어느 카드 레벨업에나 씁니다" : `${card.name}의 다른 카드를 강화 조각으로 바꿉니다`} (일반 1 · 희귀 2 · 영웅 4 · 전설 8). 바꾼 카드는 사라져 합성에 쓸 수 없습니다.
+            </p>
             {spare.length === 0 ? (
-              <p className="text-xs text-muted">바꿀 수 있는 {card.name} 카드가 없습니다 (대표·잠금 카드는 제외).</p>
+              <p className="text-xs text-muted">바꿀 수 있는 {unified ? "" : `${card.name} `}카드가 없습니다 (대표·잠금 카드는 제외).</p>
             ) : (
               <ul className="space-y-1">
                 {spare.map((o) => (
                   <li key={o.cardId} className="flex flex-wrap items-center gap-2 text-sm">
-                    <span>{RARITY_NAMES[o.rarity]} Lv.{o.level}</span>
+                    <span>{unified && `${o.name} · `}{RARITY_NAMES[o.rarity]} Lv.{o.level}</span>
                     {state.deck.includes(o.cardId) && <span className="rounded bg-navy-soft px-1 text-[10px] text-navy">덱</span>}
                     {confirm === o.cardId ? (
                       <span className="ml-auto flex items-center gap-1">
-                        <button type="button" className="btn-danger !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => toShards(o)}>조각 {SHARDS_FOR_CARD[o.rarity]}개로 바꾸기</button>
+                        <button type="button" className="btn-danger !px-2 !py-0.5 text-xs" disabled={busy !== null} onClick={() => toShards(o)}>{unit} {SHARDS_FOR_CARD[o.rarity]}개로 바꾸기</button>
                         <button type="button" className="btn !px-2 !py-0.5 text-xs" onClick={() => setConfirm(null)}>취소</button>
                       </span>
                     ) : (
-                      <button type="button" className="btn ml-auto !px-2 !py-0.5 text-xs" onClick={() => setConfirm(o.cardId)}>+{SHARDS_FOR_CARD[o.rarity]} 조각</button>
+                      <button type="button" className="btn ml-auto !px-2 !py-0.5 text-xs" onClick={() => setConfirm(o.cardId)}>+{SHARDS_FOR_CARD[o.rarity]} {unit}</button>
                     )}
                   </li>
                 ))}

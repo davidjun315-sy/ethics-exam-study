@@ -110,7 +110,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 {replay.reward.kind === "stones" ? (
                   <>
                     보상: 강화석 +{replay.reward.amount}
-                    <span className="mt-0.5 block text-[11px] font-medium text-[#ffd36b]/80">레벨업 화면에서 어느 사상가에게나 쓸 수 있습니다</span>
+                    <span className="mt-0.5 block text-[11px] font-medium text-[#ffd36b]/80">레벨업 화면에서 어느 카드에나 쓸 수 있습니다</span>
                   </>
                 ) : (
                   <>보상: {boss?.name} 강화 조각 +{replay.reward.amount}</>
@@ -177,7 +177,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
           <div className="flex items-baseline justify-between gap-2">
             <h2 id="campaign-h" className="text-lg font-black">사상가 도장깨기</h2>
             {state.stones.ready && (
-              <span className="ml-auto rounded-full border border-[#7fd0ff]/50 bg-[#7fd0ff]/10 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[#2b7fbf] dark:text-[#9fd8ff]" title="강화석: 레벨업 화면에서 어느 사상가에게나 강화 조각으로 바꿔 씀">
+              <span className="ml-auto rounded-full border border-[#7fd0ff]/50 bg-[#7fd0ff]/10 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[#2b7fbf] dark:text-[#9fd8ff]" title="강화석: 어느 카드 레벨업에나 쓰는 강화 재료">
                 ◆ 강화석 {state.stones.count}
               </span>
             )}
