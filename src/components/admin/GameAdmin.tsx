@@ -9,6 +9,7 @@ import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
 import { PhilosopherCard } from "@/components/game/PhilosopherCard";
 import { DuelRulesForm } from "./DuelRulesForm";
+import { BattleArtPanel } from "./BattleArtPanel";
 
 const STATUS: Record<CandidateRow["status"], { label: string; tone: string }> = {
   ready: { label: "공개 중", tone: "bg-ok-soft text-ok" },
@@ -260,6 +261,7 @@ function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record
           {busy === "gen" ? "Gemini 로 그리는 중… (최대 1~2분)" : "또는 Gemini 로 바로 생성 (실험 · 키 한도에 따라)"}
         </button>
         <p className="text-[11px] leading-4 text-faint">올린 그림은 가운데 기준 3:4 로 잘라 1200×1600 WebP 로 저장합니다.</p>
+        <BattleArtPanel philosopherId={c.philosopherId} name={c.name} originalName={c.originalName} initial={c.card?.battleArtUrl ?? null} cardSaved={Boolean(c.card)} />
       </div>
       {gen && (
         <div className="quiz-rise rounded-xl border border-navy/30 bg-navy-soft/30 p-3 md:col-span-2">

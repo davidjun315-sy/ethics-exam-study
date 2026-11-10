@@ -119,7 +119,7 @@ export function initialTeam(state: GameState): string[] {
 // ---------------------------------------------------------------------
 // 배틀 재생
 // ---------------------------------------------------------------------
-interface UnitState {
+export interface UnitState {
   hp: number;
   max: number;
   dead: boolean;
@@ -127,7 +127,7 @@ interface UnitState {
   stun: boolean;
 }
 
-function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Record<string, UnitState> {
+export function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Record<string, UnitState> {
   const s: Record<string, UnitState> = Object.fromEntries(units.map((u) => [u.key, { hp: u.hp, max: u.hp, dead: false, shield: false, stun: false }]));
   for (const e of events.slice(0, upto)) {
     if (e.t === "attack") {
@@ -147,8 +147,8 @@ function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Reco
   return s;
 }
 
-const EFFECT_COLOR: Record<SkillEffect, string> = { strike: "#ff9a7a", sweep: "#ffb84d", heal: "#7fe0a6", guard: "#8fc6ff", stun: "#d8a6ff" };
-const DURATION: Record<BattleEvent["t"], number> = { attack: 750, skill: 1300, stunned: 650, faint: 550, end: 400 };
+export const EFFECT_COLOR: Record<SkillEffect, string> = { strike: "#ff9a7a", sweep: "#ffb84d", heal: "#7fe0a6", guard: "#8fc6ff", stun: "#d8a6ff" };
+export const DURATION: Record<BattleEvent["t"], number> = { attack: 750, skill: 1300, stunned: 650, faint: 550, end: 400 };
 
 export function BattleArena({
   replay,

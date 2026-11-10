@@ -158,6 +158,8 @@ export interface CardView {
   artBasis: "portrait" | "reconstruction";
   artNote: string;
   published: boolean;
+  /** 전투 캐릭터 (투명 배경 전신, 오른쪽을 봄). 015 전이거나 없으면 null */
+  battleArtUrl?: string | null;
 }
 
 type CardRow = {
@@ -173,6 +175,7 @@ type CardRow = {
   art_note: string;
   published: boolean;
   updated_at: string;
+  battle_art_url?: string | null;
 };
 type PhRow = { id: string; name: string; aliases: string[] | null; original_name: string | null; tradition: string | null; era: string | null };
 
@@ -191,6 +194,7 @@ const toView = (c: CardRow, p: PhRow): CardView => ({
   artBasis: c.art_basis,
   artNote: c.art_note,
   published: c.published,
+  battleArtUrl: c.battle_art_url ?? null,
 });
 
 /** 기출 분석에 주요·비교 사상가로 연결된 사상가 id → 연결 문항 수 */
@@ -479,6 +483,7 @@ export interface BattleCard {
   skillEffect: SkillEffect;
   artUrl: string | null;
   tradition: string;
+  battleArtUrl?: string | null;
 }
 export interface BattleReplay {
   id: string;
@@ -550,9 +555,9 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   if (!canPlayStage(stages, cleared, bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
 
   const seed = crypto.randomUUID();
-  const me: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition }));
+  const me: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
   const bs = stageBossStats(stage, card, settings.rarity_mult);
-  const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition };
+  const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition, battleArtUrl: card.battleArtUrl ?? null };
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
   const r = runBattle(me.map(toFighter), [stageBoss(stage, card, settings.rarity_mult)], seed);
   const win = r.winner === "me";
@@ -703,6 +708,19 @@ export async function saveCard(philosopherId: string, input: CardInput) {
     .from("game_cards")
     .upsert({ philosopher_id: philosopherId, ...input, updated_at: new Date().toISOString() }, { onConflict: "philosopher_id" });
   if (error) throw gameError(error.message);
+}
+
+export const GAME_015_HINT = "전투 캐릭터 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/015_game_battle_art.sql 을 실행하세요.";
+
+/** 관리자: 전투 캐릭터 그림 저장 (null = 지우기). 카드를 먼저 저장해야 함 */
+export async function saveBattleArt(philosopherId: string, url: string | null) {
+  const { data, error } = await getAdminClient()
+    .from("game_cards")
+    .update({ battle_art_url: url, updated_at: new Date().toISOString() })
+    .eq("philosopher_id", philosopherId)
+    .select("philosopher_id");
+  if (error) throw /battle_art_url/.test(error.message) ? new GameError(GAME_015_HINT, 503) : gameError(error.message);
+  if (!data?.length) throw new GameError("카드를 먼저 저장한 뒤 전투 캐릭터를 올리세요.", 409);
 }
 
 /** 관리자: 최초 무료 뽑기 사용 현황 */

@@ -7,7 +7,8 @@ import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageStatuses, type 
 import { RARITY_NAMES } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
-import { BattleArena, initialTeam, TeamPicker } from "./BattleTab";
+import { initialTeam, TeamPicker } from "./BattleTab";
+import { BattleStage } from "./BattleStage";
 
 const stars = (tier: number) => "★".repeat(tier + 1) + "☆".repeat(4 - tier);
 const tShort = (t: string) => t.replace("윤리", "");
@@ -78,18 +79,16 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
     const win = replay.winner === "me";
     const nextStage = win && current && current.bossId !== replay.stage.bossId ? current : null;
     return (
-      <BattleArena
+      <BattleStage
         replay={replay}
-        maxLevel={state.settings.maxLevel}
-        onAgain={() => setReplay(null)}
-        meLabel="내 팀"
+        tradition={boss?.tradition ?? ""}
         title={
           <span className="font-semibold text-[#ffd36b]">
             {replay.stage.no}관 · {boss?.name}
           </span>
         }
         result={
-          <div className="card-enter mx-auto mt-5 max-w-sm rounded-2xl border border-white/15 bg-black/40 p-5 text-center backdrop-blur">
+          <div className="card-enter mx-auto mt-3 max-w-sm rounded-2xl border border-white/15 bg-black/40 p-5 text-center backdrop-blur">
             {win ? (
               <>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ffd36b]">{replay.stage.no}관</div>
