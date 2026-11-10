@@ -4,7 +4,7 @@ import { chooseDuelAction } from "../src/lib/game/duelAi.ts";
 import { activeResonances, duelRulesError, normalizeDuelRules } from "../src/lib/game/duel.ts";
 import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
 import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
-import { buildCampaign, canPlayStage, stageBoss, stageBossStats, stageStatuses, type StageCard } from "../src/lib/game/campaign.ts";
+import { buildCampaign, canPlayStage, stageBoss, stageBossStats, stageStatuses, stageStones, type StageCard } from "../src/lib/game/campaign.ts";
 import { runBattle, type Fighter } from "../src/lib/game/battle.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
 import { statsFor, type Rarity, type SkillEffect } from "../src/lib/game/rules.ts";
@@ -284,7 +284,7 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   const st = buildCampaign(cards, 5);
   check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,밀,롤스,노직", st.map((x) => name(x.bossId)).join(","));
   const power = st.map((x) => stageBossStats(x));
-  check("관마다 보스 한 명 · 매 관 더 강해짐 (체력은 매번 늘고 공격은 줄지 않음, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || (p.hp > power[i - 1].hp && p.atk >= power[i - 1].atk)) && power[9].hp > power[0].hp * 3, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
+  check("관마다 보스 한 명 · 매 관 더 강해짐 (체력은 매번 늘고 공격은 줄지 않음, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || (p.hp > power[i - 1].hp && p.atk >= power[i - 1].atk)) && power[9].hp > power[0].hp * 2.5, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
   check("보스 레벨 = 관 번호 (매 관 오름) · 등급은 내려가지 않음", st.every((x, i) => x.level === i + 1) && st.every((x, i) => i === 0 || ["common", "rare", "epic", "legendary"].indexOf(x.rarity) >= ["common", "rare", "epic", "legendary"].indexOf(st[i - 1].rarity)));
   {
     // 사상가마다 기본 능력치가 달라도 뒤 관이 약해지지 않음
@@ -324,11 +324,14 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     return w;
   };
   const w1 = rate("common", 1, 0);
-  check("새내기 팀(일반 Lv.1 3장)도 1관은 대부분 이김", w1 >= 80, `${w1}/100`);
+  check("새내기 팀(일반 Lv.1 3장)은 1관도 반반 정도 (쉽지 않게)", w1 >= 25 && w1 <= 75, `${w1}/100`);
+  const w3 = rate("common", 1, 2);
+  check("새내기 팀은 3관부터 거의 못 깸 (강화석으로 키워야 함)", w3 <= 25, `${w3}/100`);
   const wl = rate("common", 1, 9);
   check("새내기 팀으로는 마지막 관을 못 깸 (뽑기·강화가 필요)", wl <= 5, `${wl}/100`);
   const wt = rate("legendary", 5, 9);
-  check("전설 Lv.5 팀은 마지막 관도 깰 수 있음", wt >= 25, `${wt}/100`);
+  check("전설 Lv.5 팀은 마지막 관도 깰 수 있음", wt >= 15, `${wt}/100`);
+  check("첫 클리어 강화석: 뒤 관일수록 많음 (1관 2개 … 10관 6개)", stageStones(1) === 2 && stageStones(10) === 6 && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n, i, a) => i === 0 || stageStones(n) >= stageStones(a[i - 1])));
 }
 
 console.log(failed ? `\n${failed}개 실패` : "\n모두 통과");

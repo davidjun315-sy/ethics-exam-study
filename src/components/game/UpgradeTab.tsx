@@ -47,6 +47,22 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
     }
   }
 
+  // 공용 강화석으로 모자란 조각 채우기 (1개 = 1조각)
+  async function fillWithStones(count: number) {
+    if (!card || busy || count < 1) return;
+    setBusy("stones");
+    setMsg(null);
+    try {
+      await quizApi("/api/game/stones", "POST", { philosopherId: card.philosopherId, count });
+      await reload();
+      setMsg({ ok: true, text: `강화석 ${count}개를 ${card.name} 조각으로 바꿨습니다.` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function toShards(o: OwnedCard) {
     setBusy(o.cardId);
     setMsg(null);
@@ -125,6 +141,23 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
                   코인 <b className="tabular-nums">{card.upgrade!.coins}</b>
                 </div>
               </div>
+              {state.stones.ready && (
+                <div className="flex items-center gap-2 rounded-lg border border-[#7fd0ff]/40 bg-[#7fd0ff]/10 px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#2b7fbf] dark:text-[#9fd8ff]">◆ 강화석 {state.stones.count}</span>
+                  {bank(card) < card.upgrade!.shards && state.stones.count > 0 ? (
+                    <button
+                      type="button"
+                      className="btn ml-auto !py-1 text-xs font-semibold"
+                      disabled={busy !== null}
+                      onClick={() => fillWithStones(Math.min(state.stones.count, card.upgrade!.shards - bank(card)))}
+                    >
+                      {busy === "stones" ? "바꾸는 중…" : `강화석 ${Math.min(state.stones.count, card.upgrade!.shards - bank(card))}개로 조각 채우기`}
+                    </button>
+                  ) : (
+                    <span className="ml-auto text-[11px] text-muted">{state.stones.count ? "조각이 충분합니다" : "도장깨기에서 얻을 수 있어요"}</span>
+                  )}
+                </div>
+              )}
               <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={!check?.ok || busy !== null} onClick={levelUp}>
                 {busy === "up" ? "레벨업 중…" : check?.ok ? "레벨업 (확정 성공)" : `레벨업 불가 · ${check?.reason}`}
               </button>

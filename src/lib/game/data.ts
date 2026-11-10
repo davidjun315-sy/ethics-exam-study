@@ -8,7 +8,7 @@ import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleE
 import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
-import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats } from "./campaign";
+import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats, stageStones } from "./campaign";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -308,6 +308,8 @@ export interface GameState {
   duel: { ready: boolean; wins: number; losses: number; draws: number };
   /** 논쟁 대전 덱 (보유 카드 id, 비어 있으면 자동) */
   duelDeck: string[];
+  /** 공용 강화석 (도장깨기 보상, 어느 사상가의 강화 조각으로든 바꿈). ready=false 면 017 적용 전 */
+  stones: { ready: boolean; count: number };
   /** 사상가 도장깨기 (ready=false 면 014 적용 전) */
   campaign: { ready: boolean; cleared: { id: string; at: string; turns: number | null }[] };
   freeDraw: { available: boolean };
@@ -371,6 +373,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       losses: (p as { duel_losses?: number } | null)?.duel_losses ?? 0,
       draws: (p as { duel_draws?: number } | null)?.duel_draws ?? 0,
     },
+    stones: { ready: Boolean(p && "stones" in p), count: (p as { stones?: number } | null)?.stones ?? 0 },
     campaign: {
       ready: !camp.error,
       cleared: ((camp.data ?? []) as { philosopher_id: string; cleared_at: string; turns: number | null }[]).map((c) => ({ id: c.philosopher_id, at: c.cleared_at, turns: c.turns })),
@@ -576,9 +579,9 @@ export const GAME_014_HINT = "사상가 도장깨기 업데이트가 아직 적�
 
 export interface StageReplay extends BattleReplay {
   stage: { bossId: string; no: number; total: number };
-  /** 이번에 처음 깼으면 보스 강화 조각 */
+  /** 이번에 처음 깼으면 보상: 공용 강화석(017) 또는 보스 강화 조각(017 전) */
   firstClear: boolean;
-  shards: number;
+  reward: { kind: "stones" | "shards"; amount: number } | null;
   cleared: number; // 이번 결과까지 깬 관 수
 }
 
@@ -615,7 +618,10 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   await db.from("game_profiles").upsert({ learner, deck_cards: deckIds, updated_at: new Date().toISOString() }, { onConflict: "learner" });
   let firstClear = false;
   if (win) {
-    const { data: ok, error: e } = await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_shards: STAGE_CLEAR_SHARDS });
+    const withStones = state.stones.ready;
+    const { data: ok, error: e } = withStones
+      ? await db.rpc("game_campaign_clear_stones", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_stones: stageStones(stage.no) })
+      : await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_shards: STAGE_CLEAR_SHARDS });
     if (e) throw /game_campaign/.test(e.message) ? new GameError(GAME_014_HINT, 503) : gameError(e.message);
     firstClear = ok === true;
     cleared.add(bossId);
@@ -631,9 +637,27 @@ export async function playStage(learner: string, bossId: string, deckIds: string
     record: state.record,
     stage: { bossId, no: stage.no, total: stages.length },
     firstClear,
-    shards: firstClear ? STAGE_CLEAR_SHARDS : 0,
+    reward: firstClear ? (state.stones.ready ? { kind: "stones", amount: stageStones(stage.no) } : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
     cleared: stages.filter((x) => cleared.has(x.bossId)).length,
   };
+}
+
+export const GAME_017_HINT = "강화석 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/017_game_stones.sql 을 실행하세요.";
+
+/** 공용 강화석 → 그 사상가의 강화 조각 (1개 = 1조각). 보유 카드가 있는 사상가에게만 */
+export async function spendStones(learner: string, philosopherId: string, count: number): Promise<{ stones: number; shards: number }> {
+  if (!Number.isInteger(count) || count < 1 || count > 999) throw new GameError("강화석 개수를 확인하세요.");
+  const state = await getGameState(learner);
+  if (!state.stones.ready) throw new GameError(GAME_017_HINT, 503);
+  if (!state.owned.some((o) => o.philosopherId === philosopherId)) throw new GameError("보유한 사상가에게만 강화석을 쓸 수 있습니다.");
+  if (state.stones.count < count) throw new GameError(`강화석이 모자랍니다 (보유 ${state.stones.count}개).`);
+  const { data, error } = await getAdminClient().rpc("game_use_stones", { p_learner: learner, p_philosopher: philosopherId, p_count: count });
+  if (error) {
+    if (/GAME_STONES_SHORT/.test(error.message)) throw new GameError("강화석이 모자랍니다.");
+    if (/game_use_stones/.test(error.message)) throw new GameError(GAME_017_HINT, 503);
+    throw gameError(error.message);
+  }
+  return { stones: data as number, shards: (state.shards[philosopherId] ?? 0) + count };
 }
 
 function hashSeed(s: string): number {

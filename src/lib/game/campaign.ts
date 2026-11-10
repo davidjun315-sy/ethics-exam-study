@@ -37,8 +37,10 @@ export interface CampaignStage {
   base: { atk: number; hp: number };
 }
 
-/** 첫 관 클리어 보상: 보스 사상가 강화 조각 */
+/** 첫 관 클리어 보상 (017 전): 보스 사상가 강화 조각 */
 export const STAGE_CLEAR_SHARDS = 3;
+/** 첫 관 클리어 보상 (017): 공용 강화석 — 어느 사상가에게나 그 사상가의 강화 조각으로 바꿔 씀. 뒤 관일수록 많이 */
+export const stageStones = (no: number) => 1 + Math.ceil(no / 2);
 
 const TRADITION_ORDER = ["동양윤리", "한국윤리", "서양윤리", "사회사상"];
 
@@ -75,7 +77,7 @@ export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "nam
 }
 
 /** 보스 배율: 첫 관 → 마지막 관 (시뮬레이션으로 정함, scripts/test-duel.ts) */
-export const BOSS_TUNE = { hp: [1.8, 2.4] as [number, number], atk: [0.8, 0.8] as [number, number] };
+export const BOSS_TUNE = { hp: [2.3, 2.4] as [number, number], atk: [0.9, 0.85] as [number, number] };
 /** 진행도(0~1)에 따른 보스 등급: 앞 20% 일반 · 45% 까지 희귀 · 75% 까지 영웅 · 나머지 전설 */
 const rarityAt = (t: number): Rarity => (t < 0.2 ? "common" : t < 0.45 ? "rare" : t < 0.75 ? "epic" : "legendary");
 

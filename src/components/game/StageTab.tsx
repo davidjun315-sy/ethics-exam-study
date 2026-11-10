@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Heart, Lock, Swords } from "lucide-react";
 import type { CardView, GameState, StageReplay } from "@/lib/game/data";
-import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageStatuses, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
+import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageStatuses, stageStones, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
 import { RARITY_NAMES } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
@@ -105,9 +105,16 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <p className="mt-1 text-sm text-white/70">{boss?.name} · 아직 버거운 상대입니다. 카드를 뽑고 레벨업·합성으로 팀을 키워 다시 도전하세요.</p>
               </>
             )}
-            {replay.firstClear && (
+            {replay.firstClear && replay.reward && (
               <p className="mt-3 rounded-lg bg-[#ffd36b]/15 px-3 py-2 text-sm font-bold text-[#ffd36b]">
-                보상: {boss?.name} 강화 조각 +{replay.shards}
+                {replay.reward.kind === "stones" ? (
+                  <>
+                    보상: 강화석 +{replay.reward.amount}
+                    <span className="mt-0.5 block text-[11px] font-medium text-[#ffd36b]/80">레벨업 화면에서 어느 사상가에게나 쓸 수 있습니다</span>
+                  </>
+                ) : (
+                  <>보상: {boss?.name} 강화 조각 +{replay.reward.amount}</>
+                )}
               </p>
             )}
             {win && !replay.firstClear && <p className="mt-2 text-xs text-white/60">이미 깬 관입니다 (보상은 처음 한 번)</p>}
@@ -169,6 +176,11 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         <div>
           <div className="flex items-baseline justify-between gap-2">
             <h2 id="campaign-h" className="text-lg font-black">사상가 도장깨기</h2>
+            {state.stones.ready && (
+              <span className="ml-auto rounded-full border border-[#7fd0ff]/50 bg-[#7fd0ff]/10 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[#2b7fbf] dark:text-[#9fd8ff]" title="강화석: 레벨업 화면에서 어느 사상가에게나 강화 조각으로 바꿔 씀">
+                ◆ 강화석 {state.stones.count}
+              </span>
+            )}
             <span className="text-sm font-bold tabular-nums">
               <span className="text-navy">{clearedCount}</span> / {stages.length}관
             </span>
@@ -177,7 +189,11 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
             <div className="h-full rounded-full bg-gradient-to-r from-navy to-[#ffc94a] transition-[width] duration-700" style={{ width: `${(clearedCount / stages.length) * 100}%` }} />
           </div>
           <p className="mt-1.5 text-xs text-muted">
-            {allClear ? "모든 사상가를 이겼습니다! 깬 관은 다시 도전할 수 있습니다." : `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 그 사상가의 강화 조각 ${STAGE_CLEAR_SHARDS}개.`}
+            {allClear
+              ? "모든 사상가를 이겼습니다! 깬 관은 다시 도전할 수 있습니다."
+              : state.stones.ready
+                ? `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 강화석(어느 사상가에게나 쓰는 강화 재료)을 받습니다.`
+                : `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 그 사상가의 강화 조각 ${STAGE_CLEAR_SHARDS}개.`}
           </p>
         </div>
 
@@ -216,6 +232,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <Lock className="h-3.5 w-3.5" aria-hidden /> 앞 관을 깨면 열립니다
               </span>
             )}
+            {selStatus !== "cleared" && state.stones.ready && <span className="text-xs text-[#9fd8ff]">첫 클리어 ◆ 강화석 {stageStones(sel.no)}</span>}
             <button
               type="button"
               className={`ml-auto inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-black ${selStatus === "current" ? "bg-[#ffd36b] text-[#2a1d00] hover:bg-[#ffe08f]" : "bg-white/15 hover:bg-white/25"} disabled:opacity-40`}

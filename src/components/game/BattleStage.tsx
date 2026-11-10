@@ -17,10 +17,11 @@ const RING: Record<Rarity, string> = { common: "#b9c0cb", rare: "#5aa2ff", epic:
 const RAR_TEXT: Record<Rarity, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
 const RARITY_LABEL: Record<Rarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
 // 내 팀 자리 (전장 안 %, 아래쪽일수록 앞) · 크기
+// 아군 3명은 모두 같은 크기 (원근 없이), 겹치지 않게 앞뒤로 엇갈려 배치
 const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
-  { left: 17, bottom: 3, scale: 0.95 },
-  { left: 4, bottom: 21, scale: 0.8 },
-  { left: 35, bottom: 23, scale: 0.78 },
+  { left: 19, bottom: 4, scale: 0.86 },
+  { left: 2, bottom: 20, scale: 0.86 },
+  { left: 37, bottom: 20, scale: 0.86 },
 ];
 const BOSS_SLOT = { right: 4, bottom: 5, scale: 1.55 };
 
@@ -311,7 +312,8 @@ export function BattleStage({
         <div className="absolute -bottom-[3%] left-1/2 h-[9%] w-[80%] -translate-x-1/2 rounded-[50%] bg-black/45 blur-[2px]" />
         {/* 몸 */}
         <div className={`relative h-full ${s.dead ? "" : "bs-idle"}`} style={{ animationDelay: `${-i * 0.37}s` }}>
-          <div key={`${u.key}-${idx}-${hit ? 1 : 0}`} className={`h-full ${anim}`}>
+          {/* 쓰러진 뒤에는 key 를 고정해 쓰러지는 동작이 사건마다 다시 재생되지 않게 */}
+          <div key={s.dead ? `${u.key}-dead` : `${u.key}-${idx}-${hit ? 1 : 0}`} className={`h-full ${anim}`}>
             <div className={`h-full ${isActor && skill ? "bs-aura" : ""}`} style={isActor && skill && theme ? { ["--aura" as string]: theme.colors[0] } : undefined}>
               <div className={`bs-rar bs-rar-${u.rarity} relative h-full`}>
                 {/* 등급 기운: 바닥 빛 · 뒤 광채 · (영웅·전설) 떠오르는 빛가루 · (전설) 후광 */}
