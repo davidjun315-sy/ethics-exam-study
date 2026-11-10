@@ -4,6 +4,7 @@ import { chooseDuelAction } from "../src/lib/game/duelAi.ts";
 import { activeResonances, duelRulesError, normalizeDuelRules } from "../src/lib/game/duel.ts";
 import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
 import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
+import { buildCampaign, canPlayStage, stageDeck, stageStatuses, type StageCard } from "../src/lib/game/campaign.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
 import { statsFor, type Rarity, type SkillEffect } from "../src/lib/game/rules.ts";
 
@@ -270,6 +271,38 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   let s = setupFixed([west("w1"), west("w2"), card("e1", { tradition: "동양윤리", effect: "guard" })], []);
   for (const uid of ["w1", "w2", "e1"]) s = step(s, "me", { t: "play", uid });
   check("켜진 공명 목록: 서양 2명 → [서양윤리], 동양 1명 → 꺼짐", JSON.stringify(activeResonances(s, "me")) === JSON.stringify(["서양윤리"]) && activeResonances(s, "foe").length === 0);
+}
+
+// ---------------- 사상가 도장깨기 ----------------
+{
+  const list: [string, string][] = [["칸트", "서양윤리"], ["공자", "동양윤리"], ["이이", "한국윤리"], ["맹자", "동양윤리"], ["롤스", "사회사상"], ["플라톤", "서양윤리"], ["이황", "한국윤리"], ["주희", "동양윤리"]];
+  const EFF2 = ["strike", "sweep", "heal", "guard", "stun"] as const;
+  const cards: StageCard[] = list.map(([n, t], i) => ({ philosopherId: `p${i}`, name: n, tradition: t, baseAtk: 40, baseHp: 300, skillEffect: EFF2[i % 5], skillName: "s", artUrl: null }));
+  const name = (id: string) => cards.find((c) => c.philosopherId === id)!.name;
+  const st = buildCampaign(cards, 5);
+  check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,롤스", st.map((x) => name(x.bossId)).join(","));
+  check("동료 3명은 보스와 다른 사상가 · 같은 분야 우선", st.every((x) => x.allyIds.length === 3 && !x.allyIds.includes(x.bossId)) && st[0].allyIds.slice(0, 2).map(name).sort().join() === "맹자,주희", st[0].allyIds.map(name).join(","));
+  check("뒤 관일수록 어려움 (등급·레벨·능력치 배율·컴퓨터)", st[0].tier <= st[7].tier && st[0].level <= st[7].level && st[0].power < st[7].power && st[0].ai === "easy" && st[7].ai === "hard");
+  const deck = stageDeck(st[0], new Map(cards.map((c) => [c.philosopherId, c])), DEFAULT_DUEL_RULES);
+  check("관 덱: 12장 = 보스 3장 + 동료 3명 × 3장", deck.length === 12 && deck.filter((c) => c.philosopherId === st[0].bossId).length === 3 && new Set(deck.map((c) => c.philosopherId)).size === 4);
+  const none = stageStatuses(st, new Set());
+  check("처음엔 1관만 열림", none[0] === "current" && none.slice(1).every((x) => x === "locked"));
+  const two = new Set([st[0].bossId, st[1].bossId]);
+  const s2 = stageStatuses(st, two);
+  check("1·2관을 깨면 3관이 열리고 깬 관은 다시 도전 가능", s2[0] === "cleared" && s2[1] === "cleared" && s2[2] === "current" && s2[3] === "locked" && canPlayStage(st, two, st[0].bossId) && canPlayStage(st, two, st[2].bossId) && !canPlayStage(st, two, st[3].bossId));
+  // 새내기(일반 Lv.1 덱, 자동=어려움 규칙)도 1관은 대부분 깬다
+  let w = 0;
+  for (let g = 0; g < 80; g++) {
+    const me = Array.from({ length: 12 }, (_, i) => card(`n${i}`, { effect: EFF2[i % 5], tradition: TRADS[i % 4] }));
+    if (simGame(me, stageDeck(st[0], new Map(cards.map((c) => [c.philosopherId, c])), DEFAULT_DUEL_RULES), `camp${g}`, DEFAULT_DUEL_RULES, { me: "hard", foe: st[0].ai }).winner === "me") w++;
+  }
+  check("새내기 덱(일반 Lv.1)으로 1관 승률 70% 이상", w >= 56, `${w}/80`);
+  let lw = 0;
+  for (let g = 0; g < 80; g++) {
+    const me = Array.from({ length: 12 }, (_, i) => card(`n${i}`, { effect: EFF2[i % 5], tradition: TRADS[i % 4] }));
+    if (simGame(me, stageDeck(st[7], new Map(cards.map((c) => [c.philosopherId, c])), DEFAULT_DUEL_RULES), `camp-last${g}`, DEFAULT_DUEL_RULES, { me: "hard", foe: st[7].ai }).winner === "me") lw++;
+  }
+  check("새내기 덱으로는 마지막 관을 거의 못 깸 (수집·강화가 필요)", lw <= 8, `${lw}/80`);
 }
 
 console.log(failed ? `\n${failed}개 실패` : "\n모두 통과");

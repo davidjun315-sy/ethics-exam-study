@@ -31,10 +31,12 @@ import { RARITY_NAMES, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { DeckSummary, duelCardOf, FRAME, HandCard, shortTradition } from "./DuelParts";
 import { DuelDeckBuilder } from "./DuelDeckBuilder";
+import { CampaignMap, useCampaign } from "./DuelCampaign";
 
 interface Setup {
   duelId: string;
   difficulty: Difficulty;
+  stage?: { bossId: string; no: number } | null;
   me: DuelCardDef[];
   foe: DuelCardDef[];
   seed: string;
@@ -44,6 +46,7 @@ interface Outcome {
   result: "win" | "lose" | "draw";
   turns: number;
   record: { wins: number; losses: number; draws: number };
+  stage?: { bossId: string; no: number; cleared: boolean; firstClear: boolean; shards: number } | null;
 }
 interface Saved extends Setup {
   log: DuelAction[];
@@ -66,7 +69,7 @@ const store = (v: Saved | null) => {
   } catch {}
 };
 
-/** 논쟁 대전: 로비 → 대전 → 결과 */
+/** 논쟁 대전: 도장깨기 지도(로비) → 대전(자동) → 결과 */
 export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [setup, setSetup] = useState<Setup | null>(null);
@@ -77,6 +80,7 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [building, setBuilding] = useState(false);
   const rules = state.settings.duelRules;
+  const campaign = useCampaign(state);
 
   // 이어 하기 (새로고침해도 진행 중인 대전을 이어서)
   useEffect(() => {
@@ -99,29 +103,37 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
       </section>
     );
 
-  async function start() {
+  async function start(body: { difficulty: Difficulty } | { stage: string }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await quizApi<Setup>("/api/game/duel", "POST", { difficulty });
+      const r = await quizApi<Setup>("/api/game/duel", "POST", body);
       setResumeLog([]);
       setOutcome(null);
       setSetup(r);
       store({ ...r, log: [] });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setSetup(null);
     } finally {
       setBusy(false);
     }
   }
 
-  if (setup)
+  if (setup) {
+    const bossName = setup.stage ? campaign.byId.get(setup.stage.bossId)?.name : undefined;
+    // 다음 관: 결과를 받은 뒤 다시 읽은 상태 기준
+    const cur = setup.stage && outcome?.stage?.cleared ? campaign.current : null;
+    const next = cur && cur.bossId !== setup.stage?.bossId ? cur : null;
     return (
       <DuelBoard
         key={setup.duelId}
         setup={setup}
         initialLog={resumeLog}
         outcome={outcome}
+        foeName={bossName ? `${bossName} 학파` : "상대 논자"}
+        progress={setup.stage ? { cleared: campaign.clearedCount, total: campaign.stages.length } : null}
+        nextName={next ? campaign.byId.get(next.bossId)?.name ?? null : null}
         onOutcome={(o) => {
           setOutcome(o);
           store(null);
@@ -138,12 +150,19 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
           setBuilding(true);
         }}
         onAgain={() => {
+          const again = setup.stage ? { stage: setup.stage.bossId } : { difficulty: setup.difficulty };
           setSetup(null);
           setOutcome(null);
-          start();
+          start(again);
         }}
+        onNext={next ? () => {
+          setSetup(null);
+          setOutcome(null);
+          start({ stage: next.bossId });
+        } : undefined}
       />
     );
+  }
 
   if (building) return <DuelDeckBuilder state={state} onClose={() => setBuilding(false)} onSaved={reload} />;
 
@@ -156,62 +175,13 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
   })();
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-      <section className="card space-y-4 p-4 sm:p-5">
-        <div>
-          <h2 className="text-lg font-black">논쟁 대전</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">
-            사유력으로 사상가를 내고, 상대 사상가와 논자를 공격하세요. 상대 논자의 신념 {rules.heroHp}을 먼저 0으로 만들면 승리합니다.
-          </p>
-        </div>
-        <ul className="grid gap-2 text-[13px] leading-5 text-muted sm:grid-cols-2">
-          <li><b className="text-ink">사유력</b> 턴마다 최대치 +1 (최대 {rules.maxMana}). 비용: {costText}</li>
-          <li><b className="text-ink">필드</b> 내 쪽 최대 {rules.fieldSize}명. 낸 턴에는 공격할 수 없습니다</li>
-          <li><b className="text-ink">수호</b> 상대에 수호가 있으면 그 사상가부터 공격해야 합니다</li>
-          <li><b className="text-ink">공명</b> 같은 분야 2명 이상: {Object.entries(RESONANCE).map(([k, v]) => `${k.replace("윤리", "")} ${v}`).join(" · ")}</li>
-        </ul>
-        <div>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-sm font-bold">
-              내 덱 {custom ? `(직접 ${custom}장${preview.length > custom ? ` + 자동 ${preview.length - custom}장` : ""})` : `(자동 · 강한 카드 ${preview.length}장)`}
-            </h3>
-            <button type="button" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold hover:bg-surface-2" onClick={() => setBuilding(true)}>
-              덱 만들기
-            </button>
-          </div>
-          <div className="mb-3">
-            <DeckSummary deck={preview} rules={rules} />
-          </div>
-          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
-            {preview.map((c) => (
-              <HandCard key={c.uid} c={c} playable compact />
-            ))}
-          </div>
-          <p className="mt-1.5 text-[11px] text-faint">보유 카드가 {rules.deckSize}장보다 적으면 같은 카드를 여러 장 넣습니다. 같은 분야 사상가를 모으면 공명을 자주 켤 수 있습니다.</p>
-        </div>
-      </section>
-      <aside className="card space-y-4 p-4 lg:sticky lg:top-20 lg:self-start">
-        <div>
-          <h3 className="mb-2 text-sm font-semibold">상대 난이도</h3>
-          <div className="grid grid-cols-3 gap-1.5">
-            {(Object.keys(DIFFICULTY_NAMES) as Difficulty[]).map((d) => (
-              <button key={d} type="button" onClick={() => setDifficulty(d)} aria-pressed={difficulty === d} className={`rounded-lg border px-2 py-2 text-sm ${difficulty === d ? "border-navy bg-navy-soft font-bold text-navy" : "border-line text-muted"}`}>
-                {DIFFICULTY_NAMES[d]}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1.5 text-[11px] text-faint">상대 등급 구성은 내 덱과 같고, 레벨은 내 덱 평균 {difficulty === "easy" ? "−1" : difficulty === "hard" ? "+1" : "그대로"}.</p>
-        </div>
-        <div className="flex justify-between rounded-lg bg-surface-2 p-3 text-sm">
-          <span className="text-muted">논쟁 대전 전적</span>
-          <span>
-            <b className="text-ok">{state.duel.wins}승</b> <b className="text-danger">{state.duel.losses}패</b>
-            {state.duel.draws ? <b className="text-muted"> {state.duel.draws}무</b> : null}
-          </span>
-        </div>
+      <div className="min-w-0 space-y-4">
+        {!state.duel.ready && <p className="card p-4 text-sm text-warn">관리자가 논쟁 대전 업데이트(012)를 적용하면 열립니다.</p>}
+        {state.duel.ready && !state.campaign.ready && <p className="card p-4 text-sm text-warn">관리자가 도장깨기 업데이트(014)를 적용하면 관에 도전할 수 있습니다. 그동안은 연습 대전을 할 수 있습니다.</p>}
         {saved && (
           <button
             type="button"
-            className="btn w-full py-2.5"
+            className="card flex w-full items-center justify-between gap-2 border-[#ffd36b]/50 p-4 text-left"
             onClick={() => {
               const { log, ...rest } = saved;
               setResumeLog(log);
@@ -219,15 +189,75 @@ export function DuelTab({ state, reload, goDraw }: { state: GameState; reload: (
               setSetup(rest);
             }}
           >
-            진행 중인 대전 이어 하기 ({DIFFICULTY_NAMES[saved.difficulty]})
+            <span>
+              <span className="block text-sm font-bold">진행 중인 대전 이어 하기</span>
+              <span className="text-xs text-muted">{saved.stage ? `${saved.stage.no}관 · ${campaign.byId.get(saved.stage.bossId)?.name ?? ""} 학파` : `연습 대전 · ${DIFFICULTY_NAMES[saved.difficulty]}`}</span>
+            </span>
+            <span className="btn-primary px-4 py-2 text-sm">이어 하기</span>
           </button>
         )}
-        <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={busy || !state.duel.ready} onClick={start}>
-          {busy ? "상대를 찾는 중…" : "대전 시작"}
-        </button>
-        {!state.duel.ready && <p className="text-xs text-warn">관리자가 논쟁 대전 업데이트(012)를 적용하면 열립니다.</p>}
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <p className="text-[11px] leading-5 text-faint">대전에는 코인 보상이 없습니다 (코인은 학습으로만). 결과는 서버가 기록을 다시 계산해 확정합니다.</p>
+        <CampaignMap state={state} view={campaign} busy={busy || !state.duel.ready} onStart={(bossId) => start({ stage: bossId })} />
+        {error && <p className="card p-3 text-sm text-danger" role="alert">{error}</p>}
+      </div>
+
+      <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <section className="card space-y-3 p-4">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-sm font-bold">
+              내 덱 <span className="font-normal text-muted">{custom ? `직접 ${custom}장${preview.length > custom ? ` + 자동 ${preview.length - custom}장` : ""}` : `자동 · 강한 카드 ${preview.length}장`}</span>
+            </h3>
+            <button type="button" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold hover:bg-surface-2" onClick={() => setBuilding(true)}>
+              덱 만들기
+            </button>
+          </div>
+          <DeckSummary deck={preview} rules={rules} />
+          <div className="grid grid-cols-6 gap-1">
+            {preview.map((c) => (
+              <span key={c.uid} className={`relative block aspect-[3/4] overflow-hidden rounded-md ring-1 ${FRAME[c.rarity]}`} title={`${c.name} · ${RARITY_NAMES[c.rarity]} Lv.${c.level}`}>
+                {c.artUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.artUrl} alt="" className="h-full w-full object-cover object-[center_18%]" loading="lazy" draggable={false} />
+                ) : (
+                  <span className="flex h-full items-center justify-center bg-[#1a2234] text-xs font-bold text-white/40">{c.name.slice(0, 1)}</span>
+                )}
+                <span className="absolute left-0.5 top-0.5 rounded bg-[#3b6fd8] px-1 text-[9px] font-black text-white">{c.cost}</span>
+              </span>
+            ))}
+          </div>
+          <div className="flex justify-between rounded-lg bg-surface-2 p-2.5 text-sm">
+            <span className="text-muted">논쟁 대전 전적</span>
+            <span>
+              <b className="text-ok">{state.duel.wins}승</b> <b className="text-danger">{state.duel.losses}패</b>
+              {state.duel.draws ? <b className="text-muted"> {state.duel.draws}무</b> : null}
+            </span>
+          </div>
+        </section>
+
+        <details className="card group p-4">
+          <summary className="cursor-pointer list-none text-sm font-bold">
+            연습 대전 · 규칙 <span className="font-normal text-muted">(전적만 남고 관 기록은 없음)</span>
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(DIFFICULTY_NAMES) as Difficulty[]).map((d) => (
+                <button key={d} type="button" onClick={() => setDifficulty(d)} aria-pressed={difficulty === d} className={`rounded-lg border px-2 py-2 text-sm ${difficulty === d ? "border-navy bg-navy-soft font-bold text-navy" : "border-line text-muted"}`}>
+                  {DIFFICULTY_NAMES[d]}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn w-full py-2.5 font-bold" disabled={busy || !state.duel.ready} onClick={() => start({ difficulty })}>
+              연습 대전 시작
+            </button>
+            <ul className="space-y-1.5 text-[12px] leading-5 text-muted">
+              <li><b className="text-ink">승리</b> 상대 논자의 신념 {rules.heroHp}을 먼저 0으로</li>
+              <li><b className="text-ink">사유력</b> 턴마다 최대치 +1 (최대 {rules.maxMana}). 비용: {costText}</li>
+              <li><b className="text-ink">필드</b> 최대 {rules.fieldSize}명. 낸 턴에는 공격할 수 없습니다</li>
+              <li><b className="text-ink">수호</b> 상대에 수호가 있으면 그 사상가부터 공격</li>
+              <li><b className="text-ink">공명</b> 같은 분야 2명 이상: {Object.entries(RESONANCE).map(([k, v]) => `${k.replace("윤리", "")} ${v}`).join(" · ")}</li>
+            </ul>
+          </div>
+        </details>
+        <p className="px-1 text-[11px] leading-5 text-faint">대전은 자동으로 진행됩니다 (직접 조작으로 바꿀 수 있음). 결과는 서버가 기록을 다시 계산해 확정합니다. 코인은 학습으로만 받습니다.</p>
       </aside>
     </div>
   );
@@ -264,6 +294,10 @@ function DuelBoard({
   onLeave,
   onAgain,
   onEditDeck,
+  onNext,
+  foeName,
+  progress,
+  nextName,
 }: {
   setup: Setup;
   initialLog: DuelAction[];
@@ -272,6 +306,10 @@ function DuelBoard({
   onLeave: () => void;
   onAgain: () => void;
   onEditDeck: () => void;
+  onNext?: () => void;
+  foeName: string;
+  progress: { cleared: number; total: number } | null;
+  nextName: string | null;
 }) {
   const level = setup.difficulty;
   const [s, setS] = useState<DuelState>(() => {
@@ -280,7 +318,11 @@ function DuelBoard({
   });
   const logRef = useRef<DuelAction[]>([...initialLog]);
   const [sel, setSel] = useState<Select>(null);
-  const [line, setLine] = useState<string>(() => (s.active === "me" ? "내 턴입니다. 카드를 내거나 공격하세요." : "상대 턴"));
+  // 자동 대전 (기본): 내 쪽도 컴퓨터가 둔다. 화면을 누르면 직접 조작으로
+  const [auto, setAuto] = useState(true);
+  const [speed, setSpeed] = useState<1 | 2>(1);
+  const [line, setLine] = useState<string>(() => (s.active === "me" ? "내 턴" : "상대 턴"));
+  const delay = () => (reducedMotion() ? 60 : speed === 2 ? 300 : 700);
   const [flashes, setFlashes] = useState<Flash[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [confirmQuit, setConfirmQuit] = useState(false);
@@ -330,10 +372,43 @@ function DuelBoard({
       const r = applyAction(s, "foe", chooseDuelAction(s, "foe", level));
       setS(r.state);
       show(r.state, r.events);
-    }, reducedMotion() ? 60 : 650);
+    }, delay());
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s]);
+
+  // 내 턴 자동: 가장 강한 컴퓨터 규칙으로 한 행동씩
+  useEffect(() => {
+    if (!auto || s.winner || s.active !== "me") return;
+    const t = setTimeout(() => act(chooseDuelAction(s, "me", "hard")), delay());
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s, auto]);
+
+  /** 결과 바로 보기: 남은 판을 한 번에 계산 (내 쪽은 자동 규칙) */
+  function skipToEnd() {
+    let st = s;
+    const evs: DuelEvent[] = [];
+    for (let i = 0; i < 3000 && !st.winner; i++) {
+      const side = st.active;
+      const a = chooseDuelAction(st, side, side === "me" ? "hard" : level);
+      if (side === "me") logRef.current.push(a);
+      const r = applyAction(st, side, a);
+      st = r.state;
+      evs.push(...r.events);
+    }
+    store({ ...setup, log: logRef.current });
+    setSel(null);
+    setS(st);
+    show(st, evs.filter((e) => e.t === "end"));
+  }
+  function takeOver() {
+    if (!auto) return false;
+    setAuto(false);
+    setSel(null);
+    setLine("직접 조작으로 바꿨습니다. 카드를 내거나 공격하세요.");
+    return true;
+  }
 
   // 끝나면 서버가 기록을 다시 계산해 확정
   useEffect(() => {
@@ -367,7 +442,7 @@ function DuelBoard({
   }, [sel, s, myTurn, foe.field, me.field]);
 
   function pickHand(uid: string) {
-    if (!myTurn) return;
+    if (takeOver() || !myTurn) return;
     const c = s.cards[uid];
     const base: DuelAction = { t: "play", uid };
     const why = illegal(s, "me", base);
@@ -386,7 +461,7 @@ function DuelBoard({
     setLine(`「${c.skillName}」 대상을 고르세요 (${EFFECT_TEXT[c.effect](effectPower(c)).replace("등장 시: ", "")})`);
   }
   function pickUnit(side: DuelSide, uid: string) {
-    if (!myTurn) return;
+    if (takeOver() || !myTurn) return;
     const t: Target = { side, uid };
     if (sel && targets.has(tkey(t))) return act(sel.kind === "hand" ? { t: "play", uid: sel.uid, target: t } : { t: "attack", attacker: sel.uid, target: t });
     if (side === "me") {
@@ -412,7 +487,7 @@ function DuelBoard({
   return (
     <section ref={boardRef} className="relative mx-auto max-w-2xl scroll-mt-16 overflow-hidden rounded-2xl border border-line bg-[radial-gradient(90%_70%_at_50%_45%,#26324d,#0c111b)] p-2.5 text-white sm:p-4">
       {/* 상대 */}
-      <HeroBar side="foe" p={foe} rules={s.rules} resonance={activeResonances(s, "foe")} active={s.active === "foe" && !s.winner} targetable={targets.has("foe:hero")} onClick={() => pickHero("foe")} flashes={fl("foe:hero")} />
+      <HeroBar side="foe" name={foeName} p={foe} rules={s.rules} resonance={activeResonances(s, "foe")} active={s.active === "foe" && !s.winner} targetable={targets.has("foe:hero")} onClick={() => pickHero("foe")} flashes={fl("foe:hero")} />
       <Field s={s} side="foe" units={foe.field} sel={sel} targets={targets} onPick={(uid) => pickUnit("foe", uid)} flashes={fl} myTurn={myTurn} />
 
       {/* 가운데: 안내 · 턴 종료 */}
@@ -420,7 +495,7 @@ function DuelBoard({
         <p className="min-h-10 flex-1 rounded-lg bg-black/30 px-3 py-2 text-[13px] leading-5 text-white/85" aria-live="polite">
           {error ? <span className="text-[#ffb4a8]">{error}</span> : line}
         </p>
-        {!s.winner && (
+        {!s.winner && !auto && (
           <button
             type="button"
             disabled={!myTurn}
@@ -434,7 +509,7 @@ function DuelBoard({
 
       {/* 나 */}
       <Field s={s} side="me" units={me.field} sel={sel} targets={targets} onPick={(uid) => pickUnit("me", uid)} flashes={fl} myTurn={myTurn} />
-      <HeroBar side="me" p={me} rules={s.rules} resonance={activeResonances(s, "me")} active={myTurn} targetable={targets.has("me:hero")} onClick={() => pickHero("me")} flashes={fl("me:hero")} />
+      <HeroBar side="me" name="내 논자" p={me} rules={s.rules} resonance={activeResonances(s, "me")} active={myTurn} targetable={targets.has("me:hero")} onClick={() => pickHero("me")} flashes={fl("me:hero")} />
 
       {/* 손패 */}
       <div className="-mx-2.5 mt-2 flex gap-2 overflow-x-auto px-2.5 pb-1 [&::-webkit-scrollbar]:hidden sm:-mx-4 sm:px-4" aria-label="내 손패">
@@ -450,8 +525,35 @@ function DuelBoard({
         })}
       </div>
 
+      {/* 자동 대전 조작 */}
+      {!s.winner && (
+        <div className="mt-2 flex items-center gap-1.5" role="group" aria-label="자동 대전">
+          <button
+            type="button"
+            onClick={() => (auto ? takeOver() : (setAuto(true), setLine("자동 대전")))}
+            aria-pressed={auto}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold ${auto ? "bg-[#ffd36b] text-[#2a1d00]" : "bg-white/10 text-white hover:bg-white/20"}`}
+          >
+            {auto ? "자동 ▶" : "자동으로"}
+          </button>
+          {auto && (
+            <button type="button" onClick={() => setSpeed(speed === 1 ? 2 : 1)} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-bold tabular-nums hover:bg-white/20" aria-label={`속도 ${speed}배`}>
+              {speed}x
+            </button>
+          )}
+          {auto && (
+            <button type="button" onClick={takeOver} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs hover:bg-white/20">
+              직접 하기
+            </button>
+          )}
+          <button type="button" onClick={skipToEnd} className="ml-auto rounded-lg bg-white/10 px-2.5 py-1.5 text-xs hover:bg-white/20">
+            결과 바로 보기 ⏭
+          </button>
+        </div>
+      )}
+
       <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
-        <span>{DIFFICULTY_NAMES[setup.difficulty]} · 턴 {Math.ceil(s.turn / 2)}</span>
+        <span>{setup.stage ? `${setup.stage.no}관 · ` : "연습 · "}{DIFFICULTY_NAMES[setup.difficulty]} · 턴 {Math.ceil(s.turn / 2)}</span>
         {!s.winner &&
           (confirmQuit ? (
             <span className="flex items-center gap-1.5">
@@ -469,17 +571,49 @@ function DuelBoard({
       {s.winner && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]">
           <div className="card-enter w-full max-w-sm rounded-2xl border border-white/15 bg-[#121a2a]/95 p-5 text-center">
-            <div className={`text-4xl font-black ${s.winner === "me" ? "text-[#ffd36b]" : "text-white/85"}`}>{s.winner === "me" ? "승리!" : s.winner === "draw" ? "무승부" : "패배"}</div>
-            <p className="mt-1 text-sm text-white/70">
-              {s.endReason === "concede" ? "항복했습니다." : s.endReason === "turns" ? "제한 턴이 끝나 신념을 비교했습니다." : s.winner === "me" ? "상대 논자의 신념을 꺾었습니다." : "다음엔 카드를 모으고 강화해 다시 도전해 보세요."}
-            </p>
+            {setup.stage && s.winner === "me" ? (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ffd36b]">{setup.stage.no}관</div>
+                <div className="text-4xl font-black text-[#ffd36b]">클리어!</div>
+                <p className="mt-1 text-sm text-white/80">{foeName}를 꺾었습니다.</p>
+              </>
+            ) : (
+              <>
+                <div className={`text-4xl font-black ${s.winner === "me" ? "text-[#ffd36b]" : "text-white/85"}`}>{s.winner === "me" ? "승리!" : s.winner === "draw" ? "무승부" : "패배"}</div>
+                <p className="mt-1 text-sm text-white/70">
+                  {s.endReason === "concede" ? "항복했습니다." : s.endReason === "turns" ? "제한 턴이 끝나 신념을 비교했습니다." : s.winner === "me" ? "상대 논자의 신념을 꺾었습니다." : "카드를 모으고 강화하거나 덱을 바꿔 다시 도전해 보세요."}
+                </p>
+              </>
+            )}
+            {outcome?.stage?.firstClear && (
+              <p className="mt-3 rounded-lg bg-[#ffd36b]/15 px-3 py-2 text-sm font-bold text-[#ffd36b]">보상: {foeName.replace(/ 학파$/, "")} 강화 조각 +{outcome.stage.shards}</p>
+            )}
+            {outcome?.stage?.cleared && !outcome.stage.firstClear && <p className="mt-2 text-xs text-white/60">이미 깬 관입니다 (보상은 처음 한 번)</p>}
+            {progress && outcome && (
+              <div className="mt-3">
+                <div className="flex justify-between text-[11px] text-white/60">
+                  <span>도장깨기</span>
+                  <span className="tabular-nums">{progress.cleared} / {progress.total}관</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#5a78d1] to-[#ffd36b]" style={{ width: `${(progress.cleared / Math.max(1, progress.total)) * 100}%` }} />
+                </div>
+              </div>
+            )}
             <p className="mt-2 text-xs text-white/60">
-              {outcome ? `서버 확인 완료 · 논쟁 대전 전적 ${outcome.record.wins}승 ${outcome.record.losses}패${outcome.record.draws ? ` ${outcome.record.draws}무` : ""}` : error ? <span className="text-[#ffb4a8]">{error}</span> : "결과 확인 중…"}
+              {outcome ? `서버 확인 완료 · 전적 ${outcome.record.wins}승 ${outcome.record.losses}패${outcome.record.draws ? ` ${outcome.record.draws}무` : ""}` : error ? <span className="text-[#ffb4a8]">{error}</span> : "결과 확인 중…"}
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={onLeave}>로비로</button>
-              <button type="button" className="btn-primary py-2.5 font-bold" onClick={onAgain}>다시 대전</button>
-            </div>
+            {onNext && nextName && outcome ? (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={onLeave}>지도로</button>
+                <button type="button" className="rounded-xl bg-[#ffd36b] py-2.5 text-sm font-black text-[#2a1d00] hover:bg-[#ffe08f]" onClick={onNext}>다음 관: {nextName}</button>
+              </div>
+            ) : (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={onLeave}>{setup.stage ? "지도로" : "로비로"}</button>
+                <button type="button" className="btn-primary py-2.5 font-bold" onClick={onAgain}>{setup.stage ? "다시 도전" : "다시 대전"}</button>
+              </div>
+            )}
             <button type="button" className="mt-2 text-xs text-white/60 underline-offset-2 hover:underline" onClick={onEditDeck}>덱 수정</button>
           </div>
         </div>
@@ -500,7 +634,7 @@ function FlashBadges({ flashes }: { flashes: Flash[] }) {
   );
 }
 
-function HeroBar({ side, p, rules, resonance, active, targetable, onClick, flashes }: { side: DuelSide; p: DuelState["players"]["me"]; rules: DuelRules; resonance: string[]; active: boolean; targetable: boolean; onClick: () => void; flashes: Flash[] }) {
+function HeroBar({ side, name, p, rules, resonance, active, targetable, onClick, flashes }: { side: DuelSide; name: string; p: DuelState["players"]["me"]; rules: DuelRules; resonance: string[]; active: boolean; targetable: boolean; onClick: () => void; flashes: Flash[] }) {
   const ratio = Math.max(0, p.hero) / rules.heroHp;
   return (
     <button
@@ -508,13 +642,13 @@ function HeroBar({ side, p, rules, resonance, active, targetable, onClick, flash
       onClick={onClick}
       disabled={!targetable}
       data-target={targetable || undefined}
-      aria-label={`${side === "me" ? "내" : "상대"} 논자 · 신념 ${p.hero}`}
+      aria-label={`${side === "me" ? "내 논자" : `상대 논자(${name})`} · 신념 ${p.hero}`}
       className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${targetable ? "bg-[#ef6a5a]/25 ring-2 ring-[#ef6a5a]" : active ? "bg-white/10" : "bg-white/5"}`}
     >
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black ${side === "me" ? "bg-[#5a78d1]" : "bg-[#8a4a4a]"}`}>{side === "me" ? "나" : "상대"}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2 text-sm">
-          <b>{side === "me" ? "내 논자" : "상대 논자"}</b>
+          <b className="truncate">{name}</b>
           <span className="text-[11px] text-white/55">
             덱 {p.deck.length}
             {side === "foe" ? ` · 손패 ${p.hand.length}` : ""}

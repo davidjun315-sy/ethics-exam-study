@@ -7,6 +7,7 @@ import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleE
 import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
+import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageDeck } from "./campaign";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -263,6 +264,8 @@ export interface GameState {
   duel: { ready: boolean; wins: number; losses: number; draws: number };
   /** 논쟁 대전 덱 (보유 카드 id, 비어 있으면 자동) */
   duelDeck: string[];
+  /** 사상가 도장깨기 (ready=false 면 014 적용 전) */
+  campaign: { ready: boolean; cleared: { id: string; at: string; turns: number | null }[] };
   freeDraw: { available: boolean };
 }
 
@@ -270,7 +273,7 @@ type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: 
 
 export async function getGameState(learner: string): Promise<GameState> {
   const db = getAdminClient();
-  const [settings, cards, wallet, uc, col, prof, free] = await Promise.all([
+  const [settings, cards, wallet, uc, col, prof, free, camp] = await Promise.all([
     getGameSettings(),
     publishedCards(),
     db.from("game_wallets").select("coins").eq("learner", learner).maybeSingle(),
@@ -279,6 +282,7 @@ export async function getGameState(learner: string): Promise<GameState> {
     // * : 012(논쟁 대전) 전이면 duel_* 열이 없으므로 있는 열만 읽는다
     db.from("game_profiles").select("*").eq("learner", learner).maybeSingle(),
     db.from("game_free_draws").select("learner").eq("learner", learner).maybeSingle(),
+    db.from("game_campaign").select("philosopher_id, cleared_at, turns").eq("learner", learner),
   ]);
   for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
   const rows = (uc.data ?? []) as UserCardRow[];
@@ -321,6 +325,10 @@ export async function getGameState(learner: string): Promise<GameState> {
       wins: (p as { duel_wins?: number } | null)?.duel_wins ?? 0,
       losses: (p as { duel_losses?: number } | null)?.duel_losses ?? 0,
       draws: (p as { duel_draws?: number } | null)?.duel_draws ?? 0,
+    },
+    campaign: {
+      ready: !camp.error,
+      cleared: ((camp.data ?? []) as { philosopher_id: string; cleared_at: string; turns: number | null }[]).map((c) => ({ id: c.philosopher_id, at: c.cleared_at, turns: c.turns })),
     },
     duelDeck: (((p as { duel_deck?: string[] } | null)?.duel_deck ?? []) as string[]).filter((id) => ownedIds.has(id)).slice(0, settings.duel_rules.deckSize),
     freeDraw: { available: !free.data },
@@ -658,7 +666,14 @@ export interface DuelSetup {
 }
 
 
-export async function startDuel(learner: string, difficulty: Difficulty): Promise<{ duelId: string; difficulty: Difficulty } & DuelSetup> {
+export const GAME_014_HINT = "사상가 도장깨기 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/014_game_campaign.sql 을 실행하세요.";
+
+export interface DuelStageInfo {
+  bossId: string;
+  no: number;
+}
+
+export async function startDuel(learner: string, opts: { difficulty?: Difficulty; stage?: string }): Promise<{ duelId: string; difficulty: Difficulty; stage: DuelStageInfo | null } & DuelSetup> {
   const [state, settings, prof] = await Promise.all([
     getGameState(learner),
     getGameSettings(),
@@ -674,19 +689,34 @@ export async function startDuel(learner: string, difficulty: Difficulty): Promis
   const me = mine.map((o, i) =>
     toDuelCard({ uid: `m${i}`, cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, tradition: o.tradition, rarity: o.rarity, level: o.level, effect: o.skillEffect, skillName: o.skillName, artUrl: o.artUrl, statAtk: o.atk, statHp: o.hp }, rules),
   );
-  // 상대: 공개 사상가 중 무작위, 등급 구성은 내 덱과 같게(섞어서), 레벨은 내 덱 평균 ± 난이도
-  const lv = opponentLevel(mine.map((o) => o.level), difficulty, state.settings.maxLevel);
-  const r = seededRandomFor(seed);
-  const rarities = mine.map((o) => o.rarity).sort(() => r() - 0.5);
-  const foe = rarities.map((rarity, i) => {
-    const c = state.cards[Math.floor(r() * state.cards.length)];
-    const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, lv, settings.rarity_mult);
-    return toDuelCard({ uid: `f${i}`, cardId: null, philosopherId: c.philosopherId, name: c.name, tradition: c.tradition, rarity, level: lv, effect: c.skillEffect, skillName: c.skillName, artUrl: c.artUrl, statAtk: st.atk, statHp: st.hp }, rules);
-  });
+  // 도장깨기: 관 보스 + 동료 3명 덱, 난이도는 관마다 정해짐
+  let stage: DuelStageInfo | null = null;
+  let difficulty: Difficulty = opts.difficulty ?? "normal";
+  let foe: DuelCardDef[];
+  if (opts.stage) {
+    if (!state.campaign.ready) throw new GameError(GAME_014_HINT, 503);
+    const stages = buildCampaign(state.cards, state.settings.maxLevel);
+    const st = stages.find((x) => x.bossId === opts.stage);
+    if (!st) throw new GameError("없는 관입니다.", 404);
+    if (!canPlayStage(stages, new Set(state.campaign.cleared.map((c) => c.id)), st.bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
+    foe = stageDeck(st, new Map(state.cards.map((c) => [c.philosopherId, c])), rules, settings.rarity_mult);
+    difficulty = st.ai;
+    stage = { bossId: st.bossId, no: st.no };
+  } else {
+    // 연습 대전: 공개 사상가 중 무작위, 등급 구성은 내 덱과 같게(섞어서), 레벨은 내 덱 평균 ± 난이도
+    const lv = opponentLevel(mine.map((o) => o.level), difficulty, state.settings.maxLevel);
+    const r = seededRandomFor(seed);
+    const rarities = mine.map((o) => o.rarity).sort(() => r() - 0.5);
+    foe = rarities.map((rarity, i) => {
+      const c = state.cards[Math.floor(r() * state.cards.length)];
+      const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, lv, settings.rarity_mult);
+      return toDuelCard({ uid: `f${i}`, cardId: null, philosopherId: c.philosopherId, name: c.name, tradition: c.tradition, rarity, level: lv, effect: c.skillEffect, skillName: c.skillName, artUrl: c.artUrl, statAtk: st.atk, statHp: st.hp }, rules);
+    });
+  }
   const setup: DuelSetup = { me, foe, seed, rules };
-  const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules }, seed }).select("id").single();
+  const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules, stage }, seed }).select("id").single();
   if (error) throw duelError(error.message);
-  return { duelId: data.id as string, difficulty, ...setup };
+  return { duelId: data.id as string, difficulty, stage, ...setup };
 }
 
 /** 논쟁 대전 덱 저장: 서로 다른 보유 카드 최대 덱 크기만큼 (빈 목록 = 자동). 모자란 칸은 대전 때 자동으로 채운다 */
@@ -704,6 +734,8 @@ export interface DuelOutcome {
   turns: number;
   record: { wins: number; losses: number; draws: number };
   replayed: boolean;
+  /** 도장깨기 관이면: 이번에 처음 깼는지 · 받은 조각 */
+  stage: (DuelStageInfo & { cleared: boolean; firstClear: boolean; shards: number }) | null;
 }
 
 /** 대전 결과 확인: 서버가 처음부터 다시 계산 (내 행동 = 기록, 상대 행동 = 같은 컴퓨터 규칙). 이미 끝난 대전이면 그 결과 */
@@ -716,11 +748,29 @@ export async function finishDuel(learner: string, duelId: string, actions: DuelA
     const { data: p } = await db.from("game_profiles").select("duel_wins, duel_losses, duel_draws").eq("learner", learner).maybeSingle();
     return { wins: (p?.duel_wins as number) ?? 0, losses: (p?.duel_losses as number) ?? 0, draws: (p?.duel_draws as number) ?? 0 };
   };
+  const setup = row.setup as { me: DuelCardDef[]; foe: DuelCardDef[]; rules: DuelRules; stage?: DuelStageInfo | null };
+  // 도장깨기: 이기면 관 클리어 기록 (처음 한 번만 보스 강화 조각)
+  const stageResult = async (result: DuelOutcome["result"], turns: number, fresh: boolean): Promise<DuelOutcome["stage"]> => {
+    const st = setup.stage;
+    if (!st) return null;
+    if (result !== "win") return { ...st, cleared: false, firstClear: false, shards: 0 };
+    let first = false;
+    if (fresh) {
+      const { data: ok, error: e } = await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: st.bossId, p_duel: duelId, p_turns: turns, p_shards: STAGE_CLEAR_SHARDS });
+      if (e) throw /game_campaign/.test(e.message) ? new GameError(GAME_014_HINT, 503) : gameError(e.message);
+      first = ok === true;
+    } else {
+      const { data: c } = await db.from("game_campaign").select("duel_id").eq("learner", learner).eq("philosopher_id", st.bossId).maybeSingle();
+      first = c?.duel_id === duelId;
+    }
+    return { ...st, cleared: true, firstClear: first, shards: first ? STAGE_CLEAR_SHARDS : 0 };
+  };
   if (row.status !== "open") {
     if (row.status === "void") throw new GameError("기록이 맞지 않아 무효 처리된 대전입니다.");
-    return { result: row.status as DuelOutcome["result"], turns: (row.turns as number) ?? 0, record: await record(), replayed: true };
+    const res = row.status as DuelOutcome["result"];
+    const turns = (row.turns as number) ?? 0;
+    return { result: res, turns, record: await record(), replayed: true, stage: await stageResult(res, turns, false) };
   }
-  const setup = row.setup as { me: DuelCardDef[]; foe: DuelCardDef[]; rules: DuelRules };
   const level = row.difficulty as Difficulty;
   let outcome: ReturnType<typeof replayDuel>;
   try {
@@ -746,7 +796,7 @@ export async function finishDuel(learner: string, duelId: string, actions: DuelA
     next[key]++;
     const { error: e3 } = await db.from("game_profiles").upsert({ learner, [`duel_${key}`]: next[key], updated_at: new Date().toISOString() }, { onConflict: "learner" });
     if (e3) throw duelError(e3.message);
-    return { result, turns: outcome.state.turn, record: next, replayed: false };
+    return { result, turns: outcome.state.turn, record: next, replayed: false, stage: await stageResult(result, outcome.state.turn, true) };
   }
-  return { result, turns: outcome.state.turn, record: await record(), replayed: true };
+  return { result, turns: outcome.state.turn, record: await record(), replayed: true, stage: await stageResult(result, outcome.state.turn, false) };
 }
