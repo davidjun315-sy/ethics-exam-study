@@ -58,7 +58,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <section className="card relative overflow-hidden p-5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_45%,color-mix(in_srgb,var(--navy)_14%,transparent),transparent)]" />
-        <div className="relative flex min-h-[26rem] flex-col items-center justify-center gap-4">
+        <div className="relative flex min-h-[26rem] flex-col items-center justify-center gap-4 pb-2 pt-6 sm:pt-8">
           {phase === "idle" && !result ? (
             <div className="card-enter flex flex-col items-center">
               <CardBack className="card-float w-44 sm:w-52" />
@@ -78,7 +78,8 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
             </div>
           )}
 
-          <div className="min-h-[4.5rem] text-center" aria-live="polite">
+          {/* 결과 문구 자리: 대기 중엔 비워 두지 않아 카드가 위로 쏠리지 않게 */}
+          <div className={`text-center ${phase === "idle" && !result ? "" : "min-h-[4.5rem]"}`} aria-live="polite">
             {phase === "drawing" && <p className="text-sm font-semibold text-muted">철학자를 부르는 중…</p>}
             {result && flipped && (
               <div className="quiz-rise space-y-1">
