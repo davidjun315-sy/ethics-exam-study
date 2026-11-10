@@ -239,8 +239,8 @@ function CutIn({ u, theme, name, effect, boss }: { u: BattleCard; theme: FxTheme
           <img src={u.artUrl} alt="" className="aspect-[3/4] h-full rounded-2xl object-cover object-[center_18%] ring-4" style={{ ["--tw-ring-color" as string]: c0 }} draggable={false} />
         ) : null}
       </div>
-      <div className={`fx-cutin-title absolute top-[38%] ${boss ? "left-[4%] text-left" : "right-[4%] text-right"}`}>
-        <div className="text-[11px] font-bold tracking-[0.3em] text-white/80 sm:text-xs">{u.name} · {effect}</div>
+      <div className={`fx-cutin-title fx-cutin-plate absolute top-[38%] max-w-[62%] ${boss ? "left-[4%] text-left" : "right-[4%] text-right"}`}>
+        <div className="text-[11px] font-bold tracking-[0.3em] sm:text-xs" style={{ color: c2 }}>{u.name} · {effect}</div>
         <div className="fx-title-text text-2xl font-black leading-tight sm:text-4xl">{name}</div>
       </div>
     </div>
