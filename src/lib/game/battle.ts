@@ -4,7 +4,7 @@
  * 규칙 (단순하게)
  * - 행동 순서: 내1 → 적1 → 내2 → 적2 → 내3 → 적3 → … (선공은 시드로 정한 동전 던지기, 쓰러진 카드는 건너뜀)
  * - 일반 공격: 살아 있는 적 중 하나(시드 난수)에게 공격력 90~110% 피해
- * - 필살기: 두 번째 행동에 처음, 이후 세 번째 행동마다 (strike · sweep · heal · guard · stun)
+ * - 필살기: 게이지 0 에서 시작, 세 번째 행동마다 (strike · sweep · heal · guard · stun)
  *   단일 대상 필살기(strike · stun)는 체력이 가장 낮은 적을 노린다
  * - 수호막: 다음 피해 1회를 절반으로 / 기절: 다음 행동 1회를 쉼
  * - 행동이 90회를 넘으면 남은 체력 비율이 높은 쪽 승리
@@ -21,7 +21,18 @@ export interface Fighter {
   skillEffect: SkillEffect;
   /** 도장깨기 보스: 체력 배율. 회복 필살기는 보통 카드 크기만큼만 (max / scale) */
   scale?: number;
+  /** 특수 보스 패턴: 체력이 절반 아래로 떨어지면 한 번 발동 */
+  pattern?: BossPattern;
 }
+
+/** 특수 보스 패턴 (5관마다 · 마지막 관) */
+export type BossPattern = "enrage" | "regen" | "fortress";
+export const BOSS_PATTERNS: Record<BossPattern, { name: string; desc: string }> = {
+  enrage: { name: "격노", desc: "체력이 절반 아래로 떨어지면 공격력 +25%, 곧바로 필살기를 씀" },
+  regen: { name: "재생", desc: "체력이 절반 아래로 떨어지면 최대 체력의 15%를 한 번 회복" },
+  fortress: { name: "철벽", desc: "체력이 절반 아래로 떨어지면 이후 받는 피해 -20%" },
+};
+const PHASE_AT = 0.5;
 
 export type Side = "me" | "foe";
 
@@ -29,6 +40,7 @@ export type BattleEvent =
   | { t: "attack"; actor: string; target: string; dmg: number; hp: number; shielded: boolean }
   | { t: "skill"; actor: string; name: string; effect: SkillEffect; hits: { target: string; dmg: number; hp: number; shielded: boolean }[]; heal?: { target: string; amount: number; hp: number }; guarded?: string[]; stunned?: string }
   | { t: "stunned"; actor: string }
+  | { t: "phase"; actor: string; pattern: BossPattern; heal?: { amount: number; hp: number }; atk?: number }
   | { t: "faint"; target: string }
   | { t: "end"; winner: Side; reason: "ko" | "timeout" };
 
@@ -67,12 +79,14 @@ interface Live extends Fighter {
   charge: number;
   shield: boolean;
   stun: boolean;
+  phased: boolean;
+  fortress: boolean;
 }
 
 export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleResult {
   const rand = seededRandom(seed);
   // 필살기 게이지는 0 에서 시작 → 기본 공격 2번으로 가득 → 세 번째 행동에 필살기
-  const mk = (f: Fighter, side: Side): Live => ({ ...f, side, cur: f.hp, max: f.hp, charge: 0, shield: false, stun: false });
+  const mk = (f: Fighter, side: Side): Live => ({ ...f, side, cur: f.hp, max: f.hp, charge: 0, shield: false, stun: false, phased: false, fortress: false });
   const teams: Record<Side, Live[]> = { me: me.map((f) => mk(f, "me")), foe: foe.map((f) => mk(f, "foe")) };
   const events: BattleEvent[] = [];
   const alive = (s: Side) => teams[s].filter((x) => x.cur > 0);
@@ -87,7 +101,7 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
   }
 
   const hit = (target: Live, raw: number) => {
-    let dmg = Math.max(1, Math.round(raw * DMG));
+    let dmg = Math.max(1, Math.round(raw * DMG * (target.fortress ? 0.8 : 1)));
     const shielded = target.shield;
     if (shielded) {
       dmg = Math.max(1, Math.round(dmg / 2));
@@ -98,6 +112,24 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
   };
   const faintCheck = (ts: Live[]) => {
     for (const t of ts) if (t.cur === 0 && !events.some((e) => e.t === "faint" && e.target === t.key)) events.push({ t: "faint", target: t.key });
+  };
+  // 특수 보스: 체력이 절반 아래로 처음 떨어진 직후 패턴 발동 (한 번)
+  const phaseCheck = () => {
+    for (const x of [...teams.me, ...teams.foe]) {
+      if (!x.pattern || x.phased || x.cur <= 0 || x.cur > x.max * PHASE_AT) continue;
+      x.phased = true;
+      const ev: Extract<BattleEvent, { t: "phase" }> = { t: "phase", actor: x.key, pattern: x.pattern };
+      if (x.pattern === "enrage") {
+        x.atk = Math.round(x.atk * 1.25);
+        x.charge = SKILL_EVERY - 1;
+        ev.atk = x.atk;
+      } else if (x.pattern === "regen") {
+        const amount = Math.min(x.max - x.cur, Math.round(x.max * 0.15));
+        x.cur += amount;
+        ev.heal = { amount, hp: x.cur };
+      } else x.fortress = true;
+      events.push(ev);
+    }
   };
 
   let actions = 0;
@@ -146,6 +178,7 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
       events.push({ t: "attack", actor: actor.key, ...h });
       faintCheck([randomFoe]);
     }
+    phaseCheck();
   }
 
   let winner: Side;
@@ -173,6 +206,7 @@ export function chargeAt(keys: string[], events: BattleEvent[], upto: number): R
   for (const e of events.slice(0, upto)) {
     if (e.t === "attack") c[e.actor] = (c[e.actor] ?? 0) + 1;
     else if (e.t === "skill") c[e.actor] = 0;
+    else if (e.t === "phase" && e.pattern === "enrage") c[e.actor] = SKILL_READY;
   }
   return c;
 }

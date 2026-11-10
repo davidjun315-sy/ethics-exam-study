@@ -1,6 +1,9 @@
 /** 철학자 대난투 규칙 점검.  npm run test:game */
 import { opponentLevel, runBattle, seededRandom, type Fighter } from "../src/lib/game/battle.ts";
 import { canUpgrade, DEFAULT_RARITY_MULT, effectiveRates, fusionProblem, nextRarity, quizCoins, RARITIES, SHARDS_FOR_CARD, statsAt, statsFor, upgradeCost } from "../src/lib/game/rules.ts";
+import { teamSynergies, withSynergy } from "../src/lib/game/synergy.ts";
+import { achievements, canUseTitle } from "../src/lib/game/achievements.ts";
+import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -99,6 +102,41 @@ check("참고 초상 찾기 링크 (영문 이름)", portraitSearchUrl("칸트",
 check("ChatGPT용: 그리기 전에 실제 초상을 찾아보게 함 + 찾은 위키백과 이미지 포함", (() => { const t = artPrompt({ name: "칸트", originalName: null, era: null, tradition: "서양윤리", look: "x", research: { imageUrl: "https://upload.wikimedia.org/k.jpg", pageUrl: "https://en.wikipedia.org/wiki/Immanuel_Kant" } }); return t.startsWith("STEP 1 — FIND THE REAL FACE FIRST") && t.includes("Search the web for authentic historical portraits") && t.includes("https://upload.wikimedia.org/k.jpg") && t.includes("STEP 2 — DRAW"); })());
 check("ChatGPT용: 초상을 못 찾아도 웹 검색 단계는 포함", (() => { const t = artPrompt({ name: "가상인물", originalName: null, era: null, tradition: "동양윤리", look: "x", research: {} }); return t.includes("STEP 1") && !t.includes("Reference image found"); })());
 check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", originalName: "Peter Singer", era: null, tradition: "서양윤리", look: "x", living: true, research: {} }).includes("STEP 1"));
+
+
+// ---------------------------------------------------------------------
+// 팀 시너지 · 업적 · 주간 랭킹
+// ---------------------------------------------------------------------
+{
+  const ids = (t: { tradition: string; skillEffect: "strike" | "sweep" | "heal" | "guard" | "stun" }[]) => teamSynergies(t).map((x) => x.id).sort().join(",");
+  check("시너지: 같은 분야 3명 · 성향 모두 다름 · 딜러 2명", ids([{ tradition: "동양윤리", skillEffect: "strike" }, { tradition: "동양윤리", skillEffect: "sweep" }, { tradition: "동양윤리", skillEffect: "heal" }]) === "diverse,same3,vanguard");
+  check("시너지: 같은 분야 2명 · 지원·수호 2명", ids([{ tradition: "동양윤리", skillEffect: "heal" }, { tradition: "동양윤리", skillEffect: "guard" }, { tradition: "서양윤리", skillEffect: "heal" }]) === "bulwark,same2");
+  check("시너지: 조건 없으면 없음", ids([{ tradition: "동양윤리", skillEffect: "strike" }, { tradition: "한국윤리", skillEffect: "heal" }, { tradition: "서양윤리", skillEffect: "strike" }]) === "vanguard" && ids([{ tradition: "a", skillEffect: "strike" }]) === "");
+  const w = withSynergy({ atk: 100, hp: 1000 }, teamSynergies([{ tradition: "a", skillEffect: "strike" }, { tradition: "a", skillEffect: "sweep" }, { tradition: "a", skillEffect: "heal" }]));
+  check("시너지 반영: 공격 +14% · 체력 +12%", w.atk === 114 && w.hp === 1120, JSON.stringify(w));
+
+  const base = { owned: [], cards: [{ philosopherId: "a", tradition: "동양윤리" }, { philosopherId: "b", tradition: "동양윤리" }, { philosopherId: "c", tradition: "서양윤리" }], maxLevel: 5, stagesCleared: 0, stagesTotal: 3, specialCleared: 0, wins: 0 };
+  const none = achievements(base);
+  check("업적: 처음엔 하나도 달성 안 됨", none.every((a) => !a.done) && !canUseTitle(none, "견습 철학도"));
+  const some = achievements({ ...base, owned: [{ philosopherId: "a", rarity: "legendary", level: 5 }, { philosopherId: "b", rarity: "common", level: 1 }], stagesCleared: 1, specialCleared: 1, wins: 10 });
+  const done = new Set(some.filter((a) => a.done).map((a) => a.title));
+  check("업적: 첫 카드 · 전설 · 영웅의 벗 · 만렙 · 도전자 · 보스 사냥꾼 · 논객 · 동양 전원", ["견습 철학도", "전설을 부르는 자", "영웅의 벗", "단련된 자", "도전자", "보스 사냥꾼", "논객", "동양의 현자"].every((t) => done.has(t)), [...done].join(","));
+  check("업적: 못 채운 것은 미달성 (서양 · 만물박사 · 백전노장)", !done.has("서양의 철인") && !done.has("만물박사") && !done.has("백전노장") && canUseTitle(some, "논객") && !canUseTitle(some, "백전노장"));
+  check("업적: 공개 사상가가 적으면 목표도 줄어듦 (5명 → 3명)", some.find((a) => a.id === "collect5")!.count === "2/3");
+
+  // 한국 시간 월요일 0시
+  check("주 시작: 한국 시간 일요일 밤 → 그 주 월요일 0시", weekStart(new Date("2026-11-15T14:00:00Z")).toISOString() === "2026-11-08T15:00:00.000Z");
+  check("주 시작: 한국 시간 월요일 0시 직후 → 그날", weekStart(new Date("2026-11-15T15:00:01Z")).toISOString() === "2026-11-15T15:00:00.000Z");
+  const r = rankWeekly([
+    { learner: "x", stage: 3, at: "2026-11-10T01:00:00Z" },
+    { learner: "x", stage: 3, at: "2026-11-10T02:00:00Z" },
+    { learner: "x", stage: 1, at: "2026-11-10T03:00:00Z" },
+    { learner: "y", stage: 4, at: "2026-11-10T00:30:00Z" },
+    { learner: "z", stage: 2, at: "2026-11-10T00:10:00Z" },
+    { learner: "z", stage: 2, at: "2026-11-10T00:20:00Z" },
+  ]);
+  check("랭킹: 같은 관은 한 번 · 관 번호 합 · 같은 점수는 먼저 달성한 사람", r.map((x) => `${x.learner}${x.score}`).join(" ") === "y4 x4 z2", r.map((x) => `${x.learner}${x.score}`).join(" "));
+}
 
 if (failed) {
   console.log(`\n${failed}개 실패`);

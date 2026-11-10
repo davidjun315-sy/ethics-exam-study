@@ -14,14 +14,16 @@ import { FusionTab } from "./FusionTab";
 import { BattleTab } from "./BattleTab";
 import { DuelTab } from "./DuelTab";
 import { StageTab } from "./StageTab";
+import { HonorTab, TitleBadge } from "./HonorTab";
 
-export type Tab = "draw" | "collection" | "upgrade" | "fusion" | "battle";
+export type Tab = "draw" | "collection" | "upgrade" | "fusion" | "battle" | "honor";
 const TABS: { key: Tab; label: string; short: string }[] = [
   { key: "draw", label: "카드 뽑기", short: "뽑기" },
   { key: "collection", label: "카드 도감", short: "도감" },
   { key: "upgrade", label: "레벨업", short: "레벨업" },
   { key: "fusion", label: "카드 합성", short: "합성" },
   { key: "battle", label: "배틀 아레나", short: "배틀" },
+  { key: "honor", label: "명예의 전당", short: "명예" },
 ];
 
 export function Coins({ value, className = "" }: { value: number; className?: string }) {
@@ -67,11 +69,12 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
           <h1 className="text-2xl font-black tracking-tight">철학자 대난투</h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <TitleBadge title={state.title.value} className="hidden sm:inline-flex" />
           <span className="text-xs text-muted">보유 카드 {state.owned.length}장</span>
           <Coins value={state.coins} />
         </div>
       </div>
-      <nav role="tablist" className="grid grid-cols-5 gap-1 rounded-xl border border-line bg-surface p-1">
+      <nav role="tablist" className="grid grid-cols-6 gap-1 rounded-xl border border-line bg-surface p-1">
         {TABS.map((t) => {
           const badge = t.key === "upgrade" ? levelable : t.key === "fusion" ? fusable : t.key === "draw" && state.freeDraw.available ? "무료" : 0;
           return (
@@ -106,6 +109,8 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
         <UpgradeTab state={state} reload={reload} initialCard={upgradeCard} />
       ) : tab === "fusion" ? (
         <FusionTab state={state} reload={reload} initialBase={fusionBase} />
+      ) : tab === "honor" ? (
+        <HonorTab state={state} reload={reload} />
       ) : (
         <ArenaTab state={state} reload={reload} goDraw={() => go("draw")} />
       )}

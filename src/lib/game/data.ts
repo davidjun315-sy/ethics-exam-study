@@ -4,11 +4,14 @@ import { cached, invalidateContent } from "@/lib/cache";
 import { classifyPhilosopher } from "@/lib/traditions";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
-import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type Difficulty, type Fighter } from "./battle";
+import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type BossPattern, type Difficulty, type Fighter } from "./battle";
 import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
 import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats, stageStones } from "./campaign";
+import { teamSynergies, withSynergy, type Synergy } from "./synergy";
+import { achievements, canUseTitle, type Achievement } from "./achievements";
+import { rankWeekly, weekStart } from "./ranking";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -333,6 +336,10 @@ export interface GameState {
   /** 사상가 도장깨기 (ready=false 면 014 적용 전) */
   campaign: { ready: boolean; cleared: { id: string; at: string; turns: number | null }[] };
   freeDraw: { available: boolean };
+  /** 업적 (지금 상태로 계산) */
+  achievements: Achievement[];
+  /** 고른 칭호 (ready=false 면 019 적용 전) */
+  title: { ready: boolean; value: string | null };
 }
 
 type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free"; created_at: string };
@@ -368,6 +375,18 @@ export async function getGameState(learner: string): Promise<GameState> {
     });
   const p = prof.data as { featured_card_id: string | null; deck_cards: string[] | null; wins: number; losses: number } | null;
   const ownedIds = new Set(owned.map((o) => o.cardId));
+  const clearedIds = new Set(((camp.data ?? []) as { philosopher_id: string }[]).map((c) => c.philosopher_id));
+  const stages = buildCampaign(cards, settings.max_level);
+  const ach = achievements({
+    owned,
+    cards,
+    maxLevel: settings.max_level,
+    stagesCleared: stages.filter((x) => clearedIds.has(x.bossId)).length,
+    stagesTotal: stages.length,
+    specialCleared: stages.filter((x) => x.pattern && clearedIds.has(x.bossId)).length,
+    wins: p?.wins ?? 0,
+  });
+  const titleRaw = (p as { title?: string | null } | null)?.title ?? null;
   return {
     coins: (wallet.data as { coins: number } | null)?.coins ?? 0,
     settings: {
@@ -402,6 +421,9 @@ export async function getGameState(learner: string): Promise<GameState> {
     },
     duelDeck: (((p as { duel_deck?: string[] } | null)?.duel_deck ?? []) as string[]).filter((id) => ownedIds.has(id)).slice(0, settings.duel_rules.deckSize),
     freeDraw: { available: !free.data },
+    achievements: ach,
+    // 달성 조건이 사라졌으면(카드 분해 등) 표시하지 않음
+    title: { ready: p ? "title" in p : true, value: titleRaw && canUseTitle(ach, titleRaw) ? titleRaw : null },
   };
 }
 
@@ -414,6 +436,8 @@ export interface FeaturedSummary {
   freeDraw: boolean;
   shards: number; // 대표 카드 레벨업 재료 보유량 (통일 후 = 강화석, 전 = 그 사상가 조각)
   stonesUnified: boolean;
+  /** 고른 칭호 */
+  title: string | null;
   fusable: number; // 대표 카드와 같은 사상가 · 같은 등급의 재료 후보 수 (합성 장수-1 이상일 때만, 아니면 0)
 }
 
@@ -431,6 +455,7 @@ export async function getFeatured(learner: string): Promise<FeaturedSummary | nu
       freeDraw: s.freeDraw.available,
       shards: f ? (s.settings.stonesUnified ? s.stones.count : (s.shards[f.philosopherId] ?? 0)) : 0,
       stonesUnified: s.settings.stonesUnified,
+      title: s.title.value,
       fusable: f && canFuseCard(f, s.owned, s.featuredId, s.settings.fusionCount) ? fusionMaterials(f, s.owned, s.featuredId).length : 0,
     };
   } catch {
@@ -565,6 +590,8 @@ export interface BattleReplay {
   winner: "me" | "foe";
   events: BattleEvent[];
   record: { wins: number; losses: number };
+  /** 팀 시너지 (능력치에 이미 반영됨) */
+  synergy?: { me: Synergy[]; foe: Synergy[] };
 }
 
 export async function playBattle(learner: string, deckIds: string[], difficulty: Difficulty): Promise<BattleReplay> {
@@ -582,8 +609,11 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
     const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, level, settings.rarity_mult);
     return { key, cardId, philosopherId: c.philosopherId, name: c.name, rarity, level, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, artUrl: c.artUrl, tradition: c.tradition };
   };
-  const me = mine.map((m, i) => asBattle(m!, m!.rarity, m!.level, `me-${i}`, m!.cardId));
-  const foe = shuffled.slice(0, 3).map((c, i) => asBattle(c, foeRarities[i], lv, `foe-${i}`, null));
+  const me0 = mine.map((m, i) => asBattle(m!, m!.rarity, m!.level, `me-${i}`, m!.cardId));
+  const foe0 = shuffled.slice(0, 3).map((c, i) => asBattle(c, foeRarities[i], lv, `foe-${i}`, null));
+  const synergy = { me: teamSynergies(me0), foe: teamSynergies(foe0) };
+  const me = me0.map((b) => withSynergy(b, synergy.me));
+  const foe = foe0.map((b) => withSynergy(b, synergy.foe));
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
   const r = runBattle(me.map(toFighter), foe.map(toFighter), seed);
 
@@ -596,7 +626,7 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
   if (error) throw gameError(error.message);
   const record = { wins: state.record.wins + (r.winner === "me" ? 1 : 0), losses: state.record.losses + (r.winner === "me" ? 0 : 1) };
   await db.from("game_profiles").upsert({ learner, deck_cards: deckIds, wins: record.wins, losses: record.losses, updated_at: new Date().toISOString() }, { onConflict: "learner" });
-  return { id: saved.id as string, difficulty, me, foe, first: r.first, winner: r.winner, events: r.events, record };
+  return { id: saved.id as string, difficulty, me, foe, first: r.first, winner: r.winner, events: r.events, record, synergy };
 }
 
 // ---------------------------------------------------------------------
@@ -605,7 +635,7 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
 export const GAME_014_HINT = "사상가 도장깨기 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/014_game_campaign.sql 을 실행하세요.";
 
 export interface StageReplay extends BattleReplay {
-  stage: { bossId: string; no: number; total: number };
+  stage: { bossId: string; no: number; total: number; pattern: BossPattern | null };
   /** 이번에 처음 깼으면 보상: 공용 강화석(017) 또는 보스 강화 조각(017 전) */
   firstClear: boolean;
   reward: { kind: "stones" | "shards"; amount: number } | null;
@@ -626,7 +656,9 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   if (!canPlayStage(stages, cleared, bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
 
   const seed = crypto.randomUUID();
-  const me: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
+  const me0: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
+  const synergy = { me: teamSynergies(me0), foe: [] as Synergy[] };
+  const me = me0.map((b) => withSynergy(b, synergy.me));
   const bs = stageBossStats(stage, settings.rarity_mult);
   const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition, battleArtUrl: card.battleArtUrl ?? null };
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
@@ -647,7 +679,7 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   if (win) {
     const withStones = state.stones.ready;
     const { data: ok, error: e } = withStones
-      ? await db.rpc("game_campaign_clear_stones", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_stones: stageStones(stage.no) })
+      ? await db.rpc("game_campaign_clear_stones", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_stones: stageStones(stage.no, Boolean(stage.pattern)) })
       : await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_shards: STAGE_CLEAR_SHARDS });
     if (e) throw /game_campaign/.test(e.message) ? new GameError(GAME_014_HINT, 503) : gameError(e.message);
     firstClear = ok === true;
@@ -662,9 +694,10 @@ export async function playStage(learner: string, bossId: string, deckIds: string
     winner: r.winner,
     events: r.events,
     record: state.record,
-    stage: { bossId, no: stage.no, total: stages.length },
+    synergy,
+    stage: { bossId, no: stage.no, total: stages.length, pattern: stage.pattern },
     firstClear,
-    reward: firstClear ? (state.stones.ready ? { kind: "stones", amount: stageStones(stage.no) } : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
+    reward: firstClear ? (state.stones.ready ? { kind: "stones", amount: stageStones(stage.no, Boolean(stage.pattern)) } : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
     cleared: stages.filter((x) => cleared.has(x.bossId)).length,
   };
 }
@@ -940,4 +973,76 @@ export async function finishDuel(learner: string, duelId: string, actions: DuelA
     return { result, turns: outcome.state.turn, record: next, replayed: false };
   }
   return { result, turns: outcome.state.turn, record: await record(), replayed: true };
+}
+
+// ---------------------------------------------------------------------
+// 칭호 · 주간 랭킹
+// ---------------------------------------------------------------------
+export const GAME_019_HINT = "칭호 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/019_game_titles.sql 을 실행하세요.";
+
+/** 칭호 고르기 (달성한 업적의 칭호만, null 이면 해제) */
+export async function setTitle(learner: string, title: string | null) {
+  if (title !== null) {
+    const state = await getGameState(learner);
+    if (!canUseTitle(state.achievements, title)) throw new GameError("아직 얻지 않은 칭호입니다.", 409);
+  }
+  const { error } = await getAdminClient().from("game_profiles").upsert({ learner, title, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  if (error) throw /title/.test(error.message) ? new GameError(GAME_019_HINT, 503) : gameError(error.message);
+}
+
+export interface WeeklyRanking {
+  weekStart: string;
+  weekEnd: string;
+  rows: { rank: number; name: string; title: string | null; score: number; stages: number; me: boolean }[];
+  mine: { rank: number; score: number; stages: number } | null;
+  /** 칭호 열(019)이 있는지 */
+  titles: boolean;
+}
+
+/** 이번 주 도장깨기 랭킹 (상위 20명 + 내 순위). 이름은 회원 표시 이름만 (아이디는 보이지 않음) */
+export async function getWeeklyRanking(learner: string): Promise<WeeklyRanking> {
+  const db = getAdminClient();
+  const start = weekStart();
+  const wins: { learner: string; stage: number; at: string }[] = [];
+  // 이번 주 이긴 기록 중 도장깨기(관 번호가 있는 것)만
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await db
+      .from("game_battles")
+      .select("learner, created_at, stage:opponent->0->stage")
+      .eq("result", "win")
+      .gte("created_at", start.toISOString())
+      .not("opponent->0->stage", "is", null)
+      .order("created_at")
+      .range(from, from + 999);
+    if (error) throw gameError(error.message);
+    for (const r of (data ?? []) as { learner: string; created_at: string; stage: number | string | null }[]) wins.push({ learner: r.learner, stage: Number(r.stage), at: r.created_at });
+    if (!data || data.length < 1000) break;
+  }
+  const ranked = rankWeekly(wins);
+  const top = ranked.slice(0, 20);
+  const memberIds = top.map((r) => r.learner).filter((l) => l.startsWith("m:")).map((l) => l.slice(2));
+  const [members, profs] = await Promise.all([
+    memberIds.length ? db.from("members").select("id, display_name").in("id", memberIds) : Promise.resolve({ data: [], error: null }),
+    top.length ? db.from("game_profiles").select("*").in("learner", top.map((r) => r.learner)) : Promise.resolve({ data: [], error: null }),
+  ]);
+  const nameOf = new Map(((members.data ?? []) as { id: string; display_name: string }[]).map((m) => [`m:${m.id}`, m.display_name]));
+  const profRows = (profs.data ?? []) as { learner: string; title?: string | null }[];
+  const titles = profRows.length ? profRows.some((p) => "title" in p) : true;
+  const titleOf = new Map(profRows.map((p) => [p.learner, p.title ?? null]));
+  const i = ranked.findIndex((r) => r.learner === learner);
+  const end = new Date(start.getTime() + 7 * 86400_000);
+  return {
+    weekStart: start.toISOString(),
+    weekEnd: end.toISOString(),
+    rows: top.map((r, k) => ({
+      rank: k + 1,
+      name: r.learner === "owner" ? "관리자" : (nameOf.get(r.learner) ?? "학습자"),
+      title: titleOf.get(r.learner) ?? null,
+      score: r.score,
+      stages: r.stages,
+      me: r.learner === learner,
+    })),
+    mine: i >= 0 ? { rank: i + 1, score: ranked[i].score, stages: ranked[i].stages } : null,
+    titles,
+  };
 }

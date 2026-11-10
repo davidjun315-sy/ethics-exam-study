@@ -5,7 +5,8 @@ import type { BattleCard, BattleReplay } from "@/lib/game/data";
 import { ROLE_COLOR, ROLES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
 import { stateAt } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
-import { chargeAt, SKILL_READY } from "@/lib/game/battle";
+import { BOSS_PATTERNS, chargeAt, SKILL_READY, type BossPattern } from "@/lib/game/battle";
+import { SynergyChips } from "./SynergyChips";
 
 /**
  * 도장깨기 전장: 캐릭터가 서서 싸우는 화면 (자동 배틀 기록을 재생만 함 — 결과는 서버가 정함).
@@ -27,12 +28,22 @@ const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
 const roleOf = (e: SkillEffect) => ROLES[e]?.name ?? "";
 
 /** 전장 아래: 출전한 사상가의 성향 · 필살기 */
-function Roster({ units, st, foeLabel }: { units: { side: "me" | "foe"; list: BattleCard[] }[]; st: Record<string, { dead: boolean }>; foeLabel: string }) {
+function Roster({ units, st, foeLabel, synergy, pattern }: { units: { side: "me" | "foe"; list: BattleCard[] }[]; st: Record<string, { dead: boolean }>; foeLabel: string; synergy?: BattleReplay["synergy"]; pattern?: BossPattern | null }) {
   return (
     <div className="grid gap-2 border-t border-white/10 bg-black/20 px-3 py-2.5 sm:grid-cols-2">
       {units.map(({ side, list }) => (
         <div key={side}>
           <h3 className="mb-1 text-[11px] font-bold text-white/60">{side === "me" ? "내 팀" : foeLabel}</h3>
+          {synergy && synergy[side].length > 0 && (
+            <div className="mb-1.5">
+              <SynergyChips list={synergy[side]} dark />
+            </div>
+          )}
+          {side === "foe" && pattern && (
+            <p className="mb-1.5 rounded-lg border border-[#ef6a5a]/40 bg-[#ef6a5a]/10 px-2 py-1 text-[11px] text-[#ffb4a8]">
+              <b>특수 패턴 「{BOSS_PATTERNS[pattern].name}」</b> · {BOSS_PATTERNS[pattern].desc}
+            </p>
+          )}
           <ul className="space-y-1">
             {list.map((u) => (
               <li key={u.key} className={`flex items-start gap-2 rounded-lg bg-white/5 px-2 py-1.5 text-xs ${st[u.key]?.dead ? "opacity-45" : ""}`} data-roster={u.key}>
@@ -135,7 +146,7 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
 }
 
 // 사건마다 길이 · 맞는 순간 (ms, 1배속)
-const DUR = { attack: 950, skill: 2300, stunned: 700, faint: 600, end: 500 } as const;
+const DUR = { attack: 950, skill: 2300, stunned: 700, phase: 1900, faint: 600, end: 500 } as const;
 const IMPACT = { attack: 300, skill: 1250 } as const;
 const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -269,6 +280,8 @@ export function BattleStage({
   const [size, setSize] = useState({ W: 360, H: 300 });
   const done = idx >= replay.events.length;
   const current = idx > 0 ? replay.events[idx - 1] : null;
+  // 도장깨기 기록이면 보스 특수 패턴
+  const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
   const t = 1 / speed; // 시간 배율
 
   useLayoutEffect(() => {
@@ -316,7 +329,9 @@ export function BattleStage({
           ? `${byKey.get(current.actor)?.name}이(가) 기절해 한 번 쉽니다`
           : current.t === "faint"
             ? `${byKey.get(current.target)?.name} 쓰러짐`
-            : current.winner === "me"
+            : current.t === "phase"
+              ? `${byKey.get(current.actor)?.name}의 패턴 「${BOSS_PATTERNS[current.pattern].name}」 발동! ${BOSS_PATTERNS[current.pattern].desc.split("면 ")[1] ?? ""}`
+              : current.winner === "me"
               ? "승리!"
               : "패배…";
 
@@ -370,7 +385,7 @@ export function BattleStage({
           {/* 쓰러진 뒤에는 key 를 고정해 쓰러지는 동작이 사건마다 다시 재생되지 않게 */}
           <div key={s.dead ? `${u.key}-dead` : `${u.key}-${idx}-${hit ? 1 : 0}`} className={`h-full ${anim}`}>
             <div className={`h-full ${isActor && skill ? "bs-aura" : ""}`} style={isActor && skill && theme ? { ["--aura" as string]: theme.colors[0] } : undefined}>
-              <div className={`bs-rar bs-rar-${u.rarity} relative h-full`}>
+              <div className={`bs-rar bs-rar-${u.rarity} relative h-full ${s.phase ? `bs-phase bs-phase-${s.phase}` : ""}`}>
                 {/* 등급 기운: 바닥 빛 · 뒤 광채 · (영웅·전설) 떠오르는 빛가루 · (전설) 후광 */}
                 {u.rarity !== "common" && <span className="bs-rar-floor" aria-hidden />}
                 {(u.rarity === "epic" || u.rarity === "legendary") && (
@@ -476,6 +491,12 @@ export function BattleStage({
           {replay.foe.map((u, i) => unit(u, BOSS_SLOT, true, i + 3))}
           <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
             {fx}
+            {current?.t === "phase" && (
+              <div className={`fx-phase fx-phase-${current.pattern} absolute inset-x-0 top-[34%] text-center`}>
+                <div className="text-[11px] font-bold tracking-[0.35em] text-white/85 sm:text-xs">특수 패턴</div>
+                <div className="fx-phase-name text-4xl font-black sm:text-6xl">{BOSS_PATTERNS[current.pattern].name}!</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -483,7 +504,7 @@ export function BattleStage({
         {narration}
       </p>
       {done && <div className="px-3 pb-4">{result}</div>}
-      <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "상대 팀"} />
+      <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "상대 팀"} synergy={replay.synergy} pattern={pattern} />
     </section>
   );
 }

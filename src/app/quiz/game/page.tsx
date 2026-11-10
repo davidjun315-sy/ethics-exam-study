@@ -6,7 +6,7 @@ import { currentLearner } from "@/lib/quiz/learn";
 
 export const metadata = { title: "철학자 대난투 · 윤리 퀴즈" };
 
-const TABS: Tab[] = ["draw", "collection", "upgrade", "fusion", "battle"];
+const TABS: Tab[] = ["draw", "collection", "upgrade", "fusion", "battle", "honor"];
 
 export default async function GamePage({ searchParams }: PageProps<"/quiz/game">) {
   const learner = await currentLearner();

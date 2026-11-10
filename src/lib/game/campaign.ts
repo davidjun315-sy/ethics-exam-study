@@ -6,7 +6,7 @@
  *  - 보스 능력치는 모든 사상가의 평균 기본 능력치로 계산 → 뒤 관이 언제나 앞 관보다 강함 (사상가마다 기본값이 달라도)
  *  - 앞 관을 모두 깨야 다음 관이 열린다
  */
-import type { Fighter } from "./battle.ts";
+import type { BossPattern, Fighter } from "./battle.ts";
 import { DEFAULT_RARITY_MULT, type Rarity, type SkillEffect } from "./rules.ts";
 
 export interface StageCard {
@@ -37,6 +37,15 @@ export interface CampaignStage {
   base: { atk: number; hp: number };
   /** 보스 사상가의 성향 모양 (공격형은 공격↑ 체력↓ …). 공격×체력 곱은 1 → 전체 강함은 그대로 */
   shape: { atk: number; hp: number };
+  /** 특수 보스 패턴 (5관마다 · 마지막 관), 없으면 null */
+  pattern: BossPattern | null;
+}
+
+/** 특수 보스: 5관마다(5 재생 · 10 격노 · 15 철벽 · 20 재생 …) + 마지막 관은 격노 */
+export function stagePattern(no: number, total: number): BossPattern | null {
+  if (no === total && total >= 3) return "enrage";
+  if (no % 5 !== 0) return null;
+  return (["fortress", "regen", "enrage"] as const)[(no / 5) % 3];
 }
 
 /** 첫 관 클리어 보상 (017 전): 보스 사상가 강화 조각 */
@@ -45,7 +54,7 @@ export const STAGE_CLEAR_SHARDS = 3;
  * 첫 관 클리어 보상 (017): 강화석. 1~10관 1개, 11~20관 2개, 21~30관 3개 …
  * 카드 한 장을 Lv.1 → 5 로 올리는 데 강화석 10개 (합성해도 레벨은 유지) → 10관마다 대략 카드 1~2장 분량
  */
-export const stageStones = (no: number) => 1 + Math.floor((Math.max(1, no) - 1) / 10);
+export const stageStones = (no: number, special = false) => 1 + Math.floor((Math.max(1, no) - 1) / 10) + (special ? 1 : 0);
 
 const TRADITION_ORDER = ["동양윤리", "한국윤리", "서양윤리", "사회사상"];
 
@@ -120,6 +129,7 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
       atkMul: lerp(tune.atk, t),
       base,
       shape,
+      pattern: stagePattern(i + 1, n),
     };
   });
 }
@@ -144,16 +154,21 @@ export const canPlayStage = (stages: CampaignStage[], cleared: Set<string>, boss
   return i >= 0 && stageStatuses(stages, cleared)[i] !== "locked";
 };
 
+/** 특수 보스 기본 체력 배율 */
+export const PATTERN_HP = 0.93;
+
 /** 관 보스 능력치 (평균 기본값 기준이라 관 번호가 클수록 언제나 강함) */
 export function stageBossStats(stage: CampaignStage, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
   const r = mult[stage.rarity] ?? 1;
   const lv = 1 + 0.12 * (stage.statLevel - 1); // statsAt 과 같은 레벨 배율 (연속값)
   const shape = stage.shape ?? { atk: 1, hp: 1 };
-  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp) };
+  // 특수 보스는 패턴이 있으니 기본 체력은 조금 낮춤 (패턴 포함해 보통 보스보다 어렵게)
+  const sp = stage.pattern ? PATTERN_HP : 1;
+  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp * sp) };
 }
 
 /** 관 보스 → 배틀 참가자 */
 export function stageBoss(stage: CampaignStage, c: StageCard, mult?: Record<Rarity, number>): Fighter {
   const st = stageBossStats(stage, mult);
-  return { key: "foe-0", philosopherId: c.philosopherId, name: c.name, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, scale: stage.hpMul };
+  return { key: "foe-0", philosopherId: c.philosopherId, name: c.name, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, scale: stage.hpMul, ...(stage.pattern ? { pattern: stage.pattern } : {}) };
 }

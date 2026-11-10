@@ -9,6 +9,9 @@ import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { initialTeam, TeamPicker } from "./BattleTab";
 import { BattleStage } from "./BattleStage";
+import { SynergyChips } from "./SynergyChips";
+import { BOSS_PATTERNS } from "@/lib/game/battle";
+import { teamSynergies, withSynergy } from "@/lib/game/synergy";
 
 const TILE_RING: Record<string, string> = { common: "ring-[#9aa4b5]/70", rare: "ring-[#5aa2ff]", epic: "ring-[#b07cff]", legendary: "ring-[#ffc94a]" };
 const TILE_TEXT: Record<string, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
@@ -164,7 +167,9 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   const boss = byId.get(sel.bossId)!;
   const bossStats = stageBossStats(sel, state.settings.rarityMult);
   const teamCards = team.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
-  const teamPower = teamCards.reduce((n, o) => ({ atk: n.atk + o.atk, hp: n.hp + o.hp }), { atk: 0, hp: 0 });
+  const synergy = teamSynergies(teamCards);
+  // 시너지 반영한 팀 합계 (배틀과 같은 계산)
+  const teamPower = teamCards.map((o) => withSynergy(o, synergy)).reduce((n, o) => ({ atk: n.atk + o.atk, hp: n.hp + o.hp }), { atk: 0, hp: 0 });
   const allClear = clearedCount === stages.length;
   const clearedAt = new Map(state.campaign.cleared.map((c) => [c.id, c]));
 
@@ -219,9 +224,15 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               </div>
               <div className="mt-1 text-[11px] text-white/55">
                 내 팀 합계 ⚔ {teamPower.atk} · ♥ {teamPower.hp}
+                {synergy.length > 0 && <span className="text-[#ffe7a8]"> (시너지 반영)</span>}
               </div>
             </div>
           </div>
+          {sel.pattern && (
+            <p className="mt-2.5 rounded-lg border border-[#ef6a5a]/45 bg-[#ef6a5a]/12 px-2.5 py-1.5 text-xs text-[#ffc4b8]">
+              <b className="text-[#ff8f7f]">특수 보스 · 「{BOSS_PATTERNS[sel.pattern].name}」</b> {BOSS_PATTERNS[sel.pattern].desc}
+            </p>
+          )}
           <div className="mt-3 flex items-center gap-2">
             {selStatus === "cleared" && (
               <span className="flex items-center gap-1 text-xs text-[#9ff0bf]">
@@ -233,7 +244,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <Lock className="h-3.5 w-3.5" aria-hidden /> 앞 관을 깨면 열립니다
               </span>
             )}
-            {selStatus !== "cleared" && state.stones.ready && <span className="text-xs text-[#9fd8ff]">첫 클리어 ◆ 강화석 {stageStones(sel.no)}</span>}
+            {selStatus !== "cleared" && state.stones.ready && <span className="text-xs text-[#9fd8ff]">첫 클리어 ◆ 강화석 {stageStones(sel.no, Boolean(sel.pattern))}</span>}
             <button
               type="button"
               className={`ml-auto inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-black ${selStatus === "current" ? "bg-[#ffd36b] text-[#2a1d00] hover:bg-[#ffe08f]" : "bg-white/15 hover:bg-white/25"} disabled:opacity-40`}
@@ -266,10 +277,13 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               featuredId={state.featuredId}
             />
           ) : (
-            <div className="grid grid-cols-3 gap-2 sm:max-w-md">
-              {teamCards.map((o) => (
-                <PhilosopherCard fx="lite" key={o.cardId} card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} tilt={false} />
-              ))}
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2 sm:max-w-md">
+                {teamCards.map((o) => (
+                  <PhilosopherCard fx="lite" key={o.cardId} card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} tilt={false} />
+                ))}
+              </div>
+              <SynergyChips list={synergy} empty={teamCards.length === 3 ? "팀 시너지 없음 · '팀 바꾸기'에서 조합을 확인하세요" : undefined} />
             </div>
           )}
         </div>
@@ -294,11 +308,16 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                     type="button"
                     onClick={() => setPicked(s.bossId)}
                     aria-pressed={on}
-                    aria-label={`${s.no}관 ${c?.name} · ${RARITY_NAMES[s.rarity]} Lv.${s.level} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
+                    aria-label={`${s.no}관 ${c?.name} · ${RARITY_NAMES[s.rarity]} Lv.${s.level}${s.pattern ? ` · 특수 패턴 ${BOSS_PATTERNS[s.pattern].name}` : ""} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
                     className={`relative block w-full rounded-xl text-left ${on ? "ring-2 ring-navy ring-offset-2 ring-offset-surface" : ""}`}
                   >
                     <Portrait c={c} className={`aspect-[3/4] w-full rounded-xl ring-2 ${st === "current" ? "ring-[#ffd36b] duel-pulse" : TILE_RING[s.rarity]}`} dim={st === "locked"} />
                     <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-bold text-white">{s.no}</span>
+                    {s.pattern && (
+                      <span className="absolute left-1/2 top-1 -translate-x-1/2 rounded bg-[#d9443a] px-1 text-[9px] font-black text-white shadow" title={`특수 보스 · ${BOSS_PATTERNS[s.pattern].name}`}>
+                        {BOSS_PATTERNS[s.pattern].name}
+                      </span>
+                    )}
                     {st === "cleared" && (
                       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ok text-white shadow">
                         <Check className="h-3 w-3" aria-hidden />
@@ -319,7 +338,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         </div>
       </section>
       <p className="px-1 text-[11px] leading-5 text-faint">
-        배틀은 자동으로 진행됩니다. 두 번째 행동에 첫 필살기, 이후 세 번째 행동마다 필살기. 보스는 혼자라 체력이 크고, 내 카드 3장이 움직일 때마다 한 번씩 움직입니다. 코인은 학습으로만 받습니다.
+        배틀은 자동으로 진행됩니다. 필살기 게이지는 0에서 시작해 기본 공격 두 번이면 가득 차고, 세 번째 행동에 필살기를 씁니다. 보스는 혼자라 체력이 크고, 내 카드 3장이 움직일 때마다 한 번씩 움직입니다. 5관마다·마지막 관은 특수 패턴 보스입니다. 코인은 학습으로만 받습니다.
       </p>
     </div>
   );

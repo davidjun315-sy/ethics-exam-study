@@ -294,13 +294,14 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   const name = (id: string) => byId.get(id)!.name;
   const st = buildCampaign(cards, 5);
   check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,밀,롤스,노직", st.map((x) => name(x.bossId)).join(","));
-  const power = st.map((x) => stageBossStats(x));
+  // 기본 능력치 비교 (특수 보스는 패턴이 있어 체력을 조금 낮추므로 패턴 없는 값으로)
+  const power = st.map((x) => stageBossStats({ ...x, pattern: null }));
   check("관마다 보스 한 명 · 매 관 더 강해짐 (공격×체력이 매번 늘고, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || p.atk * p.hp > power[i - 1].atk * power[i - 1].hp) && power[9].atk * power[9].hp > power[0].atk * power[0].hp * 5, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
   check("보스 레벨 = 관 번호 (매 관 오름) · 등급은 내려가지 않음", st.every((x, i) => x.level === i + 1) && st.every((x, i) => i === 0 || ["common", "rare", "epic", "legendary"].indexOf(x.rarity) >= ["common", "rare", "epic", "legendary"].indexOf(st[i - 1].rarity)));
   {
     // 사상가마다 기본 능력치가 달라도 뒤 관이 약해지지 않음
     const uneven = cards.map((c, i) => ({ ...c, baseAtk: 30 + ((i * 13) % 25), baseHp: 220 + ((i * 71) % 160) }));
-    const p2 = buildCampaign(uneven, 5).map((x) => stageBossStats(x));
+    const p2 = buildCampaign(uneven, 5).map((x) => stageBossStats({ ...x, pattern: null }));
     check("사상가 기본값이 제각각이어도 보스는 매 관 강해짐 (공격×체력)", p2.every((p, i) => i === 0 || p.atk * p.hp > p2[i - 1].atk * p2[i - 1].hp));
   }
   check("보스 등급: 일반 → 희귀 → 영웅 → 전설", st[0].rarity === "common" && st[9].rarity === "legendary" && st.some((x) => x.rarity === "rare") && st.some((x) => x.rarity === "epic"));
@@ -388,6 +389,40 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
       stones += stageStones(k + 1);
     }
     check("일반 카드는 강화석만으로 키워도 앞 절반을 못 넘음 (뽑기·합성으로 등급을 올려야 함)", k < st.length / 2, `${k}/${st.length}관에서 막힘`);
+  }
+  // 특수 보스 패턴
+  {
+    const st20 = buildCampaign(Array.from({ length: 20 }, (_, i) => ({ philosopherId: `q${i}`, name: `q${i}`, tradition: "서양윤리" })), 5);
+    const pats = st20.map((x) => x.pattern ?? "-").join(",");
+    check("특수 보스: 5관 재생 · 10관 격노 · 15관 철벽 · 마지막 관 격노, 나머지 없음", pats === "-,-,-,-,regen,-,-,-,-,enrage,-,-,-,-,fortress,-,-,-,-,enrage", pats);
+    check("특수 보스는 강화석 +1", stageStones(5, true) === 2 && stageStones(5) === 1);
+    const boss = (p: "enrage" | "regen" | "fortress" | null, seed: string) => {
+      const b = stageBoss({ ...st[5], pattern: p }, byId.get(st[5].bossId)!);
+      return runBattle(team("epic", 4, 2), [b], seed);
+    };
+    for (const p of ["enrage", "regen", "fortress"] as const) {
+      const r = boss(p, `pat-${p}`);
+      const ph = r.events.filter((e) => e.t === "phase");
+      const i = r.events.findIndex((e) => e.t === "phase");
+      // 발동 직전 보스 체력이 절반 이하
+      const before = r.events.slice(0, i).reverse().map((e) => (e.t === "attack" && e.target === "foe-0" ? e.hp : e.t === "skill" ? e.hits.find((h) => h.target === "foe-0")?.hp : undefined)).find((x) => x !== undefined);
+      const max = stageBoss({ ...st[5], pattern: p }, byId.get(st[5].bossId)!).hp;
+      check(`패턴 「${p}」: 체력이 절반 아래가 되면 한 번 발동`, ph.length === 1 && before !== undefined && before <= max / 2, `발동 ${ph.length} · 직전 ${before}/${max}`);
+      if (p === "enrage") {
+        const next = r.events.slice(i + 1).find((e) => (e.t === "attack" || e.t === "skill" || e.t === "stunned") && e.actor === "foe-0");
+        check("격노: 다음 보스 행동이 필살기 (게이지도 가득으로 표시)", next?.t === "skill" && chargeAt(["foe-0"], r.events, i + 1)["foe-0"] === SKILL_READY);
+      }
+      if (p === "regen") {
+        const e = ph[0];
+        check("재생: 최대 체력 15% 회복", e.t === "phase" && !!e.heal && e.heal.amount > 0 && e.heal.amount <= Math.round(max * 0.15) + 1);
+      }
+    }
+    let wPlain = 0, wPat = 0;
+    for (let g = 0; g < 80; g++) {
+      if (boss(null, `pp${g}`).winner === "me") wPlain++;
+      if (boss("fortress", `pp${g}`).winner === "me") wPat++;
+    }
+    check("특수 보스는 같은 관 보통 보스보다 어려움", wPat < wPlain, `보통 ${wPlain} · 철벽 ${wPat} /80`);
   }
   check(
     "첫 클리어 강화석: 1~10관 1개 · 11~20관 2개 … (뒤 관일수록 많음)",

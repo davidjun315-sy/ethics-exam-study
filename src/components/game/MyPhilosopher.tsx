@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TitleBadge } from "./HonorTab";
 import { ChevronRight, Layers, Sparkles, Swords, WandSparkles } from "lucide-react";
 import type { FeaturedSummary } from "@/lib/game/data";
 import { nextRarity, RARITY_NAMES } from "@/lib/game/rules";
@@ -100,6 +101,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-2">
             <span className="eyebrow">나의 대표 사상가</span>
+            <TitleBadge title={game.title} />
             {!compact && <span className="ml-auto"><CoinChip value={game.coins} /></span>}
           </div>
           <h2 className="mt-1 truncate text-xl font-extrabold tracking-tight sm:text-2xl">{f.name}</h2>

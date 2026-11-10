@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BattleCard, BattleReplay, GameState, OwnedCard } from "@/lib/game/data";
 import type { BattleEvent } from "@/lib/game/battle";
-import { DIFFICULTY_NAMES, type Difficulty } from "@/lib/game/battle";
+import { BOSS_PATTERNS, DIFFICULTY_NAMES, type BossPattern, type Difficulty } from "@/lib/game/battle";
+import { teamSynergies } from "@/lib/game/synergy";
+import { SynergyChips, SynergyGuide } from "./SynergyChips";
 import { SKILL_EFFECTS, type SkillEffect } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
@@ -84,7 +86,7 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
         </button>
         {error && <p className="text-sm text-danger">{error}</p>}
         <p className="text-[11px] leading-5 text-faint">
-          턴마다 자동으로 싸웁니다. 두 번째 행동에 첫 필살기, 이후 세 번째 행동마다 필살기를 씁니다. 배틀에는 코인 보상이 없습니다 (코인은 학습으로만).
+          턴마다 자동으로 싸웁니다. 세 번째 행동마다 필살기를 씁니다. 같은 분야·성향 조합이면 팀 시너지가 붙습니다 (상대도 마찬가지). 배틀에는 코인 보상이 없습니다 (코인은 학습으로만).
         </p>
       </aside>
     </div>
@@ -93,7 +95,13 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
 
 /** 보유 카드에서 3장 고르기 (빠른 대전 · 도장깨기 팀 공용) */
 export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId }: { owned: OwnedCard[]; deck: string[]; onToggle: (id: string) => void; maxLevel: number; featuredId: string | null }) {
+  const team = deck.map((id) => owned.find((o) => o.cardId === id)).filter((o): o is OwnedCard => Boolean(o));
   return (
+    <div className="space-y-2">
+      <div className="space-y-1.5 rounded-lg bg-surface-2/60 p-2.5">
+        <SynergyChips list={teamSynergies(team)} empty={team.length < 3 ? "카드 3장을 고르면 팀 시너지가 보입니다." : "이 팀엔 시너지가 없습니다. 분야·성향을 맞춰 보세요."} />
+        <SynergyGuide />
+      </div>
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5" aria-label="보유 카드">
       {[...owned].sort((a, b) => byStrength(a, b) || a.name.localeCompare(b.name)).map((o) => {
         const at = deck.indexOf(o.cardId);
@@ -104,6 +112,7 @@ export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId }: { ow
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -125,6 +134,8 @@ export interface UnitState {
   dead: boolean;
   shield: boolean;
   stun: boolean;
+  /** 특수 보스 패턴이 발동했으면 그 패턴 */
+  phase?: BossPattern;
 }
 
 export function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Record<string, UnitState> {
@@ -143,12 +154,16 @@ export function stateAt(units: BattleCard[], events: BattleEvent[], upto: number
       if (e.stunned) s[e.stunned].stun = true;
     } else if (e.t === "stunned") s[e.actor].stun = false;
     else if (e.t === "faint") s[e.target].dead = true;
+    else if (e.t === "phase") {
+      if (e.heal) s[e.actor].hp = e.heal.hp;
+      s[e.actor].phase = e.pattern;
+    }
   }
   return s;
 }
 
 export const EFFECT_COLOR: Record<SkillEffect, string> = { strike: "#ff9a7a", sweep: "#ffb84d", heal: "#7fe0a6", guard: "#8fc6ff", stun: "#d8a6ff" };
-export const DURATION: Record<BattleEvent["t"], number> = { attack: 750, skill: 1300, stunned: 650, faint: 550, end: 400 };
+export const DURATION: Record<BattleEvent["t"], number> = { attack: 750, skill: 1300, stunned: 650, phase: 1200, faint: 550, end: 400 };
 
 export function BattleArena({
   replay,
@@ -196,7 +211,9 @@ export function BattleArena({
           ? `${byKey.get(current.actor)?.name}이(가) 기절해 행동하지 못합니다`
           : current.t === "faint"
             ? `${byKey.get(current.target)?.name} 쓰러짐`
-            : current.winner === "me"
+            : current.t === "phase"
+              ? `${byKey.get(current.actor)?.name}의 패턴 「${BOSS_PATTERNS[current.pattern].name}」 발동!${current.heal ? ` 체력 +${current.heal.amount}` : ""}`
+              : current.winner === "me"
               ? "승리!"
               : "패배…";
 
@@ -258,6 +275,12 @@ export function BattleArena({
           {!done && <button type="button" onClick={() => setIdx(replay.events.length)} className="rounded bg-white/10 px-2 py-0.5">건너뛰기</button>}
         </span>
       </div>
+      {replay.synergy && (replay.synergy.me.length > 0 || replay.synergy.foe.length > 0) && (
+        <div className="mb-3 grid gap-1.5 text-[11px] text-white/60 sm:grid-cols-2">
+          <div className="flex flex-wrap items-center gap-1.5">상대 <SynergyChips list={replay.synergy.foe} dark empty="시너지 없음" /></div>
+          <div className="flex flex-wrap items-center gap-1.5">{meLabel} <SynergyChips list={replay.synergy.me} dark empty="시너지 없음" /></div>
+        </div>
+      )}
       <div className="mx-auto max-w-2xl space-y-4">
         {row("foe")}
         <div className="relative flex min-h-12 items-center justify-center">
