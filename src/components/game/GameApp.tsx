@@ -12,6 +12,7 @@ import { UpgradeTab } from "./UpgradeTab";
 import { FusionTab } from "./FusionTab";
 import { BattleTab } from "./BattleTab";
 import { DuelTab } from "./DuelTab";
+import { StageTab } from "./StageTab";
 
 export type Tab = "draw" | "collection" | "upgrade" | "fusion" | "battle";
 const TABS: { key: Tab; label: string; short: string }[] = [
@@ -270,12 +271,13 @@ export function gemStyle(r: OwnedCard["rarity"]): React.CSSProperties {
   return { ["--r1" as string]: c[0], ["--r2" as string]: c[1] };
 }
 
-/** 배틀 아레나: 논쟁 대전(턴제 카드 배틀)과 빠른 대전(자동 전투) */
+/** 배틀 아레나: 도장깨기(내 카드 3장 vs 관 보스) · 빠른 대전(3 vs 3) · 카드 대전(턴제 카드 게임) */
 function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
-  const [mode, setMode] = useState<"duel" | "quick">("duel");
+  const [mode, setMode] = useState<"stage" | "quick" | "duel">("stage");
   const modes = [
-    { key: "duel" as const, label: "논쟁 대전" },
+    { key: "stage" as const, label: "도장깨기" },
     { key: "quick" as const, label: "빠른 대전" },
+    { key: "duel" as const, label: "카드 대전" },
   ];
   return (
     <div className="space-y-4">
@@ -292,7 +294,13 @@ function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => P
           </button>
         ))}
       </div>
-      {mode === "duel" ? <DuelTab state={state} reload={reload} goDraw={goDraw} /> : <BattleTab state={state} reload={reload} goDraw={goDraw} />}
+      {mode === "stage" ? (
+        <StageTab state={state} reload={reload} goDraw={goDraw} />
+      ) : mode === "duel" ? (
+        <DuelTab state={state} reload={reload} goDraw={goDraw} />
+      ) : (
+        <BattleTab state={state} reload={reload} goDraw={goDraw} />
+      )}
     </div>
   );
 }

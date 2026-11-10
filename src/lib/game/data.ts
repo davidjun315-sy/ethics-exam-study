@@ -7,7 +7,7 @@ import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleE
 import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
-import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageDeck } from "./campaign";
+import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats } from "./campaign";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -523,6 +523,73 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
   return { id: saved.id as string, difficulty, me, foe, first: r.first, winner: r.winner, events: r.events, record };
 }
 
+// ---------------------------------------------------------------------
+// 사상가 도장깨기: 내 배틀 덱 3장 vs 관 보스 1명 (자동 배틀, 서버가 결과를 정함)
+// ---------------------------------------------------------------------
+export const GAME_014_HINT = "사상가 도장깨기 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/014_game_campaign.sql 을 실행하세요.";
+
+export interface StageReplay extends BattleReplay {
+  stage: { bossId: string; no: number; total: number };
+  /** 이번에 처음 깼으면 보스 강화 조각 */
+  firstClear: boolean;
+  shards: number;
+  cleared: number; // 이번 결과까지 깬 관 수
+}
+
+export async function playStage(learner: string, bossId: string, deckIds: string[]): Promise<StageReplay> {
+  if (deckIds.length !== 3 || new Set(deckIds).size !== 3) throw new GameError("뽑기로 얻은 서로 다른 카드 3장으로 팀을 꾸리세요.");
+  const [state, settings] = await Promise.all([getGameState(learner), getGameSettings()]);
+  if (!state.campaign.ready) throw new GameError(GAME_014_HINT, 503);
+  const mine = deckIds.map((id) => state.owned.find((o) => o.cardId === id));
+  if (mine.some((m) => !m)) throw new GameError(MESSAGES.GAME_NOT_OWNED);
+  const stages = buildCampaign(state.cards, state.settings.maxLevel);
+  const stage = stages.find((x) => x.bossId === bossId);
+  const card = state.cards.find((c) => c.philosopherId === bossId);
+  if (!stage || !card) throw new GameError("없는 관입니다.", 404);
+  const cleared = new Set(state.campaign.cleared.map((c) => c.id));
+  if (!canPlayStage(stages, cleared, bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
+
+  const seed = crypto.randomUUID();
+  const me: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition }));
+  const bs = stageBossStats(stage, card, settings.rarity_mult);
+  const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition };
+  const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
+  const r = runBattle(me.map(toFighter), [stageBoss(stage, card, settings.rarity_mult)], seed);
+  const win = r.winner === "me";
+  const difficulty: Difficulty = stage.tier < 2 ? "easy" : stage.tier < 4 ? "normal" : "hard";
+
+  const db = getAdminClient();
+  const { data: saved, error } = await db
+    .from("game_battles")
+    .insert({ learner, difficulty, deck: me, opponent: [{ ...boss, stage: stage.no }], seed, result: win ? "win" : "lose", turns: r.actions })
+    .select("id")
+    .single();
+  if (error) throw gameError(error.message);
+  // 팀(배틀 덱)은 빠른 대전과 같이 저장
+  await db.from("game_profiles").upsert({ learner, deck_cards: deckIds, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  let firstClear = false;
+  if (win) {
+    const { data: ok, error: e } = await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: bossId, p_duel: saved.id, p_turns: r.actions, p_shards: STAGE_CLEAR_SHARDS });
+    if (e) throw /game_campaign/.test(e.message) ? new GameError(GAME_014_HINT, 503) : gameError(e.message);
+    firstClear = ok === true;
+    cleared.add(bossId);
+  }
+  return {
+    id: saved.id as string,
+    difficulty,
+    me,
+    foe: [boss],
+    first: r.first,
+    winner: r.winner,
+    events: r.events,
+    record: state.record,
+    stage: { bossId, no: stage.no, total: stages.length },
+    firstClear,
+    shards: firstClear ? STAGE_CLEAR_SHARDS : 0,
+    cleared: stages.filter((x) => cleared.has(x.bossId)).length,
+  };
+}
+
 function hashSeed(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
@@ -666,14 +733,8 @@ export interface DuelSetup {
 }
 
 
-export const GAME_014_HINT = "사상가 도장깨기 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/014_game_campaign.sql 을 실행하세요.";
 
-export interface DuelStageInfo {
-  bossId: string;
-  no: number;
-}
-
-export async function startDuel(learner: string, opts: { difficulty?: Difficulty; stage?: string }): Promise<{ duelId: string; difficulty: Difficulty; stage: DuelStageInfo | null } & DuelSetup> {
+export async function startDuel(learner: string, difficulty: Difficulty): Promise<{ duelId: string; difficulty: Difficulty } & DuelSetup> {
   const [state, settings, prof] = await Promise.all([
     getGameState(learner),
     getGameSettings(),
@@ -689,21 +750,9 @@ export async function startDuel(learner: string, opts: { difficulty?: Difficulty
   const me = mine.map((o, i) =>
     toDuelCard({ uid: `m${i}`, cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, tradition: o.tradition, rarity: o.rarity, level: o.level, effect: o.skillEffect, skillName: o.skillName, artUrl: o.artUrl, statAtk: o.atk, statHp: o.hp }, rules),
   );
-  // 도장깨기: 관 보스 + 동료 3명 덱, 난이도는 관마다 정해짐
-  let stage: DuelStageInfo | null = null;
-  let difficulty: Difficulty = opts.difficulty ?? "normal";
   let foe: DuelCardDef[];
-  if (opts.stage) {
-    if (!state.campaign.ready) throw new GameError(GAME_014_HINT, 503);
-    const stages = buildCampaign(state.cards, state.settings.maxLevel);
-    const st = stages.find((x) => x.bossId === opts.stage);
-    if (!st) throw new GameError("없는 관입니다.", 404);
-    if (!canPlayStage(stages, new Set(state.campaign.cleared.map((c) => c.id)), st.bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
-    foe = stageDeck(st, new Map(state.cards.map((c) => [c.philosopherId, c])), rules, settings.rarity_mult);
-    difficulty = st.ai;
-    stage = { bossId: st.bossId, no: st.no };
-  } else {
-    // 연습 대전: 공개 사상가 중 무작위, 등급 구성은 내 덱과 같게(섞어서), 레벨은 내 덱 평균 ± 난이도
+  {
+    // 상대: 공개 사상가 중 무작위, 등급 구성은 내 덱과 같게(섞어서), 레벨은 내 덱 평균 ± 난이도
     const lv = opponentLevel(mine.map((o) => o.level), difficulty, state.settings.maxLevel);
     const r = seededRandomFor(seed);
     const rarities = mine.map((o) => o.rarity).sort(() => r() - 0.5);
@@ -714,9 +763,9 @@ export async function startDuel(learner: string, opts: { difficulty?: Difficulty
     });
   }
   const setup: DuelSetup = { me, foe, seed, rules };
-  const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules, stage }, seed }).select("id").single();
+  const { data, error } = await getAdminClient().from("game_duels").insert({ learner, difficulty, setup: { me, foe, rules }, seed }).select("id").single();
   if (error) throw duelError(error.message);
-  return { duelId: data.id as string, difficulty, stage, ...setup };
+  return { duelId: data.id as string, difficulty, ...setup };
 }
 
 /** 논쟁 대전 덱 저장: 서로 다른 보유 카드 최대 덱 크기만큼 (빈 목록 = 자동). 모자란 칸은 대전 때 자동으로 채운다 */
@@ -734,8 +783,6 @@ export interface DuelOutcome {
   turns: number;
   record: { wins: number; losses: number; draws: number };
   replayed: boolean;
-  /** 도장깨기 관이면: 이번에 처음 깼는지 · 받은 조각 */
-  stage: (DuelStageInfo & { cleared: boolean; firstClear: boolean; shards: number }) | null;
 }
 
 /** 대전 결과 확인: 서버가 처음부터 다시 계산 (내 행동 = 기록, 상대 행동 = 같은 컴퓨터 규칙). 이미 끝난 대전이면 그 결과 */
@@ -748,29 +795,11 @@ export async function finishDuel(learner: string, duelId: string, actions: DuelA
     const { data: p } = await db.from("game_profiles").select("duel_wins, duel_losses, duel_draws").eq("learner", learner).maybeSingle();
     return { wins: (p?.duel_wins as number) ?? 0, losses: (p?.duel_losses as number) ?? 0, draws: (p?.duel_draws as number) ?? 0 };
   };
-  const setup = row.setup as { me: DuelCardDef[]; foe: DuelCardDef[]; rules: DuelRules; stage?: DuelStageInfo | null };
-  // 도장깨기: 이기면 관 클리어 기록 (처음 한 번만 보스 강화 조각)
-  const stageResult = async (result: DuelOutcome["result"], turns: number, fresh: boolean): Promise<DuelOutcome["stage"]> => {
-    const st = setup.stage;
-    if (!st) return null;
-    if (result !== "win") return { ...st, cleared: false, firstClear: false, shards: 0 };
-    let first = false;
-    if (fresh) {
-      const { data: ok, error: e } = await db.rpc("game_campaign_clear", { p_learner: learner, p_philosopher: st.bossId, p_duel: duelId, p_turns: turns, p_shards: STAGE_CLEAR_SHARDS });
-      if (e) throw /game_campaign/.test(e.message) ? new GameError(GAME_014_HINT, 503) : gameError(e.message);
-      first = ok === true;
-    } else {
-      const { data: c } = await db.from("game_campaign").select("duel_id").eq("learner", learner).eq("philosopher_id", st.bossId).maybeSingle();
-      first = c?.duel_id === duelId;
-    }
-    return { ...st, cleared: true, firstClear: first, shards: first ? STAGE_CLEAR_SHARDS : 0 };
-  };
   if (row.status !== "open") {
     if (row.status === "void") throw new GameError("기록이 맞지 않아 무효 처리된 대전입니다.");
-    const res = row.status as DuelOutcome["result"];
-    const turns = (row.turns as number) ?? 0;
-    return { result: res, turns, record: await record(), replayed: true, stage: await stageResult(res, turns, false) };
+    return { result: row.status as DuelOutcome["result"], turns: (row.turns as number) ?? 0, record: await record(), replayed: true };
   }
+  const setup = row.setup as { me: DuelCardDef[]; foe: DuelCardDef[]; rules: DuelRules };
   const level = row.difficulty as Difficulty;
   let outcome: ReturnType<typeof replayDuel>;
   try {
@@ -796,7 +825,7 @@ export async function finishDuel(learner: string, duelId: string, actions: DuelA
     next[key]++;
     const { error: e3 } = await db.from("game_profiles").upsert({ learner, [`duel_${key}`]: next[key], updated_at: new Date().toISOString() }, { onConflict: "learner" });
     if (e3) throw duelError(e3.message);
-    return { result, turns: outcome.state.turn, record: next, replayed: false, stage: await stageResult(result, outcome.state.turn, true) };
+    return { result, turns: outcome.state.turn, record: next, replayed: false };
   }
-  return { result, turns: outcome.state.turn, record: await record(), replayed: true, stage: await stageResult(result, outcome.state.turn, false) };
+  return { result, turns: outcome.state.turn, record: await record(), replayed: true };
 }

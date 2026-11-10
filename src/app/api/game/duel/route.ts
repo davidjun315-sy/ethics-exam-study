@@ -5,11 +5,9 @@ import { requireLearner } from "@/lib/quiz/api";
 import { startDuel } from "@/lib/game/data";
 import { gameJsonError } from "@/lib/game/api";
 
-const Body = z
-  .object({ difficulty: z.enum(["easy", "normal", "hard"]).optional(), stage: z.string().uuid().optional() })
-  .refine((b) => Boolean(b.difficulty) !== Boolean(b.stage), "난이도(연습 대전) 또는 관(도장깨기) 중 하나를 고르세요.");
+const Body = z.object({ difficulty: z.enum(["easy", "normal", "hard"]) });
 
-/** 논쟁 대전 시작: 서버가 덱(대전용 카드 스냅샷)과 시드를 정해 준다. stage = 도장깨기 관(보스 사상가 id) */
+/** 논쟁 대전(카드 대전) 시작: 서버가 덱(대전용 카드 스냅샷)과 시드를 정해 준다. 보상 없음 */
 export async function POST(req: Request) {
   const { learner, denied } = await requireLearner();
   if (denied) return denied;
@@ -17,7 +15,7 @@ export async function POST(req: Request) {
   const { data, error } = await parseBody(req, Body);
   if (error) return error;
   try {
-    return NextResponse.json(await startDuel(learner, data));
+    return NextResponse.json(await startDuel(learner, data.difficulty));
   } catch (e) {
     return gameJsonError(e);
   }

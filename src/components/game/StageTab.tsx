@@ -1,0 +1,302 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { Check, Heart, Lock, Swords } from "lucide-react";
+import type { CardView, GameState, StageReplay } from "@/lib/game/data";
+import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageStatuses, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
+import { RARITY_NAMES } from "@/lib/game/rules";
+import { quizApi } from "@/lib/quiz/client";
+import { PhilosopherCard } from "./PhilosopherCard";
+import { BattleArena, initialTeam, TeamPicker } from "./BattleTab";
+
+const stars = (tier: number) => "★".repeat(tier + 1) + "☆".repeat(4 - tier);
+const tShort = (t: string) => t.replace("윤리", "");
+
+function Portrait({ c, className = "", dim = false }: { c?: CardView; className?: string; dim?: boolean }) {
+  return (
+    <span className={`relative block overflow-hidden bg-[#1a2234] ${className}`}>
+      {c?.artUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={c.artUrl} alt="" className={`h-full w-full object-cover object-[center_18%] ${dim ? "grayscale brightness-50" : ""}`} loading="lazy" draggable={false} />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-lg font-black text-white/30">{c?.name.slice(0, 1)}</span>
+      )}
+    </span>
+  );
+}
+
+/** 사상가 도장깨기: 뽑기로 얻은 카드 3장 vs 관마다 사상가 한 명 (자동 배틀) */
+export function StageTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
+  const stages = useMemo(() => buildCampaign(state.cards, state.settings.maxLevel), [state.cards, state.settings.maxLevel]);
+  const clearedIds = useMemo(() => new Set(state.campaign.cleared.map((c) => c.id)), [state.campaign.cleared]);
+  const statuses = useMemo(() => stageStatuses(stages, clearedIds), [stages, clearedIds]);
+  const byId = useMemo(() => new Map(state.cards.map((c) => [c.philosopherId, c])), [state.cards]);
+  const current = stages[statuses.indexOf("current")] ?? null;
+  const clearedCount = stages.filter((s) => clearedIds.has(s.bossId)).length;
+
+  const [team, setTeam] = useState<string[]>(() => initialTeam(state));
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [replay, setReplay] = useState<StageReplay | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (state.owned.length < 3)
+    return (
+      <section className="card p-8 text-center">
+        <h2 className="text-lg font-bold">뽑기로 카드 3장을 모아야 도전할 수 있습니다</h2>
+        <p className="mt-1 text-sm text-muted">
+          지금 {state.owned.length}장 보유 · 도장깨기는 내가 뽑은 카드 3장으로 팀을 꾸려 사상가와 한 명씩 겨룹니다.
+        </p>
+        <button type="button" className="btn-primary mt-4 px-5 py-2.5" onClick={goDraw}>카드 뽑으러 가기</button>
+      </section>
+    );
+  if (!stages.length) return <p className="card p-8 text-center text-sm text-muted">공개된 사상가 카드가 아직 없습니다.</p>;
+
+  async function challenge(bossId: string) {
+    if (team.length !== 3) {
+      setPicking(true);
+      setError("팀에 카드 3장을 넣으세요.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await quizApi<StageReplay>("/api/game/stage", "POST", { stage: bossId, deck: team });
+      setReplay(r);
+      reload().catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---------------- 배틀 재생 + 결과 ----------------
+  if (replay) {
+    const boss = byId.get(replay.stage.bossId);
+    const win = replay.winner === "me";
+    const nextStage = win && current && current.bossId !== replay.stage.bossId ? current : null;
+    return (
+      <BattleArena
+        replay={replay}
+        maxLevel={state.settings.maxLevel}
+        onAgain={() => setReplay(null)}
+        meLabel="내 팀"
+        title={
+          <span className="font-semibold text-[#ffd36b]">
+            {replay.stage.no}관 · {boss?.name}
+          </span>
+        }
+        result={
+          <div className="card-enter mx-auto mt-5 max-w-sm rounded-2xl border border-white/15 bg-black/40 p-5 text-center backdrop-blur">
+            {win ? (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ffd36b]">{replay.stage.no}관</div>
+                <div className="text-4xl font-black text-[#ffd36b]">클리어!</div>
+                <p className="mt-1 text-sm text-white/80">{boss?.name}에게 이겼습니다.</p>
+              </>
+            ) : (
+              <>
+                <div className="text-4xl font-black text-white/85">패배</div>
+                <p className="mt-1 text-sm text-white/70">{boss?.name} · 아직 버거운 상대입니다. 카드를 뽑고 레벨업·합성으로 팀을 키워 다시 도전하세요.</p>
+              </>
+            )}
+            {replay.firstClear && (
+              <p className="mt-3 rounded-lg bg-[#ffd36b]/15 px-3 py-2 text-sm font-bold text-[#ffd36b]">
+                보상: {boss?.name} 강화 조각 +{replay.shards}
+              </p>
+            )}
+            {win && !replay.firstClear && <p className="mt-2 text-xs text-white/60">이미 깬 관입니다 (보상은 처음 한 번)</p>}
+            <div className="mt-3">
+              <div className="flex justify-between text-[11px] text-white/60">
+                <span>도장깨기</span>
+                <span className="tabular-nums">
+                  {replay.cleared} / {replay.stage.total}관
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#5a78d1] to-[#ffd36b]" style={{ width: `${(replay.cleared / Math.max(1, replay.stage.total)) * 100}%` }} />
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={() => setReplay(null)}>
+                지도로
+              </button>
+              {nextStage ? (
+                <button
+                  type="button"
+                  className="rounded-xl bg-[#ffd36b] py-2.5 text-sm font-black text-[#2a1d00] hover:bg-[#ffe08f] disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => {
+                    setPicked(nextStage.bossId);
+                    challenge(nextStage.bossId);
+                  }}
+                >
+                  다음 관: {byId.get(nextStage.bossId)?.name}
+                </button>
+              ) : (
+                <button type="button" className="btn-primary py-2.5 font-bold" disabled={busy} onClick={() => challenge(replay.stage.bossId)}>
+                  다시 도전
+                </button>
+              )}
+            </div>
+            {error && <p className="mt-2 text-xs text-[#ffb4a8]">{error}</p>}
+          </div>
+        }
+      />
+    );
+  }
+
+  // ---------------- 지도 ----------------
+  const sel: CampaignStage = stages.find((s) => s.bossId === picked) ?? current ?? stages[stages.length - 1];
+  const selStatus: StageStatus = statuses[sel.index];
+  const boss = byId.get(sel.bossId)!;
+  const bossStats = stageBossStats(sel, boss, state.settings.rarityMult);
+  const teamCards = team.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
+  const teamPower = teamCards.reduce((n, o) => ({ atk: n.atk + o.atk, hp: n.hp + o.hp }), { atk: 0, hp: 0 });
+  const allClear = clearedCount === stages.length;
+  const clearedAt = new Map(state.campaign.cleared.map((c) => [c.id, c]));
+
+  return (
+    <div className="space-y-4">
+      {!state.campaign.ready && <p className="card p-4 text-sm text-warn">관리자가 도장깨기 업데이트(014)를 적용하면 도전할 수 있습니다.</p>}
+
+      <section className="card space-y-4 p-4 sm:p-5" aria-labelledby="campaign-h">
+        <div>
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 id="campaign-h" className="text-lg font-black">사상가 도장깨기</h2>
+            <span className="text-sm font-bold tabular-nums">
+              <span className="text-navy">{clearedCount}</span> / {stages.length}관
+            </span>
+          </div>
+          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={stages.length} aria-valuenow={clearedCount} aria-label="도장깨기 진행도">
+            <div className="h-full rounded-full bg-gradient-to-r from-navy to-[#ffc94a] transition-[width] duration-700" style={{ width: `${(clearedCount / stages.length) * 100}%` }} />
+          </div>
+          <p className="mt-1.5 text-xs text-muted">
+            {allClear ? "모든 사상가를 이겼습니다! 깬 관은 다시 도전할 수 있습니다." : `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 그 사상가의 강화 조각 ${STAGE_CLEAR_SHARDS}개.`}
+          </p>
+        </div>
+
+        {/* 고른 관: 보스 vs 내 팀 */}
+        <div className={`overflow-hidden rounded-2xl border p-3 text-white ${selStatus === "current" ? "border-[#ffd36b]/60" : "border-white/10"} bg-[radial-gradient(90%_80%_at_20%_30%,#2a3656,#0f1522)]`}>
+          <div className="flex gap-3">
+            <div className="w-28 shrink-0 sm:w-32">
+              <PhilosopherCard card={boss} rarity={sel.rarity} level={sel.level} stats={bossStats} maxLevel={state.settings.maxLevel} locked={selStatus === "locked"} tilt={false} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#ffd36b]">
+                {sel.no}관 · {tShort(sel.tradition)}
+              </div>
+              <div className="truncate text-xl font-black">{boss.name}</div>
+              <div className="mt-0.5 text-xs text-[#ffd36b]" aria-label={`난이도 ${sel.tier + 1}/5`}>{stars(sel.tier)}</div>
+              <div className="mt-1 text-xs text-white/70">
+                {RARITY_NAMES[sel.rarity]} Lv.{sel.level}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold tabular-nums">
+                <span className="flex items-center gap-1 text-[#ffb0a0]"><Swords className="h-3.5 w-3.5" aria-hidden />{bossStats.atk}</span>
+                <span className="flex items-center gap-1 text-[#9ff0bf]"><Heart className="h-3.5 w-3.5" aria-hidden />{bossStats.hp}</span>
+              </div>
+              <div className="mt-1 text-[11px] text-white/55">
+                내 팀 합계 ⚔ {teamPower.atk} · ♥ {teamPower.hp}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            {selStatus === "cleared" && (
+              <span className="flex items-center gap-1 text-xs text-[#9ff0bf]">
+                <Check className="h-3.5 w-3.5" aria-hidden /> 이김{clearedAt.get(sel.bossId)?.at ? ` · ${new Date(clearedAt.get(sel.bossId)!.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}` : ""}
+              </span>
+            )}
+            {selStatus === "locked" && (
+              <span className="flex items-center gap-1 text-xs text-white/60">
+                <Lock className="h-3.5 w-3.5" aria-hidden /> 앞 관을 깨면 열립니다
+              </span>
+            )}
+            <button
+              type="button"
+              className={`ml-auto inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-black ${selStatus === "current" ? "bg-[#ffd36b] text-[#2a1d00] hover:bg-[#ffe08f]" : "bg-white/15 hover:bg-white/25"} disabled:opacity-40`}
+              disabled={busy || selStatus === "locked" || !state.campaign.ready || team.length !== 3}
+              onClick={() => challenge(sel.bossId)}
+            >
+              <Swords className="h-4 w-4" aria-hidden />
+              {busy ? "겨루는 중…" : selStatus === "cleared" ? "다시 도전" : "도전"}
+            </button>
+          </div>
+        </div>
+        {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+
+        {/* 내 팀 */}
+        <div className="rounded-xl border border-line p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-bold">
+              내 팀 <span className="font-normal text-muted">{team.length}/3 · 뽑기로 얻은 카드</span>
+            </h3>
+            <button type="button" className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold hover:bg-surface-2" onClick={() => setPicking((p) => !p)} aria-expanded={picking}>
+              {picking ? "다 골랐어요" : "팀 바꾸기"}
+            </button>
+          </div>
+          {picking ? (
+            <TeamPicker
+              owned={state.owned}
+              deck={team}
+              onToggle={(id) => setTeam((d) => (d.includes(id) ? d.filter((x) => x !== id) : d.length >= 3 ? d : [...d, id]))}
+              maxLevel={state.settings.maxLevel}
+              featuredId={state.featuredId}
+            />
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:max-w-md">
+              {teamCards.map((o) => (
+                <PhilosopherCard key={o.cardId} card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} tilt={false} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 이긴 사상가 · 남은 사상가 */}
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs">
+            <span className="font-semibold">사상가 {stages.length}명</span>
+            <span className="flex items-center gap-3 text-muted">
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ok" />이김 {clearedCount}</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-line-strong" />남음 {stages.length - clearedCount}</span>
+            </span>
+          </div>
+          <ol className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8" aria-label="관 목록">
+            {stages.map((s, i) => {
+              const st = statuses[i];
+              const c = byId.get(s.bossId);
+              const on = sel.bossId === s.bossId;
+              return (
+                <li key={s.bossId}>
+                  <button
+                    type="button"
+                    onClick={() => setPicked(s.bossId)}
+                    aria-pressed={on}
+                    aria-label={`${s.no}관 ${c?.name} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
+                    className={`relative block w-full rounded-xl text-left ${on ? "ring-2 ring-navy ring-offset-2 ring-offset-surface" : ""}`}
+                  >
+                    <Portrait c={c} className={`aspect-[3/4] w-full rounded-xl ${st === "current" ? "ring-2 ring-[#ffd36b] duel-pulse" : ""}`} dim={st === "locked"} />
+                    <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-bold text-white">{s.no}</span>
+                    {st === "cleared" && (
+                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ok text-white shadow">
+                        <Check className="h-3 w-3" aria-hidden />
+                      </span>
+                    )}
+                    {st === "locked" && <Lock className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-white/70" aria-hidden />}
+                    <span className={`absolute inset-x-0 bottom-0 truncate rounded-b-xl bg-gradient-to-t from-black/85 to-transparent px-1 pb-1 pt-3 text-center text-[11px] font-bold ${st === "locked" ? "text-white/50" : "text-white"}`}>
+                      {c?.name}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </section>
+      <p className="px-1 text-[11px] leading-5 text-faint">
+        배틀은 자동으로 진행됩니다. 두 번째 행동에 첫 필살기, 이후 세 번째 행동마다 필살기. 보스는 혼자라 체력이 크고, 내 카드 3장이 움직일 때마다 한 번씩 움직입니다. 코인은 학습으로만 받습니다.
+      </p>
+    </div>
+  );
+}

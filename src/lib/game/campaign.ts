@@ -1,11 +1,10 @@
 /**
- * 논쟁 대전 — 사상가 도장깨기 (순수 계산: 서버·화면·테스트가 같은 규칙)
+ * 사상가 도장깨기 (순수 계산: 서버·화면·테스트가 같은 규칙)
  *  - 공개된 사상가마다 한 관. 순서: 분야(동양 → 한국 → 서양 → 사회사상) 안에서 태어난 해 순
- *  - 한 관 = 보스 사상가 + 함께 나오는 사상가 3명 (같은 분야·가까운 순서). 덱은 [보스, 1, 2, 3] 을 돌아가며 채움
- *  - 뒤 관일수록 등급·레벨·컴퓨터 실력이 오른다. 앞 관을 모두 깨야 다음 관이 열린다
+ *  - 한 관 = 그 사상가 한 명(보스). 내 배틀 덱 3장과 자동 배틀 (3 vs 1, battle.ts)
+ *  - 뒤 관일수록 보스의 등급·레벨·체력·공격 배율이 오른다. 앞 관을 모두 깨야 다음 관이 열린다
  */
-import type { Difficulty } from "./battle.ts";
-import { toDuelCard, type DuelCardDef, type DuelRules } from "./duel.ts";
+import type { Fighter } from "./battle.ts";
 import { DEFAULT_RARITY_MULT, statsFor, type Rarity, type SkillEffect } from "./rules.ts";
 
 export interface StageCard {
@@ -23,16 +22,13 @@ export interface CampaignStage {
   index: number; // 0부터
   no: number; // 1관, 2관 …
   bossId: string;
-  allyIds: string[];
   tradition: string;
-  tier: number; // 0~4
+  tier: number; // 0~4 (별 1~5개)
+  rarity: Rarity;
   level: number;
-  bossLevel: number;
-  bossRarity: Rarity;
-  allyRarities: Rarity[];
-  ai: Difficulty;
-  /** 상대 능력치 배율: 앞 관은 약하게 (같은 분야 덱이라 공명이 늘 켜지므로) */
-  power: number;
+  /** 보스 능력치 = 그 등급·레벨 카드 능력치 × 배율 (보스 혼자 3장과 싸우므로 체력이 큼) */
+  hpMul: number;
+  atkMul: number;
 }
 
 /** 첫 관 클리어 보상: 보스 사상가 강화 조각 */
@@ -72,46 +68,30 @@ export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "nam
   return [...cards].sort((a, b) => ti(a.tradition) - ti(b.tradition) || bornYear(a.name) - bornYear(b.name) || a.name.localeCompare(b.name) || a.philosopherId.localeCompare(b.philosopherId));
 }
 
-const POWER_START = 0.55;
-const POWER_END = 0.75;
-const POWER_FULL_AT = 1.0;
+/** 보스 배율: 첫 관 → 마지막 관 (시뮬레이션으로 정함, scripts/test-duel.ts) */
+export const BOSS_TUNE = { hp: [1.8, 2.4] as [number, number], atk: [0.8, 0.8] as [number, number] };
+/** 진행도(0~1)에 따른 보스 등급: 앞 20% 일반 · 45% 까지 희귀 · 75% 까지 영웅 · 나머지 전설 */
+const rarityAt = (t: number): Rarity => (t < 0.2 ? "common" : t < 0.45 ? "rare" : t < 0.75 ? "epic" : "legendary");
 
-const TIERS: { boss: Rarity; allies: Rarity[] }[] = [
-  { boss: "rare", allies: ["common", "common", "common"] },
-  { boss: "rare", allies: ["common", "rare", "common"] },
-  { boss: "epic", allies: ["rare", "rare", "common"] },
-  { boss: "epic", allies: ["rare", "epic", "rare"] },
-  { boss: "legendary", allies: ["epic", "epic", "rare"] },
-];
+const lerp = ([a, b]: [number, number], t: number) => Math.round((a + (b - a) * t) * 100) / 100;
 
-/** 모든 관 (보스·동료·난이도) */
-export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition">>(cards: T[], maxLevel: number): CampaignStage[] {
+/** 모든 관 */
+export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition">>(cards: T[], maxLevel: number, tune = BOSS_TUNE): CampaignStage[] {
   const ordered = orderStageCards(cards);
   const n = ordered.length;
   return ordered.map((boss, i) => {
     const t = n > 1 ? i / (n - 1) : 0;
-    const tier = Math.min(TIERS.length - 1, Math.floor(t * TIERS.length));
-    // 동료: 같은 분야 → 가까운 순서 → 앞 관(이미 만난 사상가) 우선
-    const allies = ordered
-      .map((c, j) => ({ c, j }))
-      .filter(({ j }) => j !== i)
-      .sort((a, b) => (a.c.tradition === boss.tradition ? 0 : 1) - (b.c.tradition === boss.tradition ? 0 : 1) || Math.abs(a.j - i) - Math.abs(b.j - i) || a.j - b.j)
-      .slice(0, 3)
-      .map(({ c }) => c.philosopherId);
-    const level = Math.max(1, Math.min(maxLevel, 1 + Math.round(t * (maxLevel - 1) * 0.75)));
+    const tier = Math.min(4, Math.floor(t * 5));
     return {
       index: i,
       no: i + 1,
       bossId: boss.philosopherId,
-      allyIds: allies,
       tradition: boss.tradition,
       tier,
-      level,
-      bossLevel: Math.min(maxLevel, level + (tier >= 2 ? 1 : 0)),
-      bossRarity: TIERS[tier].boss,
-      allyRarities: TIERS[tier].allies,
-      ai: t < 0.34 ? "easy" : t < 0.67 ? "normal" : "hard",
-      power: Math.round(Math.min(POWER_END, POWER_START + (POWER_END - POWER_START) * (t / POWER_FULL_AT)) * 100) / 100,
+      rarity: rarityAt(t),
+      level: Math.max(1, Math.min(maxLevel, 1 + Math.round(t * (maxLevel - 1)))),
+      hpMul: lerp(tune.hp, t),
+      atkMul: lerp(tune.atk, t),
     };
   });
 }
@@ -136,25 +116,14 @@ export const canPlayStage = (stages: CampaignStage[], cleared: Set<string>, boss
   return i >= 0 && stageStatuses(stages, cleared)[i] !== "locked";
 };
 
-/** 관의 상대 덱: [보스, 동료1, 동료2, 동료3] 을 돌아가며 덱 크기만큼 */
-export function stageDeck(stage: CampaignStage, byId: Map<string, StageCard>, rules: DuelRules, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT): DuelCardDef[] {
-  const slots = [stage.bossId, ...stage.allyIds];
-  const out: DuelCardDef[] = [];
-  for (let k = 0; k < rules.deckSize; k++) {
-    const slot = k % slots.length;
-    const c = byId.get(slots[slot]);
-    if (!c) continue;
-    const isBoss = slot === 0;
-    const rarity = isBoss ? stage.bossRarity : stage.allyRarities[(slot - 1) % stage.allyRarities.length];
-    const level = isBoss ? stage.bossLevel : stage.level;
-    const st0 = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, level, mult);
-    const st = { atk: st0.atk * stage.power, hp: st0.hp * stage.power };
-    out.push(
-      toDuelCard(
-        { uid: `f${k}`, cardId: null, philosopherId: c.philosopherId, name: c.name, tradition: c.tradition, rarity, level, effect: c.skillEffect, skillName: c.skillName, artUrl: c.artUrl, statAtk: st.atk, statHp: st.hp },
-        rules,
-      ),
-    );
-  }
-  return out;
+/** 관 보스 능력치 */
+export function stageBossStats(stage: CampaignStage, c: Pick<StageCard, "baseAtk" | "baseHp">, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
+  const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, stage.rarity, stage.level, mult);
+  return { atk: Math.round(st.atk * stage.atkMul), hp: Math.round(st.hp * stage.hpMul) };
+}
+
+/** 관 보스 → 배틀 참가자 */
+export function stageBoss(stage: CampaignStage, c: StageCard, mult?: Record<Rarity, number>): Fighter {
+  const st = stageBossStats(stage, c, mult);
+  return { key: "foe-0", philosopherId: c.philosopherId, name: c.name, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect, scale: stage.hpMul };
 }

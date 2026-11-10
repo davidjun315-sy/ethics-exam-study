@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { BattleCard, BattleReplay, GameState } from "@/lib/game/data";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import type { BattleCard, BattleReplay, GameState, OwnedCard } from "@/lib/game/data";
 import type { BattleEvent } from "@/lib/game/battle";
 import { DIFFICULTY_NAMES, type Difficulty } from "@/lib/game/battle";
 import { SKILL_EFFECTS, type SkillEffect } from "@/lib/game/rules";
@@ -10,13 +10,8 @@ import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength } from "./GameApp";
 
 export function BattleTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
-  const [deck, setDeck] = useState<string[]>(() => {
-    // 덱은 카드 id로 저장 (같은 사상가의 다른 등급 카드도 따로 넣을 수 있음)
-    const saved = state.deck.filter((id) => state.owned.some((o) => o.cardId === id));
-    if (saved.length === 3) return saved;
-    const rest = [...state.owned].sort(byStrength).map((o) => o.cardId).filter((id) => !saved.includes(id));
-    return [...saved, ...rest].slice(0, 3);
-  });
+  // 덱은 카드 id로 저장 (같은 사상가의 다른 등급 카드도 따로 넣을 수 있음)
+  const [deck, setDeck] = useState<string[]>(() => initialTeam(state));
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [replay, setReplay] = useState<BattleReplay | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,17 +44,7 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
           <h2 className="text-sm font-bold">덱 구성 <span className="font-normal text-muted">{deck.length}/3</span></h2>
           <span className="text-xs text-faint">대표 카드와 별개로 저장됩니다</span>
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-          {[...state.owned].sort((a, b) => byStrength(a, b) || a.name.localeCompare(b.name)).map((o) => {
-            const at = deck.indexOf(o.cardId);
-            return (
-              <div key={o.cardId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
-                <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} featured={o.cardId === state.featuredId} tilt={false} onClick={() => toggle(o.cardId)} />
-                {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-on-accent shadow">{at + 1}</span>}
-              </div>
-            );
-          })}
-        </div>
+        <TeamPicker owned={state.owned} deck={deck} onToggle={toggle} maxLevel={state.settings.maxLevel} featuredId={state.featuredId} />
       </section>
       <aside className="card space-y-4 p-4 lg:sticky lg:top-20 lg:self-start">
         <div>
@@ -106,6 +91,31 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
   );
 }
 
+/** 보유 카드에서 3장 고르기 (빠른 대전 · 도장깨기 팀 공용) */
+export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId }: { owned: OwnedCard[]; deck: string[]; onToggle: (id: string) => void; maxLevel: number; featuredId: string | null }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5" aria-label="보유 카드">
+      {[...owned].sort((a, b) => byStrength(a, b) || a.name.localeCompare(b.name)).map((o) => {
+        const at = deck.indexOf(o.cardId);
+        return (
+          <div key={o.cardId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
+            <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} featured={o.cardId === featuredId} tilt={false} onClick={() => onToggle(o.cardId)} />
+            {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-on-accent shadow">{at + 1}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 배틀 덱 처음 값: 저장된 덱(보유 중인 것만) → 모자라면 강한 카드 */
+export function initialTeam(state: GameState): string[] {
+  const saved = state.deck.filter((id) => state.owned.some((o) => o.cardId === id));
+  if (saved.length === 3) return saved;
+  const rest = [...state.owned].sort(byStrength).map((o) => o.cardId).filter((id) => !saved.includes(id));
+  return [...saved, ...rest].slice(0, 3);
+}
+
 // ---------------------------------------------------------------------
 // 배틀 재생
 // ---------------------------------------------------------------------
@@ -140,7 +150,23 @@ function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Reco
 const EFFECT_COLOR: Record<SkillEffect, string> = { strike: "#ff9a7a", sweep: "#ffb84d", heal: "#7fe0a6", guard: "#8fc6ff", stun: "#d8a6ff" };
 const DURATION: Record<BattleEvent["t"], number> = { attack: 750, skill: 1300, stunned: 650, faint: 550, end: 400 };
 
-function BattleArena({ replay, maxLevel, onAgain }: { replay: BattleReplay; maxLevel: number; onAgain: () => void }) {
+export function BattleArena({
+  replay,
+  maxLevel,
+  onAgain,
+  title,
+  result,
+  meLabel = "내 덱",
+}: {
+  replay: BattleReplay;
+  maxLevel: number;
+  onAgain: () => void;
+  /** 위쪽 표시 (기본: 난이도) */
+  title?: ReactNode;
+  /** 끝났을 때 결과 상자 (기본: 승패 + 다시 배틀) */
+  result?: ReactNode;
+  meLabel?: string;
+}) {
   const units = useMemo(() => [...replay.me, ...replay.foe], [replay]);
   const byKey = useMemo(() => new Map(units.map((u) => [u.key, u])), [units]);
   const [idx, setIdx] = useState(0); // 다음에 재생할 사건
@@ -174,8 +200,9 @@ function BattleArena({ replay, maxLevel, onAgain }: { replay: BattleReplay; maxL
               ? "승리!"
               : "패배…";
 
+  const boss = replay.foe.length === 1;
   const row = (side: "me" | "foe") => (
-    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+    <div className={side === "foe" && boss ? "mx-auto w-[48%] sm:w-[38%]" : "grid grid-cols-3 gap-2 sm:gap-4"}>
       {(side === "me" ? replay.me : replay.foe).map((u) => {
         const s = st[u.key];
         const isActor = actor === u.key;
@@ -218,8 +245,12 @@ function BattleArena({ replay, maxLevel, onAgain }: { replay: BattleReplay; maxL
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[radial-gradient(80%_60%_at_50%_50%,#24304a,#0c111b)] p-3 text-white sm:p-5">
       <div className="mb-3 flex items-center gap-2 text-xs text-white/70">
-        <span className="rounded-full bg-white/10 px-2 py-0.5">{DIFFICULTY_NAMES[replay.difficulty]}</span>
-        <span>상대</span>
+        {title ?? (
+          <>
+            <span className="rounded-full bg-white/10 px-2 py-0.5">{DIFFICULTY_NAMES[replay.difficulty]}</span>
+            <span>상대</span>
+          </>
+        )}
         <span className="ml-auto flex gap-1">
           {[1, 2].map((s) => (
             <button key={s} type="button" onClick={() => setSpeed(s)} className={`rounded px-2 py-0.5 ${speed === s ? "bg-white text-[#0c111b]" : "bg-white/10"}`}>{s}×</button>
@@ -239,9 +270,10 @@ function BattleArena({ replay, maxLevel, onAgain }: { replay: BattleReplay; maxL
           )}
         </div>
         {row("me")}
-        <div className="text-center text-[11px] text-white/50">내 덱</div>
+        <div className="text-center text-[11px] text-white/50">{meLabel}</div>
       </div>
-      {done && (
+      {done && result}
+      {done && !result && (
         <div className="card-enter mx-auto mt-5 max-w-sm rounded-2xl border border-white/15 bg-black/40 p-5 text-center backdrop-blur">
           <div className={`text-4xl font-black ${replay.winner === "me" ? "text-[#ffd36b]" : "text-white/80"}`}>{replay.winner === "me" ? "승리!" : "패배"}</div>
           <p className="mt-1 text-sm text-white/70">

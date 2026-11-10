@@ -1,5 +1,5 @@
 /**
- * 3 vs 3 자동 배틀 (순수 계산). 같은 시드면 항상 같은 결과 → 서버가 결과를 정하고 화면은 기록을 재생만 한다.
+ * 자동 배틀 (순수 계산: 빠른 대전 3 vs 3 · 도장깨기 3 vs 보스 1). 같은 시드면 항상 같은 결과 → 서버가 결과를 정하고 화면은 기록을 재생만 한다.
  *
  * 규칙 (단순하게)
  * - 행동 순서: 내1 → 적1 → 내2 → 적2 → 내3 → 적3 → … (선공은 시드로 정한 동전 던지기, 쓰러진 카드는 건너뜀)
@@ -19,6 +19,8 @@ export interface Fighter {
   hp: number;
   skillName: string;
   skillEffect: SkillEffect;
+  /** 도장깨기 보스: 체력 배율. 회복 필살기는 보통 카드 크기만큼만 (max / scale) */
+  scale?: number;
 }
 
 export type Side = "me" | "foe";
@@ -77,9 +79,11 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
   const other = (s: Side): Side => (s === "me" ? "foe" : "me");
   // 선공: 같은 덱끼리 싸우면 승률이 반반이 되도록
   const first: Side = rand() < 0.5 ? "me" : "foe";
+  // 양쪽이 번갈아 행동. 수가 적은 쪽(예: 도장깨기 보스 1명)은 그만큼 자주 행동한다 → 양쪽 행동 횟수가 같음
+  // (3 vs 3 은 예전 순서와 똑같음: 내1 적1 내2 적2 내3 적3)
   const order: Live[] = [];
   for (let i = 0; i < Math.max(me.length, foe.length); i++) {
-    for (const s of [first, other(first)]) if (teams[s][i]) order.push(teams[s][i]);
+    for (const s of [first, other(first)]) order.push(teams[s][i % teams[s].length]);
   }
 
   const hit = (target: Live, raw: number) => {
@@ -127,7 +131,7 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
       } else if (actor.skillEffect === "heal") {
         const allies = alive(actor.side);
         const low = allies.reduce((m, x) => (x.cur / x.max < m.cur / m.max ? x : m), allies[0]);
-        const amount = Math.min(low.max - low.cur, Math.round(low.max * 0.35));
+        const amount = Math.min(low.max - low.cur, Math.round((low.max / (low.scale ?? 1)) * 0.35));
         low.cur += amount;
         ev.heal = { target: low.key, amount, hp: low.cur };
       } else {
