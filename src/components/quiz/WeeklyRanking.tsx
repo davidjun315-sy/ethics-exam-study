@@ -36,7 +36,7 @@ export function WeeklyRanking({ w }: { w: QuizWeekly }) {
       ) : (
         <ol className="grid gap-1 sm:grid-cols-2 sm:gap-x-4" aria-label="이번 주 윤리 퀴즈 순위">
           {w.rows.map((r) => (
-            <li key={r.rank} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-[#ffd36b]/15 ring-1 ring-[#c99a2e]/50" : ""}`}>
+            <li key={r.rank} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-navy-soft/70 ring-1 ring-navy/30" : ""}`}>
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${MEDAL[r.rank - 1] ?? "bg-surface-2 text-muted"}`}>{r.rank}</span>
               <span className="min-w-0 flex-1 truncate">
                 <span className="font-semibold">{r.name}</span>

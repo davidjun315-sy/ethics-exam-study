@@ -8,12 +8,16 @@ import { quizApi } from "@/lib/quiz/client";
 
 const GROUPS: Achievement["group"][] = ["수집", "성장", "도장깨기", "대전", "분야"];
 
-/** 칭호 표시 (랭킹 · 홈 · 게임 위쪽 공통) */
+/**
+ * 칭호 표시 (랭킹 · 홈 · 게임 위쪽 공통). 배지처럼 튀지 않게 주변 글자와 같은 결로:
+ * 작은 금빛 왕관 + 은은한 글자 (배경·테두리 없음)
+ */
 export function TitleBadge({ title, className = "" }: { title: string | null | undefined; className?: string }) {
   if (!title) return null;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border border-[#c99a2e]/45 bg-gradient-to-r from-[#ffd36b]/25 to-[#ffb14a]/15 px-2 py-0.5 text-[11px] font-bold text-[#8a5a00] dark:text-[#ffd36b] ${className}`}>
-      <Crown className="h-3 w-3" aria-hidden />
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-tight text-muted ${className}`} title={`칭호: ${title}`}>
+      <Crown className="h-3 w-3 shrink-0 text-[#c99a2e] dark:text-[#e0b64e]" aria-hidden />
+      <span className="sr-only">칭호 </span>
       {title}
     </span>
   );
@@ -65,7 +69,7 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
             <span className="text-xs text-muted">
               업적 {done.length}/{state.achievements.length}
             </span>
-            <span className="ml-auto">{current ? <TitleBadge title={current} className="text-xs" /> : <span className="text-xs text-faint">달고 있는 칭호 없음</span>}</span>
+            <span className="ml-auto">{current ? <TitleBadge title={current} className="!text-xs" /> : <span className="text-xs text-faint">달고 있는 칭호 없음</span>}</span>
           </div>
           {!state.title.ready && <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">칭호 저장은 관리자가 업데이트(SQL 019)를 적용하면 쓸 수 있습니다. 업적 확인은 지금도 됩니다.</p>}
           {done.length === 0 ? (
@@ -79,7 +83,7 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
                   disabled={busy !== null || !state.title.ready}
                   onClick={() => choose(current === a.title ? null : a.title)}
                   aria-pressed={current === a.title}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${current === a.title ? "border-[#c99a2e] bg-[#ffd36b]/25 text-[#8a5a00] dark:text-[#ffd36b]" : "border-line hover:border-[#c99a2e]/60"}`}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-50 ${current === a.title ? "border-navy bg-navy-soft font-semibold text-navy" : "border-line text-muted hover:border-navy/40"}`}
                 >
                   {current === a.title && <Check className="mr-1 inline h-3 w-3" aria-hidden />}
                   {a.title}
@@ -104,7 +108,7 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
                 <h3 className="mb-1.5 text-xs font-bold text-muted">{g}</h3>
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {list.map((a) => (
-                    <li key={a.id} className={`rounded-xl border p-3 ${a.done ? "border-[#c99a2e]/50 bg-[#ffd36b]/10" : "border-line"}`} data-achievement={a.id} data-done={a.done ? "1" : "0"}>
+                    <li key={a.id} className={`rounded-xl border p-3 ${a.done ? "border-[#c99a2e]/30 bg-[#ffd36b]/[0.06]" : "border-line"}`} data-achievement={a.id} data-done={a.done ? "1" : "0"}>
                       <div className="flex items-center gap-2">
                         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${a.done ? "bg-[#ffd36b] text-[#3a2600]" : "bg-surface-2 text-faint"}`}>
                           {a.done ? <Trophy className="h-3.5 w-3.5" aria-hidden /> : <Medal className="h-3.5 w-3.5" aria-hidden />}
@@ -159,7 +163,7 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
             ) : (
               <ol className="space-y-1" aria-label="주간 순위">
                 {ranking.rows.map((r) => (
-                  <li key={r.rank} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-[#ffd36b]/15 ring-1 ring-[#c99a2e]/50" : ""}`}>
+                  <li key={r.rank} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-navy-soft/70 ring-1 ring-navy/30" : ""}`}>
                     <span
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${r.rank === 1 ? "bg-[#ffd36b] text-[#3a2600]" : r.rank === 2 ? "bg-[#d5dae2] text-[#2a2f38]" : r.rank === 3 ? "bg-[#e0a46a] text-[#3a1f00]" : "bg-surface-2 text-muted"}`}
                     >
