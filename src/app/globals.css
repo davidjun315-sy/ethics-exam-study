@@ -645,8 +645,10 @@ body {
 .fx-cutin-title { animation: fx-title calc(var(--t, 1) * 1050ms) ease-out both; }
 @keyframes fx-title { 0% { opacity: 0; translate: 0 12px; } 18% { opacity: 1; translate: 0 0; } 80% { opacity: 1; } 100% { opacity: 0; } }
 /* 필살기 이름: 밝은 띠·배경 위에서도 읽히게 어두운 판 + 어두운 외곽선 */
-.fx-cutin-plate { background: linear-gradient(90deg, rgba(6,8,16,.86), rgba(6,8,16,.7)); border: 1px solid color-mix(in srgb, var(--c0) 70%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--c0) 55%, transparent), 0 6px 16px rgba(0,0,0,.45); border-radius: 12px; padding: .35rem .8rem .45rem; backdrop-filter: blur(2px); }
-.fx-title-text { color: #fff; -webkit-text-stroke: 3px #070a12; paint-order: stroke fill; text-shadow: 0 0 12px var(--c0), 0 0 2px #000, 0 3px 0 rgba(0,0,0,.6); }
+/* 경계 없는 어두운 번짐 (판처럼 보이지 않게): 밝은 띠 위에서만 살짝 눌러 줌 */
+.fx-cutin-plate { padding: .6rem 1.4rem; background: radial-gradient(closest-side, rgba(6,8,16,.5), rgba(6,8,16,.28) 55%, transparent); }
+.fx-title-text { color: #fff; -webkit-text-stroke: 1.2px color-mix(in srgb, var(--c1) 45%, #0a0d16); paint-order: stroke fill; text-shadow: 0 1px 2px rgba(0,0,0,.7), 0 0 10px rgba(0,0,0,.45), 0 0 18px var(--c0); }
+.fx-title-sub { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.75), 0 0 8px rgba(0,0,0,.4); }
 
 @media (prefers-reduced-motion: reduce) {
   .fx-layer, .fx-cutin { display: none !important; }

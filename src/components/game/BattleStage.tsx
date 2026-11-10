@@ -240,7 +240,7 @@ function CutIn({ u, theme, name, effect, boss }: { u: BattleCard; theme: FxTheme
         ) : null}
       </div>
       <div className={`fx-cutin-title fx-cutin-plate absolute top-[38%] max-w-[62%] ${boss ? "left-[4%] text-left" : "right-[4%] text-right"}`}>
-        <div className="text-[11px] font-bold tracking-[0.3em] sm:text-xs" style={{ color: c2 }}>{u.name} · {effect}</div>
+        <div className="fx-title-sub text-[11px] font-bold tracking-[0.3em] opacity-90 sm:text-xs">{u.name} · {effect}</div>
         <div className="fx-title-text text-2xl font-black leading-tight sm:text-4xl">{name}</div>
       </div>
     </div>

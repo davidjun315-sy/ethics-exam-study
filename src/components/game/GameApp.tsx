@@ -138,6 +138,25 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
 }
 
 /** 사상가 상세: 큰 일러스트 + 필살기·대사 + 이 사상가의 보유 카드 (등급·레벨별 한 장씩) */
+/** 휴대폰 상세 화면: 카드 오른쪽 아래에 틀 없이 서 있는 캐릭터 (카드와 살짝 겹침) */
+function SideCharacter({ card, rarity, owned }: { card: CardView; rarity: Rarity; owned: boolean }) {
+  return (
+    <div className={`bs-rar bs-rar-${rarity} pointer-events-none absolute bottom-0 right-[1%] h-[50%] sm:hidden`} aria-hidden>
+      {owned && rarity !== "common" && <span className="bs-rar-floor" />}
+      <div className="absolute -bottom-[1%] left-1/2 h-[7%] w-[62%] -translate-x-1/2 rounded-[50%] bg-black/35 blur-[3px]" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={card.battleArtUrl!}
+        alt=""
+        className={`relative h-full w-auto max-w-none ${owned ? "bs-idle" : ""}`}
+        style={{ filter: owned ? "drop-shadow(0 4px 10px rgba(0,0,0,.35))" : "brightness(0) opacity(.45)" }}
+        draggable={false}
+        loading="lazy"
+      />
+    </div>
+  );
+}
+
 /** 상세 화면의 게임 캐릭터: 전장 배경 위에 서 있는 모습 (미획득이면 실루엣) */
 function BattleCharacter({ card, rarity, owned, bgUrl }: { card: CardView; rarity: Rarity; owned: boolean; bgUrl?: string }) {
   const east = card.tradition === "동양윤리" || card.tradition === "한국윤리";
@@ -219,9 +238,17 @@ export function PhilosopherSheet({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={`${card.name} 카드 상세`} onClick={onClose}>
       <div className="card-enter max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-line bg-surface p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="grid gap-5 sm:grid-cols-[minmax(0,15rem)_1fr]">
-          <div className="mx-auto w-full max-w-[15rem]">
-            <PhilosopherCard card={card} rarity={top?.rarity ?? "common"} level={top?.level ?? 1} locked={!top} stats={top ? { atk: top.atk, hp: top.hp } : undefined} featured={top?.cardId === state.featuredId} maxLevel={state.settings.maxLevel} />
-            {card.battleArtUrl && <BattleCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} bgUrl={state.settings.battleBg?.[card.tradition]} />}
+          <div className={`relative mx-auto w-full ${card.battleArtUrl ? "max-w-[21rem] sm:max-w-[15rem]" : "max-w-[15rem]"}`}>
+            {/* 휴대폰: 카드 옆에 캐릭터가 서 있는 모습 (틀 없이) · 넓은 화면: 카드 아래 배경 칸 */}
+            <div className={card.battleArtUrl ? "w-[66%] sm:w-full" : ""}>
+              <PhilosopherCard card={card} rarity={top?.rarity ?? "common"} level={top?.level ?? 1} locked={!top} stats={top ? { atk: top.atk, hp: top.hp } : undefined} featured={top?.cardId === state.featuredId} maxLevel={state.settings.maxLevel} />
+            </div>
+            {card.battleArtUrl && <SideCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} />}
+            {card.battleArtUrl && (
+              <div className="hidden sm:block">
+                <BattleCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} bgUrl={state.settings.battleBg?.[card.tradition]} />
+              </div>
+            )}
             {card.artBasis === "reconstruction" && <p className="mt-2 text-center text-[11px] text-faint">역사적 도상을 바탕으로 재구성한 일러스트{card.artNote ? ` · ${card.artNote}` : ""}</p>}
           </div>
           <div className="min-w-0 space-y-3">
