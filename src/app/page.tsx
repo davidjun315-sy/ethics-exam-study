@@ -18,6 +18,8 @@ import { FeaturedPhilosopher } from "@/components/game/MyPhilosopher";
 import { cachedDashboard as getSiteDashboard } from "@/lib/data/cached";
 import { examShortLabel, formatDate, questionRef } from "@/lib/format";
 import { getFeatured } from "@/lib/game/data";
+import { getQuizWeekly } from "@/lib/quiz/weekly";
+import { WeeklyRanking } from "@/components/quiz/WeeklyRanking";
 import { getCurrentMemberName } from "@/lib/members";
 import { currentLearner, getDashboard as getQuizDashboard, type Dashboard } from "@/lib/quiz/learn";
 
@@ -49,11 +51,13 @@ const todayLabel = () => new Intl.DateTimeFormat("ko-KR", { month: "long", day: 
  */
 export default async function Home() {
   const learner = await currentLearner().catch(() => null);
-  const [site, name, quiz, game] = await Promise.all([
+  const [site, name, quiz, game, weekly] = await Promise.all([
     load(getSiteDashboard),
     getCurrentMemberName().catch(() => null),
     learner ? getQuizDashboard(learner).catch(() => null) : Promise.resolve(null),
     learner ? getFeatured(learner) : Promise.resolve(null),
+    // 이번 주 랭킹 (로그인한 학습자에게만: 다른 회원 이름이 보이므로)
+    learner ? getQuizWeekly(learner) : Promise.resolve(null),
   ]);
   const data = site.data;
 
@@ -114,6 +118,9 @@ export default async function Home() {
 
       {/* 5. 나의 학습 현황 */}
       {quiz?.profile && <MyStats d={quiz} />}
+
+      {/* 이번 주 랭킹 (윤리 퀴즈) */}
+      {weekly && <WeeklyRanking w={weekly} limit={5} more="/quiz#weekly-ranking" />}
 
       {site.error || !data ? (
         <DataError error={site.error} />
