@@ -215,64 +215,173 @@ body {
    철학자 대난투 카드: 카드 자체는 테마와 무관하게 어두운 수집 카드 톤 (라이트·다크 모두 같은 카드)
    --------------------------------------------------------------------- */
 .pcard {
-  --r1: #a7b0bd; --r2: #5d6673; --rglow: rgba(167, 176, 189, 0.35);
+  --r1: #c4cad3; --r2: #6b7380; --rglow: rgba(167, 176, 189, 0.3);
+  --frame: linear-gradient(160deg, #e3e7ec 0%, #8d95a1 28%, #c6ccd4 52%, #6b7380 78%, #b4bbc5 100%);
+  --edge: 3px;
+  --px: 0; --py: 0; /* 포인터 위치 (-0.5 ~ 0.5) */
   position: relative;
   aspect-ratio: 3 / 4;
   border-radius: 14px;
-  padding: 3px;
-  background: linear-gradient(145deg, var(--r1), var(--r2) 45%, var(--r1) 70%, var(--r2));
+  padding: var(--edge);
   box-shadow: 0 6px 18px rgba(8, 12, 20, 0.35);
   transform-style: preserve-3d;
-  transition: transform 0.18s ease-out, box-shadow 0.25s ease;
+  transition: transform 0.18s ease-out;
   color: #f4f1ea;
   isolation: isolate;
   container-type: inline-size;
 }
-.pcard[data-rarity="rare"] { --r1: #8fd0ff; --r2: #2a6fd6; --rglow: rgba(80, 160, 255, 0.45); }
-.pcard[data-rarity="epic"] { --r1: #d8b4ff; --r2: #7b3fe4; --rglow: rgba(170, 110, 255, 0.5); }
-.pcard[data-rarity="legendary"] { --r1: #ffe39a; --r2: #b9780f; --rglow: rgba(255, 196, 70, 0.55); }
-.pcard[data-rarity="epic"], .pcard[data-rarity="legendary"] { box-shadow: 0 6px 22px rgba(8, 12, 20, 0.35), 0 0 22px var(--rglow); }
+.pcard[data-rarity="rare"] {
+  --r1: #9fd8ff; --r2: #2a6fd6; --rglow: rgba(80, 160, 255, 0.45);
+  --frame: linear-gradient(160deg, #d9f1ff 0%, #4f9cf0 22%, #163f92 46%, #6cc0ff 66%, #1c4fb4 84%, #a8dcff 100%);
+  --edge: 4px;
+  box-shadow: 0 6px 18px rgba(8, 12, 20, 0.35), 0 0 14px rgba(80, 160, 255, 0.28);
+}
+.pcard[data-rarity="epic"] {
+  --r1: #e2c4ff; --r2: #7b3fe4; --rglow: rgba(170, 110, 255, 0.55);
+  --frame: linear-gradient(150deg, #f4e6ff 0%, #a46bff 20%, #3d1690 42%, #c995ff 60%, #5a24c4 80%, #ecd6ff 100%);
+  --edge: 5px;
+}
+.pcard[data-rarity="legendary"] {
+  --r1: #ffe7a3; --r2: #b9780f; --rglow: rgba(255, 196, 70, 0.6);
+  --frame: linear-gradient(135deg, #fff7d1 0%, #e5ad2e 14%, #7d4f08 27%, #ffe28a 41%, #b67c15 55%, #fff1b5 69%, #8f5d0c 83%, #f7cf63 100%);
+  --edge: 6px;
+}
+.pcard-locked { --frame: linear-gradient(160deg, #6b7380, #3a404b) !important; --edge: 3px !important; }
+
+/* 테두리 금속판 (padding 영역) */
+.pcard-frame { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; background: var(--frame); pointer-events: none; }
+/* 금속 결: 가는 사선 */
+.pcard-frame::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+/* 영웅·전설: 테두리를 따라 도는 빛 (회전만 하므로 가벼움) */
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-frame::before,
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-frame::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 160%; aspect-ratio: 1; translate: -50% -50%;
+  background: conic-gradient(from 0deg, transparent 0 62%, rgba(255, 255, 255, 0) 66%, rgba(255, 255, 255, 0.95) 72%, rgba(255, 255, 255, 0) 78%, transparent 100%);
+  animation: pcard-orbit 4.5s linear infinite;
+}
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-frame::before { animation-duration: 7s; opacity: 0.7; }
+@keyframes pcard-orbit { to { rotate: 360deg; } }
+
+/* 바깥 빛 (영웅·전설, 숨 쉬듯) */
+.pcard-glow { position: absolute; inset: -6px; z-index: -1; border-radius: 18px; pointer-events: none; opacity: 0; }
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-glow,
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-glow {
+  box-shadow: 0 0 22px 2px var(--rglow), 0 0 4px 1px var(--rglow);
+  animation: pcard-breathe 3.2s ease-in-out infinite;
+}
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-glow { box-shadow: 0 0 30px 6px var(--rglow), 0 0 6px 2px rgba(255, 230, 160, 0.8); animation-duration: 2.6s; }
+@keyframes pcard-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
 .pcard-inner {
   position: relative;
+  z-index: 1;
   height: 100%;
   overflow: hidden;
-  border-radius: 11px;
+  border-radius: calc(14px - var(--edge) + 1px);
   background: radial-gradient(120% 90% at 50% 10%, #2b3445 0%, #121722 70%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
 }
 .pcard-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
 .pcard-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10, 13, 20, 0.55) 0%, transparent 18%, transparent 52%, rgba(10, 13, 20, 0.92) 78%, rgba(10, 13, 20, 0.97) 100%); }
-/* 안쪽 금속 테두리 */
+/* 안쪽 테두리선 (희귀부터 두 줄) */
 .pcard-inner::after {
   content: "";
   position: absolute;
   inset: 5px;
+  z-index: 3;
   border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--r1) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--r1) 45%, transparent);
   pointer-events: none;
 }
+.pcard[data-rarity="rare"]:not(.pcard-locked) .pcard-inner::after,
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-inner::after,
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-inner::after {
+  border-color: color-mix(in srgb, var(--r1) 70%, transparent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 0 3px color-mix(in srgb, var(--r1) 30%, transparent);
+}
+
+/* 홀로그램 광택: 일러스트 위 (희귀 = 빛줄기, 영웅 = 보라·청 무지개, 전설 = 무지개 + 금가루)
+   글자 영역(아래)은 흐리게: 고정된 틀(foilwrap)이 아래를 가리고, 안의 광택만 움직인다 */
+.pcard-foilwrap {
+  position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 50%, rgba(0, 0, 0, 0.25) 72%, transparent 88%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 50%, rgba(0, 0, 0, 0.25) 72%, transparent 88%);
+}
+.pcard-foil { position: absolute; inset: -50%; z-index: 2; pointer-events: none; opacity: 0; will-change: transform; }
+.pcard[data-rarity="rare"]:not(.pcard-locked) .pcard-foil {
+  opacity: 0.85;
+  background: linear-gradient(115deg, transparent 40%, rgba(200, 235, 255, 0.32) 48%, rgba(255, 255, 255, 0.5) 50%, rgba(200, 235, 255, 0.32) 52%, transparent 60%);
+  mix-blend-mode: soft-light;
+}
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-foil {
+  opacity: 0.3;
+  background: repeating-linear-gradient(120deg, #ff9df5 0%, #8f7bff 8%, #5ed4ff 16%, #c88bff 24%, #ff9df5 32%);
+  mix-blend-mode: color-dodge;
+  -webkit-mask-image: linear-gradient(115deg, transparent 36%, #000 47%, #000 53%, transparent 64%);
+  mask-image: linear-gradient(115deg, transparent 36%, #000 47%, #000 53%, transparent 64%);
+}
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-foil {
+  opacity: 0.4;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.95) 0 0.7px, transparent 1.5px) 0 0 / 23px 19px,
+    radial-gradient(circle at 70% 20%, rgba(255, 236, 170, 0.9) 0 0.6px, transparent 1.4px) 5px 7px / 31px 27px,
+    radial-gradient(circle at 50% 70%, rgba(255, 255, 255, 0.8) 0 0.5px, transparent 1.2px) 11px 3px / 17px 37px,
+    repeating-linear-gradient(115deg, #ff8a8a 0%, #ffd36b 6%, #9dffac 12%, #7bdcff 18%, #c09bff 24%, #ff8ade 30%, #ff8a8a 36%);
+  mix-blend-mode: color-dodge;
+  -webkit-mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
+  mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
+}
+/* 가만히 있을 때: 광택이 천천히 지나감 / 포인터를 올리면 포인터를 따라감 */
+.pcard:not(.is-active) .pcard-foil { animation: pcard-sweep 6s ease-in-out infinite; }
+.pcard[data-rarity="rare"]:not(.is-active) .pcard-foil { animation-duration: 7.5s; }
+.pcard[data-rarity="legendary"]:not(.is-active) .pcard-foil { animation-duration: 4.8s; }
+.pcard.is-active .pcard-foil { transform: translate3d(calc(var(--px) * -45%), calc(var(--py) * -30%), 0); transition: transform 0.08s linear; }
+@keyframes pcard-sweep {
+  0%, 30% { transform: translate3d(32%, 10%, 0); }
+  80%, 100% { transform: translate3d(-32%, -10%, 0); }
+}
+
+/* 전설: 반짝이 (작은 별이 깜빡임) */
+.pcard-sparkles { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.pcard-sparkles i {
+  position: absolute; width: 7cqw; height: 7cqw; translate: -50% -50%; scale: 0; opacity: 0;
+  background: radial-gradient(circle, #fff 0 12%, rgba(255, 240, 190, 0.9) 18%, transparent 46%),
+    conic-gradient(from 45deg, transparent 0 20%, rgba(255, 250, 220, 0.95) 25%, transparent 30% 45%, rgba(255, 250, 220, 0.95) 50%, transparent 55% 70%, rgba(255, 250, 220, 0.95) 75%, transparent 80% 95%, rgba(255, 250, 220, 0.95) 100%);
+  -webkit-mask-image: radial-gradient(circle, #000 25%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 25%, transparent 70%);
+  animation: pcard-twinkle 2.8s ease-in-out infinite;
+}
+@keyframes pcard-twinkle { 0%, 100% { scale: 0; opacity: 0; rotate: 0deg; } 45% { scale: 1; opacity: 1; rotate: 45deg; } 70% { scale: 0.2; opacity: 0; } }
+
+/* 모서리 장식 (희귀 = 작은 꺾쇠, 영웅 = 꺾쇠 + 보석, 전설 = 금박 문양) */
+.pcard-corners { position: absolute; inset: 0; z-index: 5; pointer-events: none; color: var(--r1); }
+.pcard-corners svg { position: absolute; width: 22%; height: auto; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.6)); }
+.pcard-corners svg:nth-child(1) { left: 0; top: 0; }
+.pcard-corners svg:nth-child(2) { right: 0; top: 0; scale: -1 1; }
+.pcard-corners svg:nth-child(3) { left: 0; bottom: 0; scale: 1 -1; }
+.pcard-corners svg:nth-child(4) { right: 0; bottom: 0; scale: -1 -1; }
+.pcard[data-rarity="legendary"] .pcard-corners { color: #ffe6a0; }
+
+/* 이름: 전설은 금박 글자 */
+.pcard[data-rarity="legendary"]:not(.pcard-locked) .pcard-name {
+  background: linear-gradient(180deg, #fff8dc 10%, #ffd36b 55%, #d29a2a 90%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
+}
+.pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-name { text-shadow: 0 0 10px rgba(190, 140, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.8); }
+
 .pcard-gem {
   width: 1.6em; height: 1.6em;
   border-radius: 6px;
   transform: rotate(45deg);
-  background: linear-gradient(135deg, var(--r1), var(--r2));
-  box-shadow: 0 0 10px var(--rglow), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+  background: linear-gradient(135deg, #fff 0%, var(--r1) 25%, var(--r2) 70%, var(--r1) 100%);
+  box-shadow: 0 0 10px var(--rglow), inset 0 1px 1px rgba(255, 255, 255, 0.7);
 }
 .pcard-locked .pcard-art { filter: grayscale(1) brightness(0.28) contrast(1.2); }
-/* 전설: 은은한 광택이 천천히 지나감 */
-.pcard[data-rarity="legendary"] .pcard-inner::before {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  z-index: 2;
-  pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 240, 200, 0.28) 50%, transparent 58%);
-  animation: pcard-sheen 5.5s ease-in-out infinite;
-}
-.pcard[data-rarity="legendary"].pcard-locked .pcard-inner::before { display: none; }
-@keyframes pcard-sheen {
-  0%, 55% { transform: translateX(-60%); }
-  85%, 100% { transform: translateX(60%); }
-}
 
 /* 카드 뒷면 */
 .pcard-back {
@@ -325,7 +434,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .pcard, .flip-card { transition: none !important; }
-  .pcard[data-rarity="legendary"] .pcard-inner::before,
+  .pcard-frame::before, .pcard-glow, .pcard-sparkles i, .pcard-foil { animation: none !important; }
+  .pcard-sparkles { display: none; }
+  .pcard-glow { opacity: 0.8 !important; }
   .card-enter, .card-burst, .card-float, .level-pop, .upgrade-glow,
   .lunge-up, .lunge-down, .hit-shake, .dmg-float, .faint, .skill-banner,
   .fuse-left, .fuse-right, .fuse-flash, .fuse-reveal { animation: none !important; }
