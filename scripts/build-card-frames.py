@@ -3,7 +3,8 @@
   public/cards/frames/{common,rare,epic,legendary}.webp  (투명 배경)
   src/lib/game/frameGeometry.ts                          (프레임 몸통·안쪽 창·튀어나온 장식 위치, %)
 
-사용: python3 -I scripts/build-card-frames.py <원본 이미지> [출력 너비 px, 기본 720]
+사용: python3 -I scripts/build-card-frames.py <원본 이미지> [출력 너비 px, 기본 720] [테두리 두께 배율, 기본 1]
+  두께 배율 0.7 = 테두리를 70% 두께로 (띠만 얇게 누르고, 위·아래 가운데 장식과 모서리는 비율을 지켜 함께 줄임)
 새 프레임 이미지를 받으면 이 스크립트만 다시 돌리면 된다 (화면 코드는 frameGeometry.ts 를 읽음).
 """
 import json
@@ -83,9 +84,68 @@ def geometry(alpha: np.ndarray):
     }
 
 
+def resize_np(a: np.ndarray, w: int, h: int) -> np.ndarray:
+    return np.asarray(Image.fromarray(a, "RGBA").resize((max(1, w), max(1, h)), Image.LANCZOS))
+
+
+def squeeze_axis(a: np.ndarray, lo: int, hi: int, k: float, axis: int) -> np.ndarray:
+    """axis 방향으로 [0,lo) 와 [hi,끝) 띠를 k 배로 누른다 (가운데는 그대로)"""
+    if axis == 1:
+        return squeeze_axis(a.transpose(1, 0, 2), lo, hi, k, 0).transpose(1, 0, 2)
+    n, w = a.shape[0], a.shape[1]
+    top, mid, bot = a[:lo], a[lo:hi], a[hi:]
+    top = resize_np(top, w, round(lo * k))
+    bot = resize_np(bot, w, round((n - hi) * k))
+    return np.concatenate([top, mid, bot], axis=0)
+
+
+def thin_frame(piece: np.ndarray, k: float) -> np.ndarray:
+    """테두리 띠를 k 배 두께로. 위·아래 가운데 장식(신전·보석)은 같은 비율로 줄여 다시 붙인다"""
+    if k >= 0.999:
+        return piece
+    alpha = piece[..., 3] / 255.0
+    g = geometry(alpha)
+    bt, bb, bl, br = g["box"]
+    bh, bw = bb - bt + 1, br - bl + 1
+    h, w = alpha.shape
+    # 안쪽 창 경계 (px)
+    ot = bt + round(g["open"]["t"] * bh / 100)
+    ob = bb - round(g["open"]["b"] * bh / 100)
+    ol = bl + round(g["open"]["l"] * bw / 100)
+    orr = br - round(g["open"]["r"] * bw / 100)
+    base = squeeze_axis(piece, ot, ob + 1, k, 0)
+    base = squeeze_axis(base, ol, orr + 1, k, 1)
+    nh, nw = base.shape[:2]
+    x0, x1 = round(w * 0.15), round(w * 0.85)  # 가운데 장식 띠 (양끝은 장식 없는 금속)
+    sx0 = round(x0 * k) if x0 < ol else x0 - (ol - round(ol * k))
+    out = base.copy().astype(np.float32)
+
+    def paste(src: np.ndarray, top: int):
+        # 원본 띠를 k 배로 (비율 유지) 줄여 가운데에 붙이고, 양끝은 부드럽게 섞는다
+        sh, sw = src.shape[:2]
+        small = resize_np(src, round(sw * k), round(sh * k)).astype(np.float32)
+        th, tw = small.shape[:2]
+        cx = (sx0 + (sx0 + (x1 - x0))) // 2 - tw // 2
+        cx = (nw - tw) // 2
+        feather = max(2, tw // 12)
+        ramp = np.ones(tw, np.float32)
+        ramp[:feather] = np.linspace(0, 1, feather)
+        ramp[-feather:] = np.linspace(1, 0, feather)
+        m = ramp[None, :, None]
+        region = out[top : top + th, cx : cx + tw]
+        th2 = region.shape[0]
+        out[top : top + th2, cx : cx + tw] = region * (1 - m) + small[:th2] * m
+
+    paste(piece[: ot, x0:x1], 0)
+    bot_src = piece[ob + 1 :, x0:x1]
+    paste(bot_src, nh - round(bot_src.shape[0] * k))
+    return out.clip(0, 255).astype(np.uint8)
+
+
 def main():
     src = Path(sys.argv[1])
     width = int(sys.argv[2]) if len(sys.argv) > 2 else 720
+    thin = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0
     rgba = key_green(np.asarray(Image.open(src).convert("RGB")))
     alpha = rgba[..., 3] / 255.0
     segs = segments((alpha > 0.5).sum(axis=0) > 5)
@@ -97,7 +157,7 @@ def main():
     for rarity, (x0, x1) in zip(RARITIES, segs):
         col = alpha[:, x0 : x1 + 1]
         ys = np.where((col > 0.05).sum(axis=1) > 0)[0]
-        piece = rgba[ys[0] : ys[-1] + 1, x0 : x1 + 1]
+        piece = thin_frame(rgba[ys[0] : ys[-1] + 1, x0 : x1 + 1], thin)
         g = geometry(piece[..., 3] / 255.0)
         img = Image.fromarray(piece, "RGBA")
         scale = width / img.width
