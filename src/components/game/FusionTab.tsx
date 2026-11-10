@@ -224,7 +224,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
             <Grid>
               {baseList.map((o) => (
                 <Pickable key={o.cardId} selected={o.cardId === baseId} dim={!canFuse(o)} onClick={() => chooseBase(o)}>
-                  <PhilosopherCard
+                  <PhilosopherCard fx="lite"
                     card={o}
                     rarity={o.rarity}
                     level={o.level}
@@ -245,7 +245,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
           <Grid>
             {materialList.map((o) => (
               <Pickable key={o.cardId} selected={materialIds.includes(o.cardId)} onClick={() => toggleMaterial(o)}>
-                <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} badge={state.deck.includes(o.cardId) ? <span className="rounded bg-navy px-1 text-[9px] font-bold text-on-accent">덱</span> : undefined} />
+                <PhilosopherCard fx="lite" card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} badge={state.deck.includes(o.cardId) ? <span className="rounded bg-navy px-1 text-[9px] font-bold text-on-accent">덱</span> : undefined} />
               </Pickable>
             ))}
           </Grid>
@@ -270,7 +270,7 @@ function Slot({ label, active, onClick, children }: { label: string; active: boo
   );
 }
 const Empty = ({ text }: { text: string }) => <div className="flex aspect-[5/7] items-center justify-center rounded-[12px] bg-surface-2 p-2 text-center text-xs text-faint">{text}</div>;
-const MiniCard = ({ o, maxLevel }: { o: OwnedCard; maxLevel: number }) => <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} />;
+const MiniCard = ({ o, maxLevel }: { o: OwnedCard; maxLevel: number }) => <PhilosopherCard fx="lite" card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} tilt={false} />;
 const Grid = ({ children }: { children: React.ReactNode }) => <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">{children}</div>;
 function Pickable({ selected, dim, onClick, children }: { selected: boolean; dim?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

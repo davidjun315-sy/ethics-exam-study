@@ -1,5 +1,6 @@
 import "server-only";
 import { getAdminClient } from "@/lib/supabase/server";
+import { cached, invalidateContent } from "@/lib/cache";
 import { classifyPhilosopher } from "@/lib/traditions";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
@@ -102,7 +103,13 @@ const DEFAULT_SETTINGS: GameSettings = {
   battle_bg_ready: false,
 };
 
-export async function getGameSettings(): Promise<GameSettings> {
+/**
+ * 게임 설정 · 공개 카드: 모든 학습자에게 같으므로 서버에 저장해 두고 재사용 (메인·퀴즈·게임 화면을 열 때마다 DB 를 여러 번 왕복하지 않게).
+ * 관리자가 카드·설정을 저장하면 바로 비운다 (invalidateContent). 관리자 화면은 loadGameSettings 로 항상 최신을 읽는다.
+ */
+export const getGameSettings = cached("game-settings", () => loadGameSettings());
+
+export async function loadGameSettings(): Promise<GameSettings> {
   const { data, error } = await getAdminClient().from("game_settings").select("*").eq("id", 1).maybeSingle();
   if (error) throw gameError(error.message);
   const d = (data ?? {}) as Partial<GameSettings>;
@@ -140,6 +147,7 @@ export async function saveBattleBg(tradition: (typeof BATTLE_BG_KEYS)[number], u
   else delete next[tradition];
   const { error: e2 } = await db.from("game_settings").upsert({ id: 1, battle_bg: next, updated_at: new Date().toISOString() }, { onConflict: "id" });
   if (e2) throw /battle_bg/.test(e2.message) ? new GameError(GAME_016_HINT, 503) : gameError(e2.message);
+  invalidateContent();
 }
 
 export const GAME_013_HINT = "논쟁 대전 조정값 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/013_game_duel_rules.sql 을 실행하세요.";
@@ -155,6 +163,7 @@ export async function saveDuelRules(rules: DuelRules) {
     const ins = await db.from("game_settings").upsert({ id: 1, duel_rules: rules, updated_at: new Date().toISOString() }, { onConflict: "id" });
     if (ins.error) throw /duel_rules/.test(ins.error.message) ? new GameError(GAME_013_HINT, 503) : gameError(ins.error.message);
   }
+  invalidateContent();
 }
 
 export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready">) {
@@ -165,6 +174,7 @@ export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "due
     .from("game_settings")
     .upsert({ id: 1, ...s, updated_at: new Date().toISOString() }, { onConflict: "id" });
   if (error) throw gameError(error.message);
+  invalidateContent();
 }
 
 // ---------------------------------------------------------------------
@@ -250,7 +260,9 @@ async function loadCards(ids?: string[]): Promise<{ cards: CardRow[]; philosophe
 }
 
 /** 뽑기에 나오는 사상가 (공개 + 일러스트 + 기출 연결). DB 함수와 같은 조건 */
-export async function publishedCards(): Promise<CardView[]> {
+export const publishedCards = cached("game-published-cards", () => loadPublishedCards());
+
+export async function loadPublishedCards(): Promise<CardView[]> {
   const { data, error } = await getAdminClient().rpc("game_draw_pool");
   if (error) throw gameError(error.message);
   const ids = ((data ?? []) as { philosopher_id: string }[]).map((r) => r.philosopher_id);
@@ -737,6 +749,7 @@ export async function saveCard(philosopherId: string, input: CardInput) {
     .from("game_cards")
     .upsert({ philosopher_id: philosopherId, ...input, updated_at: new Date().toISOString() }, { onConflict: "philosopher_id" });
   if (error) throw gameError(error.message);
+  invalidateContent();
 }
 
 export const GAME_015_HINT = "전투 캐릭터 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/015_game_battle_art.sql 을 실행하세요.";
@@ -750,6 +763,7 @@ export async function saveBattleArt(philosopherId: string, url: string | null) {
     .select("philosopher_id");
   if (error) throw /battle_art_url/.test(error.message) ? new GameError(GAME_015_HINT, 503) : gameError(error.message);
   if (!data?.length) throw new GameError("카드를 먼저 저장한 뒤 전투 캐릭터를 올리세요.", 409);
+  invalidateContent();
 }
 
 /** 관리자: 최초 무료 뽑기 사용 현황 */

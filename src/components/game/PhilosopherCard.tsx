@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { CardView } from "@/lib/game/data";
 import { DEFAULT_RARITY_MULT, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
 import { FRAME_GEOMETRY } from "@/lib/game/frameGeometry";
@@ -21,7 +21,7 @@ function frameVars(rarity: Rarity): CSSProperties {
     ["--fimg" as string]: `url(/cards/frames/${rarity}.webp)`,
   };
 }
-function FrameArt({ rarity, onError }: { rarity: Rarity; onError?: () => void }) {
+function FrameArt({ rarity, onError, lite }: { rarity: Rarity; onError?: () => void; lite?: boolean }) {
   const g = FRAME_GEOMETRY[rarity];
   const box: CSSProperties = {
     top: `-${g.out.t}%`,
@@ -33,7 +33,7 @@ function FrameArt({ rarity, onError }: { rarity: Rarity; onError?: () => void })
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={`/cards/frames/${rarity}.webp`} alt="" className="pcard-frameimg" style={box} draggable={false} decoding="async" onError={onError} />
-      {rarity !== "common" && <div className="pcard-framefx" style={box} aria-hidden />}
+      {rarity !== "common" && !lite && <div className="pcard-framefx" style={box} aria-hidden />}
     </>
   );
 }
@@ -121,6 +121,7 @@ export function PhilosopherCard({
   stats,
   count,
   locked2,
+  fx = "full",
 }: {
   card: CardView;
   rarity: Rarity;
@@ -139,8 +140,19 @@ export function PhilosopherCard({
   stats?: { atk: number; hp: number };
   count?: number; // 같은 사상가 보유 장수 (도감 묶음)
   locked2?: boolean; // 카드 잠금 표시
+  /** full: 반짝임·테두리 빛·후광 등 움직이는 효과 전부 (대표 카드·상세·뽑기 결과) / lite: 목록용 — 테두리·색·정지 광택만 (휴대폰이 느려지지 않게) */
+  fx?: "full" | "lite";
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const lite = fx === "lite";
+  // 화면 밖에 있는 카드는 움직임을 멈춘다 (긴 목록에서 휴대폰이 느려지지 않게)
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || lite || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => el.toggleAttribute("data-offscreen", !e.isIntersecting), { rootMargin: "120px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [lite]);
   const frameRarity: Rarity = locked ? "common" : rarity;
   // 프레임 그림을 못 불러오면 코드로 그린 테두리로
   const [frameOk, setFrameOk] = useState(true);
@@ -178,6 +190,7 @@ export function PhilosopherCard({
         className={`pcard ${locked ? "pcard-locked" : ""}`}
         data-rarity={locked ? "common" : rarity}
         data-frame={frameOk ? "img" : undefined}
+        data-fx={lite ? "lite" : undefined}
         style={frameOk ? frameVars(frameRarity) : undefined}
         onPointerMove={onMove}
         onPointerLeave={onLeave}
@@ -198,7 +211,7 @@ export function PhilosopherCard({
               <div className="pcard-foil" />
             </div>
           )}
-          {!locked && rarity === "legendary" && (
+          {!locked && !lite && rarity === "legendary" && (
             <div className="pcard-sparkles" aria-hidden>
               {SPARKLES.map(([x, y, d], i) => (
                 <i key={i} style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${d}s` }} />
@@ -266,7 +279,7 @@ export function PhilosopherCard({
             <span className="pcard-lock absolute z-[4] rounded-full bg-black/70 px-[2.5cqw] py-[0.6cqw] text-[4.6cqw] font-bold text-white ring-1 ring-white/20" title="잠긴 카드">잠금</span>
           )}
         </div>
-        {frameOk && <FrameArt rarity={frameRarity} onError={() => setFrameOk(false)} />}
+        {frameOk && <FrameArt rarity={frameRarity} onError={() => setFrameOk(false)} lite={lite} />}
         {fancy && !frameOk && (
           <div className="pcard-corners" aria-hidden>
             {[0, 1, 2, 3].map((i) => (

@@ -72,7 +72,7 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
           {sorted.map((o) => (
             <div key={o.cardId} className={`rounded-[16px] p-0.5 ${selected === o.cardId ? "ring-2 ring-navy" : ""}`}>
-              <PhilosopherCard
+              <PhilosopherCard fx="lite"
                 card={o}
                 rarity={o.rarity}
                 level={o.level}

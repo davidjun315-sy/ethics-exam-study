@@ -75,7 +75,7 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
             const fusable = c.copies.some(canFuse);
             return (
               <div key={c.philosopherId}>
-                <PhilosopherCard
+                <PhilosopherCard fx="lite"
                   card={c}
                   rarity={b?.rarity ?? "common"}
                   level={b?.level ?? 1}

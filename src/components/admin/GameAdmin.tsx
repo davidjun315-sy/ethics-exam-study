@@ -240,7 +240,7 @@ function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record
     <div className="grid gap-4 border-t border-line p-4 md:grid-cols-[13rem_1fr]">
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-1.5">
-          {RARITIES.map((r) => <PhilosopherCard key={r} card={preview} rarity={r} level={1} stats={statsFor({ atk: d.base_atk, hp: d.base_hp }, r, 1, settingsMult)} tilt={false} />)}
+          {RARITIES.map((r) => <PhilosopherCard fx="lite" key={r} card={preview} rarity={r} level={1} stats={statsFor({ atk: d.base_atk, hp: d.base_hp }, r, 1, settingsMult)} tilt={false} />)}
         </div>
         <p className="text-center text-[10px] text-faint">같은 일러스트 · 등급별 프레임 (Lv.1)</p>
         {!d.art_url && <p className="text-center text-xs text-warn">일러스트가 없어 공개할 수 없습니다</p>}

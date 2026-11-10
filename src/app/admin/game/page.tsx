@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { GameAdmin } from "@/components/admin/GameAdmin";
 import { PageTitle } from "@/components/ui";
-import { freeDrawStats, GameError, getGameSettings, listCandidates } from "@/lib/game/data";
+import { freeDrawStats, GameError, loadGameSettings, listCandidates } from "@/lib/game/data";
 
 export const metadata = { title: "철학자 대난투 카드 관리" };
 
 export default async function GameAdminPage() {
-  const loaded = await Promise.all([listCandidates(), getGameSettings(), freeDrawStats().catch(() => null)]).then(
+  const loaded = await Promise.all([listCandidates(), loadGameSettings(), freeDrawStats().catch(() => null)]).then(
     ([candidates, settings, freeDraws]) => ({ candidates, settings, freeDraws, error: null }),
     (e: unknown) => ({ candidates: null, settings: null, freeDraws: null, error: e instanceof GameError ? e.message : e instanceof Error ? e.message : String(e) }),
   );

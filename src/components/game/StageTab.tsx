@@ -185,7 +185,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         <div className={`overflow-hidden rounded-2xl border p-3 text-white ${selStatus === "current" ? "border-[#ffd36b]/60" : "border-white/10"} bg-[radial-gradient(90%_80%_at_20%_30%,#2a3656,#0f1522)]`}>
           <div className="flex gap-3">
             <div className="w-28 shrink-0 sm:w-32">
-              <PhilosopherCard card={boss} rarity={sel.rarity} level={sel.level} stats={bossStats} maxLevel={state.settings.maxLevel} locked={selStatus === "locked"} tilt={false} />
+              <PhilosopherCard fx="lite" card={boss} rarity={sel.rarity} level={sel.level} stats={bossStats} maxLevel={state.settings.maxLevel} locked={selStatus === "locked"} tilt={false} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#ffd36b]">
@@ -250,7 +250,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:max-w-md">
               {teamCards.map((o) => (
-                <PhilosopherCard key={o.cardId} card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} tilt={false} />
+                <PhilosopherCard fx="lite" key={o.cardId} card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} tilt={false} />
               ))}
             </div>
           )}

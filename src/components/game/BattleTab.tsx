@@ -99,7 +99,7 @@ export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId }: { ow
         const at = deck.indexOf(o.cardId);
         return (
           <div key={o.cardId} className={`relative rounded-[16px] p-0.5 ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`}>
-            <PhilosopherCard card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} featured={o.cardId === featuredId} tilt={false} onClick={() => onToggle(o.cardId)} />
+            <PhilosopherCard fx="lite" card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={maxLevel} featured={o.cardId === featuredId} tilt={false} onClick={() => onToggle(o.cardId)} />
             {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-on-accent shadow">{at + 1}</span>}
           </div>
         );
@@ -212,7 +212,7 @@ export function BattleArena({
         return (
           <div key={`${u.key}-${idx}`} className={`relative ${s.dead ? "faint" : isActor ? (side === "me" ? "lunge-up" : "lunge-down") : hit ? "hit-shake" : ""}`}>
             <div className={`relative rounded-[14px] ${isActor && current?.t === "skill" ? "ring-4" : ""}`} style={isActor && current?.t === "skill" ? { boxShadow: `0 0 26px ${EFFECT_COLOR[current.effect]}`, ["--tw-ring-color" as string]: EFFECT_COLOR[current.effect] } : undefined}>
-              <PhilosopherCard
+              <PhilosopherCard fx="lite"
                 card={{ philosopherId: u.philosopherId, name: u.name, originalName: null, tradition: u.tradition, baseAtk: u.atk, baseHp: u.hp, skillName: u.skillName, skillEffect: u.skillEffect, skillDesc: "", quote: "", artUrl: u.artUrl, artBasis: "portrait", artNote: "", published: true }}
                 rarity={u.rarity}
                 level={u.level}
