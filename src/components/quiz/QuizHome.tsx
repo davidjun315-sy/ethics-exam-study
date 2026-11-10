@@ -8,6 +8,8 @@ import { ScopePicker } from "./ScopePicker";
 import { TrackPicker } from "./TrackPicker";
 import { TRACK_NAMES } from "@/lib/quiz/srs";
 import { FeaturedPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
+import { WeeklyRanking } from "./WeeklyRanking";
+import type { QuizWeekly } from "@/lib/quiz/weekly";
 
 function Flame({ on }: { on: boolean }) {
   return (
@@ -45,7 +47,7 @@ function Fold({ title, summary, children, id }: { title: string; summary: React.
  * 윤리 퀴즈 홈. 순서: 프로필 → 오늘의 미션 → 실전 도전 → 자유 학습·오답 복습 → 성장 요약 → 숙련도 → 달력·배지 → 출제 범위
  * 게임 지표(체크포인트·콤보)와 실제 학습 지표(정답률·고난도 정답·숙련도)를 구분해서 보여 준다.
  */
-export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSummary | null }) {
+export function QuizHome({ d, game = null, weekly = null }: { d: Dashboard; game?: FeaturedSummary | null; weekly?: QuizWeekly | null }) {
   const { level, today, todayStats: ts, week } = d;
   const xp = d.profile?.xp ?? 0;
   const lvProgress = (xp - level.current) / (level.next - level.current);
@@ -215,6 +217,9 @@ export function QuizHome({ d, game = null }: { d: Dashboard; game?: FeaturedSumm
         </Link>
       </div>
       {d.dueCount > 0 && <p className="text-center text-xs text-muted">복습할 때가 된 문제 {d.dueCount}개 — 다음 미션에 우선 들어갑니다</p>}
+
+      {/* 이번 주 랭킹 */}
+      {weekly && <WeeklyRanking w={weekly} />}
 
       {/* 5. 학습 성장 요약 (실제 학습 지표) */}
       <section className="card p-4">
