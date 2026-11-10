@@ -311,16 +311,18 @@ body {
   -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 50%, rgba(0, 0, 0, 0.25) 72%, transparent 88%);
   mask-image: linear-gradient(180deg, #000 0%, #000 50%, rgba(0, 0, 0, 0.25) 72%, transparent 88%);
 }
+/* 섞는 방식은 틀에 건다 (틀이 mask 로 따로 묶이므로, 안쪽에 걸면 일러스트와 섞이지 않고 흰 막처럼 덮임) */
+.pcard[data-rarity="rare"] .pcard-foilwrap { mix-blend-mode: color-dodge; }
+.pcard[data-rarity="epic"] .pcard-foilwrap,
+.pcard[data-rarity="legendary"] .pcard-foilwrap { mix-blend-mode: color-dodge; }
 .pcard-foil { position: absolute; inset: -50%; z-index: 2; pointer-events: none; opacity: 0; will-change: transform; }
 .pcard[data-rarity="rare"]:not(.pcard-locked) .pcard-foil {
-  opacity: 0.85;
-  background: linear-gradient(115deg, transparent 40%, rgba(200, 235, 255, 0.32) 48%, rgba(255, 255, 255, 0.5) 50%, rgba(200, 235, 255, 0.32) 52%, transparent 60%);
-  mix-blend-mode: soft-light;
+  opacity: 0.75;
+  background: linear-gradient(115deg, transparent 42%, rgba(110, 170, 255, 0.45) 47%, rgba(220, 240, 255, 0.85) 50%, rgba(110, 170, 255, 0.45) 53%, transparent 58%);
 }
 .pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-foil {
   opacity: 0.3;
   background: repeating-linear-gradient(120deg, #ff9df5 0%, #8f7bff 8%, #5ed4ff 16%, #c88bff 24%, #ff9df5 32%);
-  mix-blend-mode: color-dodge;
   -webkit-mask-image: linear-gradient(115deg, transparent 36%, #000 47%, #000 53%, transparent 64%);
   mask-image: linear-gradient(115deg, transparent 36%, #000 47%, #000 53%, transparent 64%);
 }
@@ -331,18 +333,17 @@ body {
     radial-gradient(circle at 70% 20%, rgba(255, 236, 170, 0.9) 0 0.6px, transparent 1.4px) 5px 7px / 31px 27px,
     radial-gradient(circle at 50% 70%, rgba(255, 255, 255, 0.8) 0 0.5px, transparent 1.2px) 11px 3px / 17px 37px,
     repeating-linear-gradient(115deg, #ff8a8a 0%, #ffd36b 6%, #9dffac 12%, #7bdcff 18%, #c09bff 24%, #ff8ade 30%, #ff8a8a 36%);
-  mix-blend-mode: color-dodge;
   -webkit-mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
   mask-image: linear-gradient(115deg, transparent 32%, rgba(0, 0, 0, 0.85) 44%, #000 50%, rgba(0, 0, 0, 0.85) 56%, transparent 68%);
 }
 /* 가만히 있을 때: 광택이 천천히 지나감 / 포인터를 올리면 포인터를 따라감 */
-.pcard:not(.is-active) .pcard-foil { animation: pcard-sweep 6s ease-in-out infinite; }
-.pcard[data-rarity="rare"]:not(.is-active) .pcard-foil { animation-duration: 7.5s; }
-.pcard[data-rarity="legendary"]:not(.is-active) .pcard-foil { animation-duration: 4.8s; }
+.pcard:not(.is-active) .pcard-foil { animation: pcard-sweep 4.2s ease-in-out infinite; }
+.pcard[data-rarity="rare"]:not(.is-active) .pcard-foil { animation-duration: 5s; }
+.pcard[data-rarity="legendary"]:not(.is-active) .pcard-foil { animation-duration: 3.6s; }
 .pcard.is-active .pcard-foil { transform: translate3d(calc(var(--px) * -45%), calc(var(--py) * -30%), 0); transition: transform 0.08s linear; }
 @keyframes pcard-sweep {
-  0%, 30% { transform: translate3d(32%, 10%, 0); }
-  80%, 100% { transform: translate3d(-32%, -10%, 0); }
+  0%, 12% { transform: translate3d(34%, 11%, 0); }
+  78%, 100% { transform: translate3d(-34%, -11%, 0); }
 }
 
 /* 전설: 반짝이 (작은 별이 깜빡임) */
