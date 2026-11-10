@@ -516,6 +516,101 @@ body {
 @keyframes bs-stars { to { transform: translateX(-50%) rotate(360deg); } }
 .bs-stars { pointer-events: none; z-index: 35; animation: bs-stars 1.6s linear infinite; text-shadow: 0 0 6px #ffe68a; }
 
+/* 전장 연출 (BattleStage): 위치는 left/top 이 중심점, 시간은 --t(1배속=1, 2배속=0.5) 배 */
+.fx-rays, .fx-ring, .fx-shard, .fx-swing, .fx-crescent, .fx-beam, .fx-orb, .fx-rain, .fx-pillar, .fx-sigil, .fx-ally-glow { position: absolute; pointer-events: none; animation-fill-mode: both; }
+.fx-rays {
+  translate: -50% -50%; border-radius: 50%; opacity: 0;
+  background: repeating-conic-gradient(from 0deg, var(--c2) 0 3deg, transparent 3deg 17deg, var(--c0) 17deg 19deg, transparent 19deg 30deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 12%, #000 22%, #000 48%, transparent 70%); mask-image: radial-gradient(circle, transparent 12%, #000 22%, #000 48%, transparent 70%);
+  filter: drop-shadow(0 0 6px var(--c0));
+  animation: fx-rays calc(var(--t, 1) * 520ms) ease-out both;
+}
+@keyframes fx-rays { 0% { opacity: 0; scale: 0.2; rotate: 0deg; } 20% { opacity: 1; } 100% { opacity: 0; scale: 1.35; rotate: 40deg; } }
+.fx-ring { translate: -50% -50%; border-radius: 50%; border: 3px solid var(--c2); box-shadow: 0 0 14px var(--c0), inset 0 0 14px var(--c0); opacity: 0; animation: fx-ring calc(var(--t, 1) * 480ms) ease-out both; }
+@keyframes fx-ring { 0% { opacity: 1; scale: 0.1; } 100% { opacity: 0; scale: 1.3; } }
+.fx-shard { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 2px; background: var(--c0); box-shadow: 0 0 8px var(--c0); opacity: 0; animation: fx-shard calc(var(--t, 1) * 560ms) cubic-bezier(.2,.7,.3,1) both; }
+@keyframes fx-shard { 0% { opacity: 1; transform: rotate(var(--a)) translateX(0) scale(1.4); } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d)) scale(0.3); } }
+.fx-swing, .fx-crescent {
+  translate: -50% -50%; border-radius: 50%; opacity: 0;
+  border-top: 6px solid var(--c2); border-right: 3px solid transparent; border-left: 3px solid transparent;
+  filter: drop-shadow(0 -3px 6px var(--c0)) drop-shadow(0 0 12px var(--c0));
+  animation: fx-swing calc(var(--t, 1) * 320ms) ease-out both;
+}
+.fx-crescent { border-top-width: 9px; animation-duration: calc(var(--t, 1) * 380ms); }
+@keyframes fx-swing { 0% { opacity: 0; rotate: calc(var(--r) - 70deg); scale: 0.7; } 25% { opacity: 1; } 100% { opacity: 0; rotate: calc(var(--r) + 50deg); scale: 1.05; } }
+.fx-beam {
+  transform-origin: 0 50%; border-radius: 999px; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--c1) 8%, var(--c2) 30%, #fff 50%, var(--c2) 75%, var(--c0) 95%, transparent);
+  box-shadow: 0 0 16px var(--c0), 0 0 34px var(--c1);
+  animation: fx-beam calc(var(--t, 1) * 520ms) ease-out both;
+}
+@keyframes fx-beam {
+  0% { opacity: 1; transform: translateY(-50%) rotate(var(--ang)) scale(0, 0.4); }
+  35% { opacity: 1; transform: translateY(-50%) rotate(var(--ang)) scale(1, 1.25); }
+  70% { opacity: 1; transform: translateY(-50%) rotate(var(--ang)) scale(1, 0.9); }
+  100% { opacity: 0; transform: translateY(-50%) rotate(var(--ang)) scale(1, 0.2); }
+}
+.fx-orb { border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, var(--c2) 35%, var(--c0) 70%); box-shadow: 0 0 12px var(--c0), 0 0 24px var(--c1); opacity: 0; animation: fx-orb calc(var(--t, 1) * 420ms) cubic-bezier(.4,0,.6,1) both; }
+@keyframes fx-orb {
+  0% { opacity: 0; translate: -50% -50%; scale: 0.4; }
+  15% { opacity: 1; }
+  50% { translate: calc(var(--dx) * 0.5 - 50%) calc(var(--dy) * 0.5 + var(--arc) - 50%); scale: 1.1; }
+  92% { opacity: 1; }
+  100% { opacity: 0; translate: calc(var(--dx) - 50%) calc(var(--dy) - 50%); scale: 0.7; }
+}
+.fx-rain { font-weight: 900; line-height: 1; white-space: nowrap; color: var(--c2); text-shadow: 0 0 8px var(--c0), 0 0 18px var(--c1); opacity: 0; animation: fx-rain calc(var(--t, 1) * 420ms) cubic-bezier(.5,0,.9,.6) both; }
+@keyframes fx-rain { 0% { opacity: 0; translate: -50% var(--fall); rotate: -20deg; } 20% { opacity: 1; } 85% { opacity: 1; translate: -50% -50%; rotate: 0deg; } 100% { opacity: 0; translate: -50% -40%; scale: 1.4; } }
+.fx-pillar {
+  translate: -50% 0; transform-origin: 50% 0; opacity: 0;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--c2) 70%, transparent) 25%, var(--c2) 70%, var(--c0));
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+  filter: drop-shadow(0 0 14px var(--c0));
+  animation: fx-pillar calc(var(--t, 1) * 620ms) ease-out both;
+}
+@keyframes fx-pillar { 0% { opacity: 1; scale: 0.3 0; } 35% { opacity: 1; scale: 1.15 1; } 75% { opacity: 0.9; scale: 0.9 1; } 100% { opacity: 0; scale: 0.2 1; } }
+.fx-pillar-glyph { position: absolute; left: 50%; translate: -50% 0; font-weight: 900; white-space: nowrap; color: #fff; text-shadow: 0 0 10px var(--c0), 0 0 22px var(--c1); }
+.fx-sigil { translate: -50% -50%; transform: rotateX(62deg); border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0; animation: fx-sigil calc(var(--t, 1) * 700ms) ease-out both; }
+.fx-sigil::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px dashed var(--c2); background: repeating-conic-gradient(var(--c0) 0 5deg, transparent 5deg 30deg); -webkit-mask-image: radial-gradient(circle, transparent 58%, #000 60%, #000 70%, transparent 72%); mask-image: radial-gradient(circle, transparent 58%, #000 60%, #000 70%, transparent 72%); animation: fx-spin calc(var(--t, 1) * 1400ms) linear infinite; }
+.fx-sigil::after { content: ""; position: absolute; inset: 16%; border-radius: 50%; border: 2px solid var(--c0); box-shadow: 0 0 18px var(--c0), inset 0 0 18px var(--c1); }
+.fx-sigil > span { position: relative; font-weight: 900; white-space: nowrap; color: var(--c2); text-shadow: 0 0 10px var(--c0); }
+.fx-sigil-cast { animation-duration: calc(var(--t, 1) * 1100ms); }
+@keyframes fx-sigil { 0% { opacity: 0; scale: 0.2; } 25% { opacity: 1; scale: 1.05; } 75% { opacity: 1; scale: 1; } 100% { opacity: 0; scale: 1.25; } }
+@keyframes fx-spin { to { rotate: 360deg; } }
+.fx-ally-glow { translate: -50% -50%; border-radius: 50%; background: radial-gradient(ellipse, color-mix(in srgb, var(--c2) 70%, transparent), transparent 65%); mix-blend-mode: screen; opacity: 0; animation: fx-ally calc(var(--t, 1) * 700ms) ease-out both; }
+@keyframes fx-ally { 0% { opacity: 0; scale: 0.6; } 30% { opacity: 1; } 100% { opacity: 0; scale: 1.2; } }
+.fx-flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 60% 50%, var(--c2), transparent 70%); mix-blend-mode: screen; opacity: 0; animation: fx-flash calc(var(--t, 1) * 360ms) ease-out both; }
+@keyframes fx-flash { 0% { opacity: 0; } 15% { opacity: 0.8; } 100% { opacity: 0; } }
+@keyframes fx-shake { 0%, 100% { translate: 0 0; } 20% { translate: -4px 2px; } 40% { translate: 4px -2px; } 60% { translate: -3px 1px; } 80% { translate: 2px -1px; } }
+@keyframes fx-shake-big { 0%, 100% { translate: 0 0; } 10% { translate: -10px 5px; } 25% { translate: 9px -6px; } 40% { translate: -7px 4px; } 55% { translate: 6px -3px; } 70% { translate: -4px 2px; } 85% { translate: 2px -1px; } }
+.fx-shake { animation: fx-shake calc(var(--t, 1) * 260ms) ease-out; }
+.fx-shake-big { animation: fx-shake-big calc(var(--t, 1) * 480ms) ease-out; }
+.bs-hit-big { animation-duration: 0.6s; }
+/* 피해 숫자: 튀어 오르며 커졌다가 떠오름 */
+.fx-dmg { position: absolute; left: 50%; top: 12%; translate: -50% 0; font-size: 1.4rem; font-weight: 900; line-height: 1; color: var(--c0); -webkit-text-stroke: 1.5px #1a0a05; paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0,0,0,.45), 0 0 12px rgba(0,0,0,.35); pointer-events: none; animation: fx-dmg calc(var(--t, 1) * 900ms) cubic-bezier(.2,.8,.3,1) both; }
+.fx-dmg-big { font-size: 2.1rem; -webkit-text-stroke-width: 2px; }
+@keyframes fx-dmg { 0% { opacity: 0; scale: 0.3; translate: -50% 10px; } 18% { opacity: 1; scale: 1.45; translate: -50% -8px; } 32% { scale: 1; } 75% { opacity: 1; } 100% { opacity: 0; translate: -50% -42px; } }
+/* 컷인 */
+.fx-cutin { animation: fx-cutin calc(var(--t, 1) * 1050ms) linear both; }
+@keyframes fx-cutin { 0%, 88% { opacity: 1; } 100% { opacity: 0; } }
+.fx-cutin-dim { background: radial-gradient(ellipse at 50% 50%, rgba(5,6,12,.35), rgba(5,6,12,.78)); animation: fx-fade calc(var(--t, 1) * 1050ms) ease-out both; }
+@keyframes fx-fade { 0% { opacity: 0; } 12%, 80% { opacity: 1; } 100% { opacity: 0; } }
+.fx-cutin-band { transform: skewY(-7deg); background: repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 2px, transparent 2px 26px), linear-gradient(90deg, transparent, var(--c1) 18%, var(--c0) 50%, var(--c1) 82%, transparent); box-shadow: 0 0 30px var(--c0); opacity: 0.92; }
+.fx-cutin-glyph { font-size: clamp(5rem, 22vw, 11rem); line-height: 1; color: var(--c2); opacity: 0.18; text-shadow: 0 0 30px var(--c0); white-space: nowrap; animation: fx-glyph calc(var(--t, 1) * 1050ms) ease-out both; }
+@keyframes fx-glyph { 0% { scale: 1.6; opacity: 0; } 20% { opacity: 0.25; } 100% { scale: 1; opacity: 0.12; } }
+.fx-from-l { animation: fx-in-l calc(var(--t, 1) * 1050ms) cubic-bezier(.2,.9,.3,1) both; }
+.fx-from-r { animation: fx-in-r calc(var(--t, 1) * 1050ms) cubic-bezier(.2,.9,.3,1) both; }
+@keyframes fx-in-l { 0% { translate: -110% 0; opacity: 1; } 22% { translate: 0 0; } 78% { translate: 4% 0; opacity: 1; } 100% { translate: 130% 0; opacity: 0; } }
+@keyframes fx-in-r { 0% { translate: 110% 0; opacity: 1; } 22% { translate: 0 0; } 78% { translate: -4% 0; opacity: 1; } 100% { translate: -130% 0; opacity: 0; } }
+.fx-cutin-char { filter: drop-shadow(0 0 14px var(--c0)) drop-shadow(0 6px 10px rgba(0,0,0,.6)); }
+.fx-cutin-title { animation: fx-title calc(var(--t, 1) * 1050ms) ease-out both; }
+@keyframes fx-title { 0% { opacity: 0; translate: 0 12px; } 18% { opacity: 1; translate: 0 0; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.fx-title-text { color: #fff; -webkit-text-stroke: 1.5px var(--c1); paint-order: stroke fill; text-shadow: 0 0 14px var(--c0), 0 3px 0 rgba(0,0,0,.5); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-layer, .fx-cutin { display: none !important; }
+  .fx-shake, .fx-shake-big, .fx-dmg { animation: none !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bs-idle, .bs-lunge-r, .bs-lunge-l, .bs-hit, .bs-cast, .bs-aura, .bs-slash, .bs-wave, .bs-spark, .bs-heal, .bs-dome, .bs-stars { animation: none !important; }
   .bs-faint { animation: none !important; filter: grayscale(1) brightness(0.45); opacity: 0.4; }

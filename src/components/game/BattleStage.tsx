@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BattleCard, BattleReplay } from "@/lib/game/data";
 import { SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
-import { DURATION, EFFECT_COLOR, stateAt } from "./BattleTab";
+import { stateAt } from "./BattleTab";
+import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
 
 /**
  * 도장깨기 전장: 캐릭터가 서서 싸우는 화면 (자동 배틀 기록을 재생만 함 — 결과는 서버가 정함).
@@ -84,8 +85,8 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
     );
   // 전투 캐릭터가 없으면: 초상 메달 + 받침
   return (
-    <div className="flex h-full flex-col items-center justify-end">
-      <div className="relative aspect-square w-[78%] overflow-hidden rounded-full border-[3px] bg-[#1a2234] shadow-[0_4px_10px_rgba(0,0,0,.5)]" style={{ borderColor: RING[u.rarity] }}>
+    <div className="flex h-full aspect-[0.82] flex-col items-center justify-end">
+      <div className="relative aspect-square w-[88%] shrink-0 overflow-hidden rounded-full border-[3px] bg-[#1a2234] shadow-[0_4px_10px_rgba(0,0,0,.5)]" style={{ borderColor: RING[u.rarity] }}>
         {u.artUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={u.artUrl} alt="" draggable={false} className="h-full w-full object-cover object-[center_18%]" style={{ transform: boss ? "scaleX(-1)" : undefined }} />
@@ -93,7 +94,118 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
           <span className="flex h-full items-center justify-center text-2xl font-black text-white/50">{u.name.slice(0, 1)}</span>
         )}
       </div>
-      <div className="-mt-1 h-[16%] w-[62%] rounded-b-xl rounded-t-sm" style={{ background: `linear-gradient(180deg, ${RING[u.rarity]}, #3b3f4d)` }} />
+      <div className="-mt-1 h-[14%] w-[66%] shrink-0 rounded-b-xl rounded-t-sm" style={{ background: `linear-gradient(180deg, ${RING[u.rarity]}, #3b3f4d)` }} />
+    </div>
+  );
+}
+
+// 사건마다 길이 · 맞는 순간 (ms, 1배속)
+const DUR = { attack: 950, skill: 2300, stunned: 700, faint: 600, end: 500 } as const;
+const IMPACT = { attack: 300, skill: 1250 } as const;
+const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
+
+/** 전장 안 캐릭터 위치 (px) */
+function boxOf(key: string, W: number, H: number): Box {
+  const boss = key.startsWith("foe");
+  const slot = boss ? BOSS_SLOT : TEAM_SLOTS[Number(key.split("-")[1]) % TEAM_SLOTS.length];
+  const h = H * 0.3 * slot.scale;
+  const w = h * 0.82;
+  const feet = H - (slot.bottom / 100) * H;
+  const x = "right" in slot ? W - (slot.right / 100) * W - w / 2 : (slot.left / 100) * W + w / 2;
+  return { x, y: feet - h * 0.5, feet, top: feet - h, w, h };
+}
+
+/** 맞는 곳에서 터지는 빛: 빛살 · 고리 · 파편 */
+function Burst({ b, theme, big, delay }: { b: Box; theme: FxTheme; big: boolean; delay: number }) {
+  const size = (big ? 1.5 : 0.95) * b.w;
+  const style = { left: b.x, top: b.y, width: size, height: size, animationDelay: `${delay}ms`, ["--c0" as string]: theme.colors[0], ["--c1" as string]: theme.colors[1], ["--c2" as string]: theme.colors[2] } as CSSProperties;
+  return (
+    <>
+      <div className="fx-rays" style={style} />
+      <div className="fx-ring" style={style} />
+      {Array.from({ length: big ? 12 : 7 }, (_, k) => (
+        <span key={k} className="fx-shard" style={{ left: b.x, top: b.y, animationDelay: `${delay}ms`, ["--a" as string]: `${(360 / (big ? 12 : 7)) * k + 13}deg`, ["--d" as string]: `${size * (0.6 + ((k * 37) % 10) / 20)}px`, ["--c0" as string]: theme.colors[k % 2 ? 0 : 2] } as CSSProperties} />
+      ))}
+    </>
+  );
+}
+
+/** 스킬 날아가는 모양 (사상가마다 다름) */
+function Motif({ theme, from, to, H, delay }: { theme: FxTheme; from: Box; to: Box[]; H: number; delay: number }) {
+  const [c0, c1, c2] = theme.colors;
+  const vars = { ["--c0" as string]: c0, ["--c1" as string]: c1, ["--c2" as string]: c2 } as CSSProperties;
+  const glyphSize = (b: Box) => Math.max(14, Math.min(b.w * 0.42, 40 * (theme.glyph.length > 2 ? 2.4 / theme.glyph.length + 0.2 : 1)));
+  return (
+    <>
+      {to.map((t, ti) => {
+        const dx = t.x - from.x;
+        const dy = t.y - from.y;
+        const dist = Math.hypot(dx, dy);
+        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const d0 = delay + ti * 90;
+        switch (theme.motif) {
+          case "beam":
+            return (
+              <div key={ti} className="fx-beam" style={{ ...vars, left: from.x, top: from.y, width: dist, height: Math.max(10, from.h * 0.13), ["--ang" as string]: `${ang}deg`, animationDelay: `${d0}ms` } as CSSProperties} />
+            );
+          case "orbs":
+            return Array.from({ length: 5 }, (_, k) => (
+              <span key={`${ti}-${k}`} className="fx-orb" style={{ ...vars, left: from.x, top: from.y - from.h * 0.1, width: from.w * 0.2, height: from.w * 0.2, ["--dx" as string]: `${dx}px`, ["--dy" as string]: `${dy + from.h * 0.1}px`, ["--arc" as string]: `${-40 - k * 12}px`, animationDelay: `${d0 + k * 70}ms` } as CSSProperties} />
+            ));
+          case "rain":
+            return Array.from({ length: 7 }, (_, k) => (
+              <span key={`${ti}-${k}`} className="fx-rain" style={{ ...vars, left: t.x + (k - 3) * t.w * 0.16, top: t.y, fontSize: glyphSize(t) * 0.8, ["--fall" as string]: `${-H * 0.6}px`, animationDelay: `${d0 + k * 60}ms` } as CSSProperties}>
+                {theme.glyph}
+              </span>
+            ));
+          case "pillar":
+            return (
+              <div key={ti} className="fx-pillar" style={{ ...vars, left: t.x, top: 0, height: t.feet, width: t.w * 0.75, animationDelay: `${d0}ms` }}>
+                <span className="fx-pillar-glyph" style={{ fontSize: glyphSize(t), top: t.top - glyphSize(t) * 1.2 }}>
+                  {theme.glyph}
+                </span>
+              </div>
+            );
+          case "slash":
+            return [0, 1, 2].map((k) => (
+              <span key={`${ti}-${k}`} className="fx-crescent" style={{ ...vars, left: t.x, top: t.y, width: t.w * 1.5, height: t.w * 1.5, ["--r" as string]: `${-40 + k * 55}deg`, animationDelay: `${d0 + k * 110}ms` } as CSSProperties} />
+            ));
+          case "sigil":
+          default:
+            return (
+              <div key={ti} className="fx-sigil" style={{ ...vars, left: t.x, top: t.feet - t.w * 0.18, width: t.w * 1.6, height: t.w * 1.6, animationDelay: `${d0}ms` }}>
+                <span style={{ fontSize: glyphSize(t) * 1.1 }}>{theme.glyph}</span>
+              </div>
+            );
+        }
+      })}
+    </>
+  );
+}
+
+/** 컷인: 화면이 어두워지고 캐릭터가 크게 들어오며 스킬 이름 */
+function CutIn({ u, theme, name, effect, boss }: { u: BattleCard; theme: FxTheme; name: string; effect: string; boss: boolean }) {
+  const [c0, c1, c2] = theme.colors;
+  return (
+    <div className="fx-cutin pointer-events-none absolute inset-0 z-[70] overflow-hidden" style={{ ["--c0" as string]: c0, ["--c1" as string]: c1, ["--c2" as string]: c2 } as CSSProperties}>
+      <div className="fx-cutin-dim absolute inset-0" />
+      <div className={`fx-cutin-band absolute inset-x-[-10%] top-[30%] h-[40%] ${boss ? "fx-from-r" : "fx-from-l"}`} />
+      <span className="fx-cutin-glyph absolute inset-x-0 top-[22%] text-center font-black">{theme.glyph}</span>
+      <div className={`fx-cutin-char absolute bottom-[18%] h-[78%] ${boss ? "right-[2%] fx-from-r" : "left-[2%] fx-from-l"}`}>
+        {u.battleArtUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={u.battleArtUrl} alt="" className="h-full w-auto max-w-none" style={{ transform: boss ? "scaleX(-1)" : undefined }} draggable={false} />
+        ) : u.artUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={u.artUrl} alt="" className="aspect-[3/4] h-full rounded-2xl object-cover object-[center_18%] ring-4" style={{ ["--tw-ring-color" as string]: c0 }} draggable={false} />
+        ) : null}
+      </div>
+      <div className={`fx-cutin-title absolute top-[38%] ${boss ? "left-[4%] text-left" : "right-[4%] text-right"}`}>
+        <div className="text-[11px] font-bold tracking-[0.3em] text-white/80 sm:text-xs">{u.name} · {effect}</div>
+        <div className="fx-title-text text-2xl font-black leading-tight sm:text-4xl">{name}</div>
+      </div>
     </div>
   );
 }
@@ -115,22 +227,46 @@ export function BattleStage({
   const byKey = useMemo(() => new Map(units.map((u) => [u.key, u])), [units]);
   const [idx, setIdx] = useState(0);
   const [speed, setSpeed] = useState(1);
+  const [impacted, setImpacted] = useState(true);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ W: 360, H: 300 });
   const done = idx >= replay.events.length;
   const current = idx > 0 ? replay.events[idx - 1] : null;
-  const st = stateAt(units, replay.events, idx);
+  const t = 1 / speed; // 시간 배율
 
+  useLayoutEffect(() => {
+    const el = fieldRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ W: el.clientWidth, H: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // 다음 사건으로 · 맞는 순간에 체력·피해 숫자 반영
   useEffect(() => {
     if (done) return;
     const ev = replay.events[idx];
-    const t = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DURATION[ev.t]) / speed);
-    return () => clearTimeout(t);
-  }, [idx, done, speed, replay.events]);
+    const step = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DUR[ev.t]) * t);
+    return () => clearTimeout(step);
+  }, [idx, done, t, replay.events]);
+  useEffect(() => {
+    const kind = current?.t;
+    if (kind !== "attack" && kind !== "skill") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 새 사건이 시작되면 '맞기 전' 상태로 돌렸다가 맞는 순간에 반영
+    setImpacted(reduced());
+    const h = setTimeout(() => setImpacted(true), IMPACT[kind] * t);
+    return () => clearTimeout(h);
+  }, [idx, current?.t, t]);
 
+  const st = stateAt(units, replay.events, impacted ? idx : Math.max(0, idx - 1));
   const actor = current && (current.t === "attack" || current.t === "skill") ? current.actor : null;
-  const targets = new Set<string>(current?.t === "attack" ? [current.target] : current?.t === "skill" ? current.hits.map((h) => h.target) : []);
-  const dmgOf = (key: string) => (current?.t === "attack" && current.target === key ? current.dmg : current?.t === "skill" ? current.hits.find((h) => h.target === key)?.dmg : undefined);
-  const healTarget = current?.t === "skill" && current.heal ? current.heal : null;
   const skill = current?.t === "skill" ? current : null;
+  const targets = new Set<string>(current?.t === "attack" ? [current.target] : skill ? skill.hits.map((h) => h.target) : []);
+  const dmgOf = (key: string) => (current?.t === "attack" && current.target === key ? current.dmg : skill ? skill.hits.find((h) => h.target === key)?.dmg : undefined);
+  const healTarget = skill?.heal ?? null;
+  const caster = actor ? byKey.get(actor) : undefined;
+  const theme = caster ? fxTheme(caster.name, skill?.name) : null;
+  const { W, H } = size;
   const narration = !current
     ? `${replay.first === "me" ? "내 팀" : byKey.get(replay.foe[0]?.key)?.name ?? "상대"} 선공으로 시작합니다`
     : current.t === "attack"
@@ -148,10 +284,10 @@ export function BattleStage({
   const unit = (u: BattleCard, slot: { left?: number; right?: number; bottom: number; scale: number }, boss: boolean, i: number) => {
     const s = st[u.key];
     const isActor = actor === u.key;
-    const hit = targets.has(u.key);
+    const hit = targets.has(u.key) && impacted;
     const dmg = hit ? dmgOf(u.key) : undefined;
-    const healed = healTarget?.target === u.key ? healTarget.amount : 0;
-    const anim = s.dead ? "bs-faint" : isActor ? (skill ? "bs-cast" : boss ? "bs-lunge-l" : "bs-lunge-r") : hit ? "bs-hit" : "";
+    const healed = impacted && healTarget?.target === u.key ? healTarget.amount : 0;
+    const anim = s.dead ? "bs-faint" : isActor ? (skill ? "bs-cast" : boss ? "bs-lunge-l" : "bs-lunge-r") : hit ? (skill ? "bs-hit bs-hit-big" : "bs-hit") : "";
     const h = 30 * slot.scale; // 전장 높이 대비 %
     const style: CSSProperties = { bottom: `${slot.bottom}%`, height: `${h}%`, zIndex: 10 + Math.round(30 - slot.bottom) };
     if (slot.left !== undefined) style.left = `${slot.left}%`;
@@ -165,16 +301,16 @@ export function BattleStage({
             {u.name} <span className="font-normal text-white/70">Lv.{u.level}</span>
           </div>
           <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/20">
-            <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
+            <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
           </div>
           {boss && <div className="text-[9px] tabular-nums text-white/70">{s.hp}/{s.max}</div>}
         </div>
         {/* 그림자 */}
         <div className="absolute -bottom-[3%] left-1/2 h-[9%] w-[80%] -translate-x-1/2 rounded-[50%] bg-black/45 blur-[2px]" />
-        {/* 몸 (움직임은 key 로 매 사건마다 다시) */}
+        {/* 몸 */}
         <div className={`relative h-full ${s.dead ? "" : "bs-idle"}`} style={{ animationDelay: `${-i * 0.37}s` }}>
-          <div key={`${u.key}-${idx}`} className={`h-full ${anim}`}>
-            <div className={`h-full ${isActor && skill ? "bs-aura" : ""}`} style={isActor && skill ? { ["--aura" as string]: EFFECT_COLOR[skill.effect] } : undefined}>
+          <div key={`${u.key}-${idx}-${hit ? 1 : 0}`} className={`h-full ${anim}`}>
+            <div className={`h-full ${isActor && skill ? "bs-aura" : ""}`} style={isActor && skill && theme ? { ["--aura" as string]: theme.colors[0] } : undefined}>
               <Figure u={u} boss={boss} />
             </div>
           </div>
@@ -186,32 +322,73 @@ export function BattleStage({
             ✦ ✧ ✦
           </div>
         )}
-        {/* 이번 사건 효과 */}
-        {hit && skill?.effect === "strike" && <div key={`fx-${idx}`} className="bs-slash absolute inset-0" style={{ ["--fx" as string]: EFFECT_COLOR.strike }} />}
-        {hit && skill?.effect === "stun" && <div key={`fx-${idx}`} className="bs-slash absolute inset-0" style={{ ["--fx" as string]: EFFECT_COLOR.stun }} />}
-        {hit && skill?.effect === "sweep" && <div key={`fx-${idx}`} className="bs-wave absolute left-1/2 top-1/2 aspect-square w-[140%] -translate-x-1/2 -translate-y-1/2 rounded-full" />}
-        {hit && current?.t === "attack" && <div key={`fx-${idx}`} className="bs-spark absolute left-1/2 top-[40%] h-[24%] w-[24%] -translate-x-1/2 rounded-full" />}
         {healed > 0 && (
           <div key={`fx-${idx}`} className="absolute inset-0" aria-hidden>
-            {[0, 1, 2, 3, 4].map((k) => (
-              <span key={k} className="bs-heal absolute bottom-[10%] h-2 w-2 rounded-full bg-[#9ff0bf]" style={{ left: `${18 + k * 15}%`, animationDelay: `${k * 0.09}s` }} />
+            {[0, 1, 2, 3, 4, 5, 6].map((k) => (
+              <span key={k} className="bs-heal absolute bottom-[10%] h-2 w-2 rounded-full" style={{ left: `${10 + k * 13}%`, animationDelay: `${k * 0.07}s`, background: theme?.colors[2] ?? "#9ff0bf", boxShadow: `0 0 10px ${theme?.colors[0] ?? "#9ff0bf"}` }} />
             ))}
           </div>
         )}
-        {dmg !== undefined && <span key={`d-${idx}`} className="dmg-float z-40 text-xl text-[#ffd0c4] sm:text-2xl">-{dmg}</span>}
-        {healed > 0 && <span key={`h-${idx}`} className="dmg-float z-40 text-xl text-[#9ff0bf] sm:text-2xl">+{healed}</span>}
+        {dmg !== undefined && (
+          <span key={`d-${idx}`} className={`fx-dmg z-40 ${skill ? "fx-dmg-big" : ""}`} style={{ ["--c0" as string]: skill && theme ? theme.colors[2] : "#fff1e8" } as CSSProperties}>
+            {dmg}
+          </span>
+        )}
+        {healed > 0 && (
+          <span key={`h-${idx}`} className="fx-dmg z-40" style={{ ["--c0" as string]: "#9ff0bf" } as CSSProperties}>
+            +{healed}
+          </span>
+        )}
       </div>
     );
   };
+
+  // 이번 사건의 화면 효과 (전장 좌표)
+  const fx = (() => {
+    if (!current || !caster || !theme || reduced()) return null;
+    const from = boxOf(caster.key, W, H);
+    const imp = IMPACT[current.t === "skill" ? "skill" : "attack"] * t;
+    if (current.t === "attack") {
+      const b = boxOf(current.target, W, H);
+      return (
+        <>
+          <span className="fx-swing" style={{ left: b.x, top: b.y, width: b.w * 1.3, height: b.w * 1.3, animationDelay: `${imp - 80 * t}ms`, ["--c0" as string]: theme.colors[0], ["--c2" as string]: theme.colors[2], ["--r" as string]: caster.key.startsWith("foe") ? "200deg" : "-20deg" } as CSSProperties} />
+          <Burst b={b} theme={theme} big={false} delay={imp} />
+        </>
+      );
+    }
+    if (current.t !== "skill") return null;
+    const sk = current;
+    const boss = caster.key.startsWith("foe");
+    const hitBoxes = sk.hits.map((h) => boxOf(h.target, W, H));
+    const allyBoxes = sk.heal ? [boxOf(sk.heal.target, W, H)] : (sk.guarded ?? []).map((k) => boxOf(k, W, H));
+    const targetsBoxes = hitBoxes.length ? hitBoxes : allyBoxes;
+    return (
+      <>
+        <CutIn u={caster} theme={theme} name={sk.name} effect={SKILL_EFFECTS[sk.effect].name} boss={boss} />
+        {/* 시전 마법진 */}
+        <div className="fx-sigil fx-sigil-cast" style={{ left: from.x, top: from.feet - from.w * 0.15, width: from.w * 1.5, height: from.w * 1.5, animationDelay: `${650 * t}ms`, ["--c0" as string]: theme.colors[0], ["--c1" as string]: theme.colors[1], ["--c2" as string]: theme.colors[2] } as CSSProperties}>
+          <span style={{ fontSize: Math.max(12, from.w * 0.3 * (theme.glyph.length > 2 ? 2.4 / theme.glyph.length + 0.2 : 1)) }}>{theme.glyph}</span>
+        </div>
+        <Motif theme={theme} from={from} to={targetsBoxes} H={H} delay={850 * t} />
+        {hitBoxes.map((b, k) => (
+          <Burst key={k} b={b} theme={theme} big delay={imp + k * 60 * t} />
+        ))}
+        {allyBoxes.length > 0 && !hitBoxes.length && allyBoxes.map((b, k) => <div key={k} className="fx-ally-glow" style={{ left: b.x, top: b.y, width: b.w * 1.4, height: b.h * 1.2, animationDelay: `${imp}ms`, ["--c0" as string]: theme.colors[0], ["--c2" as string]: theme.colors[2] } as CSSProperties} />)}
+        {hitBoxes.length > 0 && <div className="fx-flash" style={{ animationDelay: `${imp}ms`, ["--c2" as string]: theme.colors[2] } as CSSProperties} />}
+      </>
+    );
+  })();
+  const shake = current && impacted && (current.t === "skill" ? (skill && skill.hits.length ? "fx-shake-big" : "") : current.t === "attack" ? "fx-shake" : "");
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[#0c111b] text-white">
       <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/70">
         {title}
         <span className="ml-auto flex gap-1">
-          {[1, 2].map((s) => (
-            <button key={s} type="button" onClick={() => setSpeed(s)} className={`rounded px-2 py-0.5 ${speed === s ? "bg-white text-[#0c111b]" : "bg-white/10"}`}>
-              {s}×
+          {[1, 2].map((v) => (
+            <button key={v} type="button" onClick={() => setSpeed(v)} className={`rounded px-2 py-0.5 ${speed === v ? "bg-white text-[#0c111b]" : "bg-white/10"}`}>
+              {v}×
             </button>
           ))}
           {!done && (
@@ -221,15 +398,15 @@ export function BattleStage({
           )}
         </span>
       </div>
-      <div className="relative h-[19rem] overflow-hidden sm:h-[26rem]" aria-label="전장">
-        <Scene tradition={tradition} bgUrl={bgUrl} />
-        {replay.me.map((u, i) => unit(u, TEAM_SLOTS[i % TEAM_SLOTS.length], false, i))}
-        {replay.foe.map((u, i) => unit(u, BOSS_SLOT, true, i + 3))}
-        {skill && (
-          <div key={`banner-${idx}`} className="skill-banner absolute left-1/2 top-3 z-50 -translate-x-1/2 whitespace-nowrap rounded-full px-5 py-1.5 text-sm font-black shadow-lg sm:text-base" style={{ background: `linear-gradient(90deg, transparent, ${EFFECT_COLOR[skill.effect]}88, transparent)` }}>
-            ✦ {skill.name} <span className="ml-1 text-xs font-semibold text-white/80">{SKILL_EFFECTS[skill.effect].name}</span>
+      <div ref={fieldRef} className="relative h-[19rem] overflow-hidden sm:h-[26rem]" aria-label="전장" style={{ ["--t" as string]: t } as CSSProperties}>
+        <div className={`absolute inset-0 ${shake || ""}`}>
+          <Scene tradition={tradition} bgUrl={bgUrl} />
+          {replay.me.map((u, i) => unit(u, TEAM_SLOTS[i % TEAM_SLOTS.length], false, i))}
+          {replay.foe.map((u, i) => unit(u, BOSS_SLOT, true, i + 3))}
+          <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
+            {fx}
           </div>
-        )}
+        </div>
       </div>
       <p className="min-h-10 border-t border-white/10 bg-black/30 px-3 py-2 text-center text-[13px] text-white/85" aria-live="polite">
         {narration}
