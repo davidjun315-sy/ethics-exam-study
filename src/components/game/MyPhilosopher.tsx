@@ -74,7 +74,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
   }
 
   const art = (
-    <Link href="/quiz/game?tab=collection" aria-label={`대표 카드 ${f.name} — 카드 도감에서 보기`} className="block">
+    <Link href={`/quiz/game?tab=collection&detail=${f.philosopherId}`} aria-label={`대표 카드 ${f.name} — 카드 상세 보기`} className="block">
       <PhilosopherCard
         card={f}
         rarity={f.rarity}
@@ -138,6 +138,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
       <div className="relative flex gap-1.5 overflow-x-auto border-t border-line px-4 py-2.5 sm:px-5 [&::-webkit-scrollbar]:hidden">
         {compact ? (
           <>
+            <Link href="/quiz/game?tab=battle" className="btn-primary shrink-0 !min-h-8 !py-1 text-xs font-semibold"><Swords className="h-3.5 w-3.5" aria-hidden />철학자 대난투</Link>
             <Link href="/quiz/game?tab=collection" className="btn shrink-0 !min-h-8 !py-1 text-xs"><Layers className="h-3.5 w-3.5" aria-hidden />카드 관리</Link>
             <Link href="/quiz/game?tab=upgrade" className="btn shrink-0 !min-h-8 !py-1 text-xs">카드 성장</Link>
             <Link href="/quiz/game?tab=draw" className="btn shrink-0 !min-h-8 !py-1 text-xs">{game.freeDraw ? "무료 뽑기" : "카드 뽑기"}</Link>

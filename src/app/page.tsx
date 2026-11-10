@@ -7,6 +7,7 @@ import {
   Flame,
   RotateCcw,
   Sparkles,
+  Swords,
   Target,
   TrendingUp,
   Users,
@@ -20,11 +21,12 @@ import { getFeatured } from "@/lib/game/data";
 import { getCurrentMemberName } from "@/lib/members";
 import { currentLearner, getDashboard as getQuizDashboard, type Dashboard } from "@/lib/quiz/learn";
 
-const QUICK: { href: string; title: string; desc: string; icon: LucideIcon; tone: string }[] = [
+const QUICK: { href: string; title: string; desc: string; icon: LucideIcon; tone: string; wide?: boolean }[] = [
   { href: "/exams", title: "기출문제", desc: "연도·사상가별 기출과 AI 분석", icon: BookOpenText, tone: "from-[#5b7bd6]/15 to-[#5b7bd6]/5 text-[#4a66bf] dark:text-[#9db6ee]" },
   { href: "/philosophers", title: "사상가 탐구", desc: "개념 노트 · 원전 · 관련 기출", icon: Users, tone: "from-[#2f9a77]/15 to-[#2f9a77]/5 text-[#1f7a5c] dark:text-[#7cd0a5]" },
   { href: "/quiz", title: "윤리 퀴즈", desc: "오늘의 미션 · 카드 수집", icon: Sparkles, tone: "from-[#b9832c]/18 to-[#b9832c]/5 text-[#9a6510] dark:text-[#f0c070]" },
   { href: "/trends", title: "출제 경향 분석", desc: "빈출 사상가 · 개념 · 예측", icon: ChartLine, tone: "from-[#8b5cc9]/15 to-[#8b5cc9]/5 text-[#7445b4] dark:text-[#c7a6f2]" },
+  { href: "/quiz/game", title: "철학자 대난투", desc: "카드 뽑기 · 도장깨기 · 배틀", icon: Swords, tone: "from-[#d9534f]/18 to-[#d9534f]/5 text-[#c0392b] dark:text-[#ff9a8a]", wide: true },
 ];
 
 const pctText = (v: number | null) => (v === null ? "-" : `${Math.round(v * 100)}%`);
@@ -93,11 +95,11 @@ export default async function Home() {
       </div>
 
       {/* 4. 빠른 메뉴 */}
-      <nav aria-label="주요 기능" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <nav aria-label="주요 기능" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {QUICK.map((q) => {
           const Icon = q.icon;
           return (
-            <Link key={q.href} href={q.href} className="card group flex items-center gap-3 p-3.5 transition-all hover:-translate-y-0.5 hover:border-navy/40 sm:p-4">
+            <Link key={q.href} href={q.href} className={`card group flex items-center gap-3 p-3.5 transition-all hover:-translate-y-0.5 hover:border-navy/40 sm:p-4 ${q.wide ? "col-span-2 lg:col-span-1" : ""}`}>
               <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${q.tone}`}>
                 <Icon className="h-[22px] w-[22px]" aria-hidden />
               </span>

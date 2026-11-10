@@ -36,10 +36,13 @@ export function Coins({ value, className = "" }: { value: number; className?: st
 export const byStrength = (a: OwnedCard, b: OwnedCard) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level;
 
 /** 철학자 대난투: 다섯 탭이 같은 상태(코인·보유 카드)를 나눠 쓴다. 변경 후에는 서버에서 다시 읽는다 */
-export function GameApp({ initial, initialTab, initialBase }: { initial: GameState; initialTab: Tab; initialBase?: string | null }) {
+export function GameApp({ initial, initialTab, initialBase, initialDetail }: { initial: GameState; initialTab: Tab; initialBase?: string | null; initialDetail?: string | null }) {
   const [state, setState] = useState(initial);
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [detail, setDetail] = useState<string | null>(null); // 사상가 id
+  // 사상가 id (카드 상세). 주소로 받은 값은 도감에 있는 사상가일 때만
+  const [detail, setDetail] = useState<string | null>(() =>
+    initialDetail && (initial.cards.some((c) => c.philosopherId === initialDetail) || initial.owned.some((o) => o.philosopherId === initialDetail)) ? initialDetail : null,
+  );
   const [fusionBase, setFusionBase] = useState<string | null>(initialBase ?? null);
   const [upgradeCard, setUpgradeCard] = useState<string | null>(null);
   const reload = useCallback(async () => {
@@ -112,7 +115,11 @@ export function GameApp({ initial, initialTab, initialBase }: { initial: GameSta
           copies={state.owned.filter((o) => o.philosopherId === detail).sort(byStrength)}
           state={state}
           reload={reload}
-          onClose={() => setDetail(null)}
+          onClose={() => {
+            setDetail(null);
+            // 주소의 detail 은 지워서 새로고침해도 다시 열리지 않게
+            if (window.location.search.includes("detail=")) window.history.replaceState(null, "", `/quiz/game?tab=${tab}`);
+          }}
           onLevelUp={(cardId) => {
             setDetail(null);
             setUpgradeCard(cardId);
