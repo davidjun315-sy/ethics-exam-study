@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BattleCard, BattleReplay } from "@/lib/game/data";
-import { SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
+import { ROLES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
 import { stateAt } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
 import { chargeAt, SKILL_READY } from "@/lib/game/battle";
@@ -24,6 +24,39 @@ const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
   { left: 2, bottom: 20, scale: 0.86 },
   { left: 37, bottom: 20, scale: 0.86 },
 ];
+/** 성향 색 (필살기 효과에 따라 정해짐) */
+const ROLE_COLOR: Record<SkillEffect, string> = { strike: "#ff7a6b", sweep: "#ffb05a", stun: "#c99bff", heal: "#6fe0a0", guard: "#7fc4ff" };
+const roleOf = (e: SkillEffect) => ROLES[e]?.name ?? "";
+
+/** 전장 아래: 출전한 사상가의 성향 · 필살기 */
+function Roster({ units, st, foeLabel }: { units: { side: "me" | "foe"; list: BattleCard[] }[]; st: Record<string, { dead: boolean }>; foeLabel: string }) {
+  return (
+    <div className="grid gap-2 border-t border-white/10 bg-black/20 px-3 py-2.5 sm:grid-cols-2">
+      {units.map(({ side, list }) => (
+        <div key={side}>
+          <h3 className="mb-1 text-[11px] font-bold text-white/60">{side === "me" ? "내 팀" : foeLabel}</h3>
+          <ul className="space-y-1">
+            {list.map((u) => (
+              <li key={u.key} className={`flex items-start gap-2 rounded-lg bg-white/5 px-2 py-1.5 text-xs ${st[u.key]?.dead ? "opacity-45" : ""}`} data-roster={u.key}>
+                <span className="mt-px shrink-0 rounded px-1.5 py-px text-[10px] font-black text-[#0c111b]" style={{ background: ROLE_COLOR[u.skillEffect] }}>
+                  {roleOf(u.skillEffect)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-bold">{u.name}</span>
+                  <span className="ml-1 tabular-nums text-white/55">공 {u.atk} · 체 {u.hp}</span>
+                  <span className="block text-white/80">
+                    <b className="text-[#ffd36b]">✦ {u.skillName}</b> <span className="text-white/55">· {SKILL_EFFECTS[u.skillEffect].name}: {SKILL_EFFECTS[u.skillEffect].desc}</span>
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const BOSS_SLOT = { right: 4, bottom: 5, scale: 1.55 };
 
 function Scene({ tradition, bgUrl }: { tradition: string; bgUrl?: string }) {
@@ -311,7 +344,7 @@ export function BattleStage({
           <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/20">
             <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
           </div>
-          {/* 필살기 게이지: 행동할 때마다 차오르고, 가득 차면 다음 행동에 필살기 */}
+          {/* 필살기 게이지: 0 에서 시작해 기본 공격할 때마다 차오르고, 가득 차면 다음 행동에 필살기 */}
           {!s.dead && (
             <div className="mt-0.5 flex items-center gap-1" aria-label={`필살기 게이지 ${Math.min(SKILL_READY, charge[u.key] ?? 0)}/${SKILL_READY}`}>
               <div className={`h-1 flex-1 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/15 ${(charge[u.key] ?? 0) >= SKILL_READY ? "bs-gauge-full" : ""}`}>
@@ -323,6 +356,13 @@ export function BattleStage({
               {(charge[u.key] ?? 0) >= SKILL_READY && <span className="bs-gauge-label text-[8px] font-black text-[#ffd36b] sm:text-[9px]">필살</span>}
             </div>
           )}
+          {/* 성향 · 필살기 이름 */}
+          <div className="mt-0.5 flex items-center justify-center gap-1 text-[8px] leading-tight sm:text-[10px]" style={{ opacity: s.dead ? 0.35 : 1 }}>
+            <span className="shrink-0 rounded px-1 font-black text-[#0c111b]" style={{ background: ROLE_COLOR[u.skillEffect] }}>
+              {roleOf(u.skillEffect)}
+            </span>
+            <span className="truncate font-semibold text-[#ffe7a8] drop-shadow">✦ {u.skillName}</span>
+          </div>
           {boss && <div className="text-[9px] tabular-nums text-white/70">{s.hp}/{s.max}</div>}
         </div>
         {/* 그림자 */}
@@ -445,6 +485,7 @@ export function BattleStage({
         {narration}
       </p>
       {done && <div className="px-3 pb-4">{result}</div>}
+      <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "상대 팀"} />
     </section>
   );
 }

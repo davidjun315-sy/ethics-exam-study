@@ -318,7 +318,9 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   // 3 vs 1: 보스는 내 카드가 한 번 움직일 때마다 한 번 (양쪽 행동 횟수 같음)
   {
     const r = runBattle(team("legendary", 5, 0), [stageBoss(st[9], byId.get(st[9].bossId)!)], "order");
-    const acts = r.events.filter((e) => e.t === "attack" || e.t === "skill" || e.t === "stunned").map((e) => ("actor" in e ? e.actor : ""));
+    // 내 카드가 쓰러지기 전까지 (쓰러진 카드의 차례는 건너뛰므로)
+    const firstFaint = r.events.findIndex((e) => e.t === "faint");
+    const acts = r.events.slice(0, firstFaint < 0 ? undefined : firstFaint).filter((e) => e.t === "attack" || e.t === "skill" || e.t === "stunned").map((e) => ("actor" in e ? e.actor : ""));
     const boss = acts.filter((a) => a === "foe-0").length;
     check("3 vs 1: 보스와 내 팀의 행동 횟수가 같음 (±1)", Math.abs(boss - (acts.length - boss)) <= 1, `보스 ${boss} · 팀 ${acts.length - boss}`);
   }

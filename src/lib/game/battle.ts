@@ -71,8 +71,8 @@ interface Live extends Fighter {
 
 export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleResult {
   const rand = seededRandom(seed);
-  // charge 1 에서 시작 → 두 번째 행동에 첫 필살기 (앞 칸 카드도 필살기를 쓰고 쓰러지도록)
-  const mk = (f: Fighter, side: Side): Live => ({ ...f, side, cur: f.hp, max: f.hp, charge: 1, shield: false, stun: false });
+  // 필살기 게이지는 0 에서 시작 → 기본 공격 2번으로 가득 → 세 번째 행동에 필살기
+  const mk = (f: Fighter, side: Side): Live => ({ ...f, side, cur: f.hp, max: f.hp, charge: 0, shield: false, stun: false });
   const teams: Record<Side, Live[]> = { me: me.map((f) => mk(f, "me")), foe: foe.map((f) => mk(f, "foe")) };
   const events: BattleEvent[] = [];
   const alive = (s: Side) => teams[s].filter((x) => x.cur > 0);
@@ -165,13 +165,13 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
 export const SKILL_READY = SKILL_EVERY - 1;
 
 /**
- * 필살기 게이지 (화면 표시용, runBattle 과 같은 규칙): 처음 1, 행동마다 +1, 필살기를 쓰면 0. 기절로 쉰 행동은 그대로.
+ * 필살기 게이지 (화면 표시용, runBattle 과 같은 규칙): 처음 0, 기본 공격마다 +1, 필살기를 쓰면 0. 기절로 쉰 행동은 그대로.
  * 값이 SKILL_READY 이면 다음 행동에 필살기.
  */
 export function chargeAt(keys: string[], events: BattleEvent[], upto: number): Record<string, number> {
-  const c: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 1]));
+  const c: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
   for (const e of events.slice(0, upto)) {
-    if (e.t === "attack") c[e.actor] = (c[e.actor] ?? 1) + 1;
+    if (e.t === "attack") c[e.actor] = (c[e.actor] ?? 0) + 1;
     else if (e.t === "skill") c[e.actor] = 0;
   }
   return c;
