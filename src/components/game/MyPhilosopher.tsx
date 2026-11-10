@@ -3,6 +3,7 @@ import { ChevronRight, Layers, Sparkles, Swords, WandSparkles } from "lucide-rea
 import type { FeaturedSummary } from "@/lib/game/data";
 import { nextRarity, RARITY_NAMES } from "@/lib/game/rules";
 import { CardBack, PhilosopherCard } from "./PhilosopherCard";
+import { FeaturedCardOpener } from "./FeaturedCardOpener";
 
 export type { FeaturedSummary };
 
@@ -74,7 +75,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
   }
 
   const art = (
-    <Link href={`/quiz/game?tab=collection&detail=${f.philosopherId}`} aria-label={`대표 카드 ${f.name} — 카드 상세 보기`} className="block">
+    <FeaturedCardOpener philosopherId={f.philosopherId} label={`대표 카드 ${f.name} — 카드 상세 보기`}>
       <PhilosopherCard
         card={f}
         rarity={f.rarity}
@@ -87,7 +88,7 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
         tilt={!compact}
         className={compact ? "" : "card-float"}
       />
-    </Link>
+    </FeaturedCardOpener>
   );
 
   return (

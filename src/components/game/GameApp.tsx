@@ -137,7 +137,7 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
 }
 
 /** 사상가 상세: 큰 일러스트 + 필살기·대사 + 이 사상가의 보유 카드 (등급·레벨별 한 장씩) */
-function PhilosopherSheet({
+export function PhilosopherSheet({
   card,
   copies,
   state,
