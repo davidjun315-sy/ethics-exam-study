@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
-import { canFuseCard, RARITIES, RARITY_NAMES } from "@/lib/game/rules";
+import { canFuseCard, RARITIES, RARITY_NAMES, ROLE_COLOR, ROLES, type SkillEffect } from "@/lib/game/rules";
 import { TRADITIONS } from "@/lib/traditions";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, gemStyle } from "./GameApp";
@@ -14,6 +14,7 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
   const [tradition, setTradition] = useState<string>("전체");
   const [sort, setSort] = useState<Sort>("rarity");
   const [show, setShow] = useState<"all" | "owned" | "locked">("all");
+  const [role, setRole] = useState<SkillEffect | "all">("all");
   const byPh = new Map<string, OwnedCard[]>();
   for (const o of state.owned) byPh.set(o.philosopherId, [...(byPh.get(o.philosopherId) ?? []), o]);
   for (const list of byPh.values()) list.sort(byStrength);
@@ -29,6 +30,7 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
   const canFuse = (o: OwnedCard) => canFuseCard(o, state.owned, state.featuredId, state.settings.fusionCount);
   const list = all
     .filter((c) => tradition === "전체" || c.tradition === tradition)
+    .filter((c) => role === "all" || c.skillEffect === role)
     .filter((c) => (show === "owned" ? c.copies.length : show === "locked" ? !c.copies.length : true))
     .sort((a, b) => {
       if (Boolean(b.copies.length) !== Boolean(a.copies.length)) return b.copies.length ? 1 : -1;
@@ -45,6 +47,24 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
           {traditions.map((t) => (
             <button key={t} type="button" onClick={() => setTradition(t)} className={`rounded-full border px-3 py-1 text-xs ${tradition === t ? "border-navy bg-navy-soft font-semibold text-navy" : "border-line text-muted hover:border-navy/40"}`}>
               {t}
+            </button>
+          ))}
+        </div>
+        {/* 성향 필터 */}
+        <div className="flex flex-wrap gap-1" role="group" aria-label="성향">
+          <button type="button" onClick={() => setRole("all")} className={`rounded-full border px-2.5 py-1 text-xs ${role === "all" ? "border-navy bg-navy-soft font-semibold text-navy" : "border-line text-muted"}`}>
+            모든 성향
+          </button>
+          {(Object.keys(ROLES) as SkillEffect[]).map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => setRole(role === e ? "all" : e)}
+              aria-pressed={role === e}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs ${role === e ? "border-navy bg-navy-soft font-semibold text-navy" : "border-line text-muted hover:border-navy/40"}`}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: ROLE_COLOR[e] }} />
+              {ROLES[e].name}
             </button>
           ))}
         </div>

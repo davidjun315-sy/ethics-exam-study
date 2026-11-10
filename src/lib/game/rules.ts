@@ -42,6 +42,9 @@ export const ROLES: Record<SkillEffect, { name: string; atk: number; hp: number 
   guard: { name: "수호형", atk: 0.7, hp: 1.42 },
 };
 
+/** 성향 색 (카드·전장·도감 공통) */
+export const ROLE_COLOR: Record<SkillEffect, string> = { strike: "#ff7a6b", sweep: "#ffb05a", stun: "#c99bff", heal: "#6fe0a0", guard: "#7fc4ff" };
+
 export const isDefaultBase = (atk: number, hp: number) => atk === DEFAULT_BASE.atk && hp === DEFAULT_BASE.hp;
 
 function nameHash(s: string): number {

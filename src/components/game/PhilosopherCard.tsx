@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { CardView } from "@/lib/game/data";
-import { DEFAULT_RARITY_MULT, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
+import { DEFAULT_RARITY_MULT, RARITY_NAMES, ROLE_COLOR, ROLES, statsFor, type Rarity } from "@/lib/game/rules";
 import { FRAME_GEOMETRY } from "@/lib/game/frameGeometry";
 
 /**
@@ -245,6 +245,16 @@ export function PhilosopherCard({
           <div className="pcard-bottom absolute z-[3]">
             <div className="flex items-center gap-[2.5cqw] text-[5cqw] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--r1)" }}>
               {locked ? "" : RARITY_NAMES[rarity]}
+              {/* 성향 (필살기에 따라): 미획득 카드에도 보여 줌 */}
+              {ROLES[card.skillEffect] && (
+                <span
+                  className="rounded-full px-[2.5cqw] py-[0.4cqw] text-[4.6cqw] font-black normal-case leading-none tracking-normal text-[#0c111b] shadow"
+                  style={{ background: ROLE_COLOR[card.skillEffect] }}
+                  title={`성향: ${ROLES[card.skillEffect].name}`}
+                >
+                  {ROLES[card.skillEffect].name}
+                </span>
+              )}
               {featured && !locked && (
                 <span className="rounded-full bg-[#ffd36b] px-[2.5cqw] py-[0.4cqw] text-[4.4cqw] font-bold normal-case leading-none tracking-normal text-[#3a2600] shadow">대표</span>
               )}

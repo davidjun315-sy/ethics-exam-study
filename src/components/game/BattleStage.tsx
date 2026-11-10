@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BattleCard, BattleReplay } from "@/lib/game/data";
-import { ROLES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
+import { ROLE_COLOR, ROLES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
 import { stateAt } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
 import { chargeAt, SKILL_READY } from "@/lib/game/battle";
@@ -24,8 +24,6 @@ const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
   { left: 2, bottom: 20, scale: 0.86 },
   { left: 37, bottom: 20, scale: 0.86 },
 ];
-/** 성향 색 (필살기 효과에 따라 정해짐) */
-const ROLE_COLOR: Record<SkillEffect, string> = { strike: "#ff7a6b", sweep: "#ffb05a", stun: "#c99bff", heal: "#6fe0a0", guard: "#7fc4ff" };
 const roleOf = (e: SkillEffect) => ROLES[e]?.name ?? "";
 
 /** 전장 아래: 출전한 사상가의 성향 · 필살기 */
