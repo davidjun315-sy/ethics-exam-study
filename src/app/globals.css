@@ -375,6 +375,61 @@ body {
 }
 .pcard[data-rarity="epic"]:not(.pcard-locked) .pcard-name { text-shadow: 0 0 10px rgba(190, 140, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.8); }
 
+/* 내용 위치: 프레임 안쪽 창 기준 (코드 테두리일 때의 기본값) */
+.pcard { --ft: 1.5%; --fr: 2%; --fb: 1.5%; --fl: 2%; }
+.pcard-top { top: calc(var(--ft) + 3%); left: calc(var(--fl) + 3%); right: calc(var(--fr) + 3%); }
+.pcard-bottom { bottom: calc(var(--fb) + 3%); left: calc(var(--fl) + 4%); right: calc(var(--fr) + 4%); }
+.pcard-badge { top: calc(var(--ft) + 12%); right: calc(var(--fr) + 3%); }
+.pcard-lock { top: calc(var(--ft) + 12%); left: calc(var(--fl) + 3%); }
+.pcard-count { bottom: 35%; right: calc(var(--fr) + 3%); }
+
+/* 그림 프레임 (public/cards/frames): 카드 상자 = 프레임 몸통 */
+.pcard[data-frame="img"] { padding: 0; box-shadow: none; border-radius: 0; }
+.pcard[data-frame="img"] .pcard-frame { display: none; }
+.pcard[data-frame="img"] .pcard-inner { border-radius: calc(var(--fradn) * 1cqw); box-shadow: none; }
+.pcard[data-frame="img"] .pcard-inner::after { display: none; }
+.pcard[data-frame="img"] .pcard-glow { inset: 2%; border-radius: calc(var(--fradn) * 1cqw); }
+.pcard[data-frame="img"][data-rarity="epic"]:not(.pcard-locked) .pcard-glow { box-shadow: 0 0 18px 0 var(--rglow); }
+.pcard[data-frame="img"][data-rarity="legendary"]:not(.pcard-locked) .pcard-glow { box-shadow: 0 0 24px 2px var(--rglow); }
+/* 광택은 안쪽 창(일러스트)에만 */
+.pcard[data-frame="img"] .pcard-foilwrap { inset: var(--ft) var(--fr) var(--fb) var(--fl); }
+.pcard-frameimg {
+  position: absolute; z-index: 5; max-width: none; pointer-events: none; user-select: none;
+  filter: drop-shadow(0 3px 5px rgba(5, 8, 14, 0.5));
+}
+.pcard-locked .pcard-frameimg { filter: grayscale(1) brightness(0.55) drop-shadow(0 3px 5px rgba(5, 8, 14, 0.5)); }
+/* 프레임 금속 위로만 지나가는 빛 (프레임 그림을 mask 로 사용) */
+.pcard-framefx {
+  position: absolute; z-index: 6; overflow: hidden; pointer-events: none;
+  -webkit-mask-image: var(--fimg); mask-image: var(--fimg);
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  mix-blend-mode: screen;
+}
+.pcard-locked .pcard-framefx { display: none; }
+.pcard-framefx::before { content: ""; position: absolute; will-change: transform; }
+/* 희귀: 금속 위로 빛줄기가 지나감 */
+.pcard[data-rarity="rare"] .pcard-framefx::before {
+  inset: -20% -60%;
+  background: linear-gradient(115deg, transparent 44%, rgba(170, 215, 255, 0.55) 49%, rgba(255, 255, 255, 0.9) 50%, rgba(170, 215, 255, 0.55) 51%, transparent 56%);
+  animation: pcard-rim-sweep 4.6s ease-in-out infinite;
+}
+/* 영웅·전설: 테두리를 따라 도는 빛 */
+.pcard[data-rarity="epic"] .pcard-framefx::before,
+.pcard[data-rarity="legendary"] .pcard-framefx::before {
+  left: 50%; top: 50%; width: 170%; aspect-ratio: 1; translate: -50% -50%;
+  background: conic-gradient(from 0deg, transparent 0 58%, rgba(255, 255, 255, 0) 63%, rgba(255, 255, 255, 0.95) 70%, rgba(255, 255, 255, 0) 77%, transparent 100%);
+  animation: pcard-orbit 6s linear infinite;
+}
+.pcard[data-rarity="epic"] .pcard-framefx::before { background: conic-gradient(from 0deg, transparent 0 58%, rgba(220, 180, 255, 0) 63%, rgba(240, 220, 255, 0.85) 70%, rgba(220, 180, 255, 0) 77%, transparent 100%); animation-duration: 7.5s; }
+.pcard[data-rarity="legendary"] .pcard-framefx::after {
+  /* 전설: 금박이 한 번씩 번쩍 */
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(60% 40% at 50% 0%, rgba(255, 245, 210, 0.9), transparent 70%), radial-gradient(60% 40% at 50% 100%, rgba(255, 245, 210, 0.7), transparent 70%);
+  opacity: 0; animation: pcard-flare 3.6s ease-in-out infinite;
+}
+@keyframes pcard-rim-sweep { 0%, 15% { transform: translate3d(-35%, 0, 0); } 75%, 100% { transform: translate3d(35%, 0, 0); } }
+@keyframes pcard-flare { 0%, 55%, 100% { opacity: 0; } 70% { opacity: 0.85; } }
+
 .pcard-gem {
   width: 1.6em; height: 1.6em;
   border-radius: 6px;
@@ -435,7 +490,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .pcard, .flip-card { transition: none !important; }
-  .pcard-frame::before, .pcard-glow, .pcard-sparkles i, .pcard-foil { animation: none !important; }
+  .pcard-frame::before, .pcard-glow, .pcard-sparkles i, .pcard-foil, .pcard-framefx::before, .pcard-framefx::after { animation: none !important; }
+  .pcard-framefx { display: none; }
   .pcard-sparkles { display: none; }
   .pcard-glow { opacity: 0.8 !important; }
   .card-enter, .card-burst, .card-float, .level-pop, .upgrade-glow,

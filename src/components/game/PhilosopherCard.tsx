@@ -1,8 +1,42 @@
 "use client";
 
-import { useRef, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import type { CardView } from "@/lib/game/data";
 import { DEFAULT_RARITY_MULT, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
+import { FRAME_GEOMETRY } from "@/lib/game/frameGeometry";
+
+/**
+ * 등급 프레임 그림 (public/cards/frames, scripts/build-card-frames.py 로 만듦).
+ * 카드 상자 = 프레임 몸통. 위·아래로 튀어나온 장식은 상자 밖으로 그린다.
+ * 내용(레벨·이름·능력치)은 프레임 안쪽 창 안에 오도록 --ft/--fr/--fb/--fl 만큼 들여 쓴다.
+ */
+function frameVars(rarity: Rarity): CSSProperties {
+  const g = FRAME_GEOMETRY[rarity];
+  return {
+    ["--ft" as string]: `${g.open.t}%`,
+    ["--fr" as string]: `${g.open.r}%`,
+    ["--fb" as string]: `${g.open.b}%`,
+    ["--fl" as string]: `${g.open.l}%`,
+    ["--fradn" as string]: g.radius,
+    ["--fimg" as string]: `url(/cards/frames/${rarity}.webp)`,
+  };
+}
+function FrameArt({ rarity, onError }: { rarity: Rarity; onError?: () => void }) {
+  const g = FRAME_GEOMETRY[rarity];
+  const box: CSSProperties = {
+    top: `-${g.out.t}%`,
+    left: `-${g.out.l}%`,
+    width: `calc(100% + ${g.out.l + g.out.r}%)`,
+    height: `calc(100% + ${g.out.t + g.out.b}%)`,
+  };
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={`/cards/frames/${rarity}.webp`} alt="" className="pcard-frameimg" style={box} draggable={false} decoding="async" onError={onError} />
+      {rarity !== "common" && <div className="pcard-framefx" style={box} aria-hidden />}
+    </>
+  );
+}
 
 const Sword = () => (
   <svg viewBox="0 0 24 24" className="h-[1em] w-[1em]" fill="currentColor" aria-hidden>
@@ -107,6 +141,9 @@ export function PhilosopherCard({
   locked2?: boolean; // 카드 잠금 표시
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const frameRarity: Rarity = locked ? "common" : rarity;
+  // 프레임 그림을 못 불러오면 코드로 그린 테두리로
+  const [frameOk, setFrameOk] = useState(true);
   const st = stats ?? statsFor({ atk: card.baseAtk, hp: card.baseHp }, rarity, level, DEFAULT_RARITY_MULT);
   const motionOk = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
   const fancy = !locked && rarity !== "common";
@@ -140,6 +177,8 @@ export function PhilosopherCard({
         ref={ref}
         className={`pcard ${locked ? "pcard-locked" : ""}`}
         data-rarity={locked ? "common" : rarity}
+        data-frame={frameOk ? "img" : undefined}
+        style={frameOk ? frameVars(frameRarity) : undefined}
         onPointerMove={onMove}
         onPointerLeave={onLeave}
         onPointerCancel={onLeave}
@@ -166,7 +205,7 @@ export function PhilosopherCard({
             </div>
           )}
           {/* 위: 등급 보석 · 레벨 · 전통 */}
-          <div className="absolute left-[5%] right-[5%] top-[4.5%] z-[3] flex items-start justify-between gap-1">
+          <div className="pcard-top absolute z-[3] flex items-start justify-between gap-1">
             <div className="flex items-center gap-[4cqw]">
               <span className="pcard-gem block text-[5.5cqw]" />
               {!locked && (
@@ -186,7 +225,7 @@ export function PhilosopherCard({
             </div>
           )}
           {/* 아래: 이름 · 등급 · 능력치 · 필살기 */}
-          <div className="absolute bottom-[4.5%] left-[6%] right-[6%] z-[3]">
+          <div className="pcard-bottom absolute z-[3]">
             <div className="flex items-center gap-[2.5cqw] text-[5cqw] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--r1)" }}>
               {locked ? "" : RARITY_NAMES[rarity]}
               {featured && !locked && (
@@ -218,15 +257,16 @@ export function PhilosopherCard({
               </>
             )}
           </div>
-          {badge && <div className="absolute right-[5%] top-[14%] z-[4]">{badge}</div>}
+          {badge && <div className="pcard-badge absolute z-[4]">{badge}</div>}
           {count !== undefined && count > 1 && (
-            <span className="absolute bottom-[35%] right-[5%] z-[4] rounded-full bg-black/70 px-[3cqw] py-[0.8cqw] text-[5.5cqw] font-bold text-white ring-1 ring-white/20">×{count}</span>
+            <span className="pcard-count absolute z-[4] rounded-full bg-black/70 px-[3cqw] py-[0.8cqw] text-[5.5cqw] font-bold text-white ring-1 ring-white/20">×{count}</span>
           )}
           {locked2 && (
-            <span className="absolute left-[5%] top-[14%] z-[4] rounded-full bg-black/70 px-[2.5cqw] py-[0.6cqw] text-[4.6cqw] font-bold text-white ring-1 ring-white/20" title="잠긴 카드">잠금</span>
+            <span className="pcard-lock absolute z-[4] rounded-full bg-black/70 px-[2.5cqw] py-[0.6cqw] text-[4.6cqw] font-bold text-white ring-1 ring-white/20" title="잠긴 카드">잠금</span>
           )}
         </div>
-        {fancy && (
+        {frameOk && <FrameArt rarity={frameRarity} onError={() => setFrameOk(false)} />}
+        {fancy && !frameOk && (
           <div className="pcard-corners" aria-hidden>
             {[0, 1, 2, 3].map((i) => (
               <Corner key={i} rarity={rarity} />
@@ -241,8 +281,8 @@ export function PhilosopherCard({
 /** 카드 뒷면 (뽑기 연출) */
 export function CardBack({ className = "" }: { className?: string }) {
   return (
-    <div className={`pcard ${className}`} data-rarity="legendary">
-      <div className="pcard-frame" aria-hidden />
+    <div className={`pcard ${className}`} data-rarity="legendary" data-frame="img" style={frameVars("legendary")}>
+      <div className="pcard-glow" aria-hidden />
       <div className="pcard-inner pcard-back flex flex-col items-center justify-center">
         <div className="flex h-[38cqw] w-[38cqw] items-center justify-center rounded-full border-2 border-[#e9c46a]/70 bg-black/20 shadow-[0_0_30px_rgba(233,196,106,0.35)]">
           <span className="text-[16cqw] font-black text-[#f2d27a]">哲</span>
@@ -250,6 +290,7 @@ export function CardBack({ className = "" }: { className?: string }) {
         <div className="mt-[6cqw] text-[6.5cqw] font-extrabold tracking-[0.2em] text-[#f2d27a]">철학자 대난투</div>
         <div className="mt-[1cqw] text-[4.4cqw] tracking-[0.3em] text-white/50">ETHICS · DUEL</div>
       </div>
+      <FrameArt rarity="legendary" />
     </div>
   );
 }
