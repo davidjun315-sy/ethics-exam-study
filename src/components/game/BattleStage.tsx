@@ -21,8 +21,17 @@ const TEAM_SLOTS: { left: number; bottom: number; scale: number }[] = [
 ];
 const BOSS_SLOT = { right: 4, bottom: 5, scale: 1.55 };
 
-function Scene({ tradition }: { tradition: string }) {
+function Scene({ tradition, bgUrl }: { tradition: string; bgUrl?: string }) {
   const east = tradition === "동양윤리" || tradition === "한국윤리";
+  // 관리자가 올린 배경 그림 (분야별). 아래쪽을 기준으로 채우고, 글자가 잘 보이게 위·아래를 살짝 어둡게
+  if (bgUrl)
+    return (
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={bgUrl} alt="" className="absolute inset-0 h-full w-full object-cover object-bottom" draggable={false} />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(8,10,18,.35) 0%, transparent 22%, transparent 70%, rgba(8,10,18,.35) 100%)" }} />
+      </div>
+    );
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden>
       {/* 하늘 */}
@@ -92,11 +101,13 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
 export function BattleStage({
   replay,
   tradition,
+  bgUrl,
   title,
   result,
 }: {
   replay: BattleReplay;
   tradition: string;
+  bgUrl?: string;
   title?: ReactNode;
   result?: ReactNode;
 }) {
@@ -211,7 +222,7 @@ export function BattleStage({
         </span>
       </div>
       <div className="relative h-[19rem] overflow-hidden sm:h-[26rem]" aria-label="전장">
-        <Scene tradition={tradition} />
+        <Scene tradition={tradition} bgUrl={bgUrl} />
         {replay.me.map((u, i) => unit(u, TEAM_SLOTS[i % TEAM_SLOTS.length], false, i))}
         {replay.foe.map((u, i) => unit(u, BOSS_SLOT, true, i + 3))}
         {skill && (

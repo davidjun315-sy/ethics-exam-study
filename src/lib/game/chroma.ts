@@ -67,3 +67,22 @@ export async function keyGreen(file: Blob, opts: { maxHeight?: number; flip?: bo
   if (!png) throw new Error("그림을 만들지 못했습니다.");
   return { blob: png, ext: "png", width: out.width, height: out.height, greenShare: green / (src.width * src.height) };
 }
+
+/** 배경 그림 줄이기: 가로 maxWidth 이하로, WebP (안 되면 JPEG) */
+export async function fitImage(file: Blob, maxWidth = 1920): Promise<{ blob: Blob; ext: "webp" | "jpg"; width: number; height: number }> {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxWidth / bmp.width);
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close?.();
+  const toBlob = (type: string, q?: number) => new Promise<Blob | null>((res) => c.toBlob(res, type, q));
+  const webp = await toBlob("image/webp", 0.86);
+  if (webp && webp.type === "image/webp") return { blob: webp, ext: "webp", width: c.width, height: c.height };
+  const jpg = await toBlob("image/jpeg", 0.88);
+  if (!jpg) throw new Error("그림을 만들지 못했습니다.");
+  return { blob: jpg, ext: "jpg", width: c.width, height: c.height };
+}

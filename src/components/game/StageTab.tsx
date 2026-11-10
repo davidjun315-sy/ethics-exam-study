@@ -82,6 +82,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
       <BattleStage
         replay={replay}
         tradition={boss?.tradition ?? ""}
+        bgUrl={boss ? state.settings.battleBg?.[boss.tradition] : undefined}
         title={
           <span className="font-semibold text-[#ffd36b]">
             {replay.stage.no}관 · {boss?.name}

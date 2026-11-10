@@ -83,6 +83,9 @@ export interface GameSettings {
   duel_rules: DuelRules;
   /** 013 적용 여부 (duel_rules 열이 있는지) */
   duel_rules_ready: boolean;
+  /** 도장깨기 전장 배경 (분야 → 그림 주소, 016) */
+  battle_bg: Record<string, string>;
+  battle_bg_ready: boolean;
 }
 const DEFAULT_SETTINGS: GameSettings = {
   draw_cost: 100,
@@ -95,6 +98,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   fusion_cost: 0,
   duel_rules: normalizeDuelRules(null),
   duel_rules_ready: false,
+  battle_bg: {},
+  battle_bg_ready: false,
 };
 
 export async function getGameSettings(): Promise<GameSettings> {
@@ -112,7 +117,29 @@ export async function getGameSettings(): Promise<GameSettings> {
     fusion_cost: d.fusion_cost ?? DEFAULT_SETTINGS.fusion_cost,
     duel_rules: normalizeDuelRules(d.duel_rules),
     duel_rules_ready: Boolean(data && "duel_rules" in data),
+    battle_bg: cleanBattleBg((d as { battle_bg?: unknown }).battle_bg),
+    battle_bg_ready: Boolean(data && "battle_bg" in data),
   };
+}
+
+/** 전장 배경을 고를 수 있는 분야 */
+export const BATTLE_BG_KEYS = ["동양윤리", "한국윤리", "서양윤리", "사회사상"] as const;
+function cleanBattleBg(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object") return {};
+  return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k, u]) => (BATTLE_BG_KEYS as readonly string[]).includes(k) && typeof u === "string" && /^https?:\/\//.test(u))) as Record<string, string>;
+}
+export const GAME_016_HINT = "전장 배경 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/016_game_battle_bg.sql 을 실행하세요.";
+
+/** 관리자: 분야별 전장 배경 저장 (url = null 이면 기본 배경으로) */
+export async function saveBattleBg(tradition: (typeof BATTLE_BG_KEYS)[number], url: string | null) {
+  const db = getAdminClient();
+  const { data, error } = await db.from("game_settings").select("battle_bg").eq("id", 1).maybeSingle();
+  if (error) throw /battle_bg/.test(error.message) ? new GameError(GAME_016_HINT, 503) : gameError(error.message);
+  const next = { ...cleanBattleBg(data?.battle_bg) };
+  if (url) next[tradition] = url;
+  else delete next[tradition];
+  const { error: e2 } = await db.from("game_settings").upsert({ id: 1, battle_bg: next, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  if (e2) throw /battle_bg/.test(e2.message) ? new GameError(GAME_016_HINT, 503) : gameError(e2.message);
 }
 
 export const GAME_013_HINT = "논쟁 대전 조정값 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/013_game_duel_rules.sql 을 실행하세요.";
@@ -130,7 +157,7 @@ export async function saveDuelRules(rules: DuelRules) {
   }
 }
 
-export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready">) {
+export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready">) {
   // 등급이 오르면 능력치도 반드시 오르도록
   const m = s.rarity_mult;
   if (!(m.common > 0 && m.rare > m.common && m.epic > m.rare && m.legendary > m.epic)) throw new GameError("등급 배율은 일반 < 희귀 < 영웅 < 전설 순으로 커야 합니다.");
@@ -257,6 +284,7 @@ export interface GameState {
     fusionCount: number;
     fusionCost: number;
     duelRules: DuelRules;
+    battleBg: Record<string, string>;
   };
   cards: CardView[]; // 공개 사상가 (도감)
   owned: OwnedCard[]; // 보유 카드 한 장씩 (공개가 내려가도 일러스트가 있으면 계속 보유)
@@ -317,6 +345,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       fusionCount: settings.fusion_count,
       fusionCost: settings.fusion_cost,
       duelRules: settings.duel_rules,
+      battleBg: settings.battle_bg,
     },
     cards,
     owned,
