@@ -189,7 +189,10 @@ export function PhilosopherSheet({
           <div className="min-w-0 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="text-xs font-semibold text-muted">{card.tradition}</div>
+                <div className="text-xs font-semibold text-muted">
+                  {card.tradition}
+                  {card.role && <span className="ml-1.5 rounded bg-navy-soft px-1.5 py-0.5 text-[10px] text-navy">{card.role}</span>}
+                </div>
                 <h2 className="text-2xl font-black">{card.name}</h2>
                 {card.originalName && <div className="text-sm text-muted">{card.originalName}</div>}
               </div>

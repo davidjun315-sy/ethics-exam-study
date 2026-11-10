@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { CandidateRow, CardInput, GameSettings } from "@/lib/game/data";
-import { DEFAULT_BASE, RARITIES, RARITY_NAMES, SKILL_EFFECTS, statsFor, type Rarity, type SkillEffect } from "@/lib/game/rules";
+import { DEFAULT_BASE, isDefaultBase, RARITIES, RARITY_NAMES, ROLES, roleBase, SKILL_EFFECTS, statsFor, type Rarity, type SkillEffect } from "@/lib/game/rules";
 import { artPrompt, faceFor, portraitSearchUrl } from "@/lib/game/suggestions";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
@@ -219,13 +219,16 @@ function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record
     }
   }
 
+  // 기본값(40/300)이면 실제로는 성향대로 자동 분배된 능력치가 쓰임
+  const auto = isDefaultBase(d.base_atk, d.base_hp);
+  const eff = auto ? roleBase(c.name, d.skill_effect) : { atk: d.base_atk, hp: d.base_hp };
   const preview = {
     philosopherId: c.philosopherId,
     name: c.name,
     originalName: c.originalName,
     tradition: c.tradition,
-    baseAtk: d.base_atk,
-    baseHp: d.base_hp,
+    baseAtk: eff.atk,
+    baseHp: eff.hp,
     skillName: d.skill_name || "필살기 이름",
     skillEffect: d.skill_effect,
     skillDesc: d.skill_desc,
@@ -240,7 +243,7 @@ function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record
     <div className="grid gap-4 border-t border-line p-4 md:grid-cols-[13rem_1fr]">
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-1.5">
-          {RARITIES.map((r) => <PhilosopherCard fx="lite" key={r} card={preview} rarity={r} level={1} stats={statsFor({ atk: d.base_atk, hp: d.base_hp }, r, 1, settingsMult)} tilt={false} />)}
+          {RARITIES.map((r) => <PhilosopherCard fx="lite" key={r} card={preview} rarity={r} level={1} stats={statsFor(eff, r, 1, settingsMult)} tilt={false} />)}
         </div>
         <p className="text-center text-[10px] text-faint">같은 일러스트 · 등급별 프레임 (Lv.1)</p>
         {!d.art_url && <p className="text-center text-xs text-warn">일러스트가 없어 공개할 수 없습니다</p>}
@@ -333,10 +336,20 @@ function CardEditor({ c, settingsMult }: { c: CandidateRow; settingsMult: Record
           </label>
           <div className="flex items-end">
             <button type="button" className="btn w-full !py-1.5 text-xs" onClick={() => setD((x) => ({ ...x, base_atk: DEFAULT_BASE.atk, base_hp: DEFAULT_BASE.hp }))}>
-              기본값 ({DEFAULT_BASE.atk}/{DEFAULT_BASE.hp})
+              성향대로 자동 ({DEFAULT_BASE.atk}/{DEFAULT_BASE.hp})
             </button>
           </div>
         </div>
+        <p className="-mt-1 text-[11px] text-faint">
+          {auto ? (
+            <>
+              자동 분배 중 · <b className="text-ink">{ROLES[d.skill_effect].name}</b> (필살기 {SKILL_EFFECTS[d.skill_effect].name} 기준) → 실제 기본 능력치 공격 <b className="text-ink">{eff.atk}</b> · 체력 <b className="text-ink">{eff.hp}</b>.
+              숫자를 직접 바꾸면 그 값을 씁니다.
+            </>
+          ) : (
+            <>직접 정한 능력치를 씁니다. 40/300 으로 두면 필살기 성향({ROLES[d.skill_effect].name})대로 자동 분배합니다.</>
+          )}
+        </p>
         <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
           <label className="block">
             <span className="label">필살기 이름</span>

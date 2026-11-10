@@ -211,6 +211,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               <div className="mt-0.5 text-xs text-[#ffd36b]" aria-label={`난이도 ${sel.tier + 1}/5`}>{stars(sel.tier)}</div>
               <div className="mt-1 text-xs text-white/70">
                 {RARITY_NAMES[sel.rarity]} Lv.{sel.level}
+                {boss.role && <span className="ml-1.5 rounded bg-white/10 px-1.5 py-0.5 text-[10px]">{boss.role}</span>}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold tabular-nums">
                 <span className="flex items-center gap-1 text-[#ffb0a0]"><Swords className="h-3.5 w-3.5" aria-hidden />{bossStats.atk}</span>

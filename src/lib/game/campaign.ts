@@ -35,6 +35,8 @@ export interface CampaignStage {
   hpMul: number;
   atkMul: number;
   base: { atk: number; hp: number };
+  /** 보스 사상가의 성향 모양 (공격형은 공격↑ 체력↓ …). 공격×체력 곱은 1 → 전체 강함은 그대로 */
+  shape: { atk: number; hp: number };
 }
 
 /** 첫 관 클리어 보상 (017 전): 보스 사상가 강화 조각 */
@@ -77,7 +79,7 @@ export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "nam
 }
 
 /** 보스 배율: 첫 관 → 마지막 관 (시뮬레이션으로 정함, scripts/test-duel.ts) */
-export const BOSS_TUNE = { hp: [2.3, 2.4] as [number, number], atk: [0.9, 0.85] as [number, number] };
+export const BOSS_TUNE = { hp: [2.1, 2.25] as [number, number], atk: [0.85, 0.8] as [number, number] };
 /** 진행도(0~1)에 따른 보스 등급: 앞 20% 일반 · 45% 까지 희귀 · 75% 까지 영웅 · 나머지 전설 */
 const rarityAt = (t: number): Rarity => (t < 0.2 ? "common" : t < 0.45 ? "rare" : t < 0.75 ? "epic" : "legendary");
 
@@ -94,6 +96,14 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
   return ordered.map((boss, i) => {
     const t = n > 1 ? i / (n - 1) : 0;
     const tier = Math.min(4, Math.floor(t * 5));
+    // 성향 모양: 이 사상가 기본값 ÷ 평균, 곱이 1 이 되게 맞춤
+    let shape = { atk: 1, hp: 1 };
+    if (boss.baseAtk && boss.baseHp) {
+      const a = boss.baseAtk / base.atk;
+      const h = boss.baseHp / base.hp;
+      const k = Math.sqrt(a * h);
+      shape = { atk: a / k, hp: h / k };
+    }
     return {
       index: i,
       no: i + 1,
@@ -106,6 +116,7 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
       hpMul: lerp(tune.hp, t),
       atkMul: lerp(tune.atk, t),
       base,
+      shape,
     };
   });
 }
@@ -134,7 +145,8 @@ export const canPlayStage = (stages: CampaignStage[], cleared: Set<string>, boss
 export function stageBossStats(stage: CampaignStage, mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
   const r = mult[stage.rarity] ?? 1;
   const lv = 1 + 0.12 * (stage.statLevel - 1); // statsAt 과 같은 레벨 배율 (연속값)
-  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul), hp: Math.round(stage.base.hp * r * lv * stage.hpMul) };
+  const shape = stage.shape ?? { atk: 1, hp: 1 };
+  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp) };
 }
 
 /** 관 보스 → 배틀 참가자 */

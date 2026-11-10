@@ -5,7 +5,8 @@ import { activeResonances, duelRulesError, normalizeDuelRules } from "../src/lib
 import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
 import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
 import { buildCampaign, canPlayStage, stageBoss, stageBossStats, stageStatuses, stageStones, type StageCard } from "../src/lib/game/campaign.ts";
-import { runBattle, type Fighter } from "../src/lib/game/battle.ts";
+import { chargeAt, runBattle, SKILL_READY, type Fighter } from "../src/lib/game/battle.ts";
+import { isDefaultBase, roleBase } from "../src/lib/game/rules.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
 import { statsFor, type Rarity, type SkillEffect } from "../src/lib/game/rules.ts";
 
@@ -278,19 +279,29 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
 {
   const list: [string, string][] = [["칸트", "서양윤리"], ["공자", "동양윤리"], ["이이", "한국윤리"], ["맹자", "동양윤리"], ["롤스", "사회사상"], ["플라톤", "서양윤리"], ["이황", "한국윤리"], ["주희", "동양윤리"], ["밀", "서양윤리"], ["노직", "사회사상"]];
   const EFF2 = ["strike", "sweep", "heal", "guard", "stun"] as const;
-  const cards: StageCard[] = list.map(([n, t], i) => ({ philosopherId: `p${i}`, name: n, tradition: t, baseAtk: 40, baseHp: 300, skillEffect: EFF2[i % 5], skillName: "s", artUrl: null }));
+  // 실제 게임처럼 사상가 성향대로 자동 분배된 기본 능력치
+  const cards: StageCard[] = list.map(([n, t], i) => {
+    const b = roleBase(n, EFF2[i % 5]);
+    return { philosopherId: `p${i}`, name: n, tradition: t, baseAtk: b.atk, baseHp: b.hp, skillEffect: EFF2[i % 5], skillName: "s", artUrl: null };
+  });
   const byId = new Map(cards.map((c) => [c.philosopherId, c]));
+  {
+    const bases = cards.map((c) => `${c.name} ${c.baseAtk}/${c.baseHp}`);
+    const products = cards.map((c) => c.baseAtk * c.baseHp);
+    check("사상가 성향 분배: 모두 다른 능력치 · 공격×체력 합은 비슷 (±12%)", new Set(cards.map((c) => `${c.baseAtk}/${c.baseHp}`)).size === cards.length && Math.max(...products) / Math.min(...products) < 1.25, bases.join(" · "));
+    check("관리자가 정한 능력치(40/300 이 아님)는 그대로", isDefaultBase(40, 300) && !isDefaultBase(55, 260));
+  }
   const name = (id: string) => byId.get(id)!.name;
   const st = buildCampaign(cards, 5);
   check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,밀,롤스,노직", st.map((x) => name(x.bossId)).join(","));
   const power = st.map((x) => stageBossStats(x));
-  check("관마다 보스 한 명 · 매 관 더 강해짐 (체력은 매번 늘고 공격은 줄지 않음, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || (p.hp > power[i - 1].hp && p.atk >= power[i - 1].atk)) && power[9].hp > power[0].hp * 2.5, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
+  check("관마다 보스 한 명 · 매 관 더 강해짐 (공격×체력이 매번 늘고, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || p.atk * p.hp > power[i - 1].atk * power[i - 1].hp) && power[9].atk * power[9].hp > power[0].atk * power[0].hp * 5, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
   check("보스 레벨 = 관 번호 (매 관 오름) · 등급은 내려가지 않음", st.every((x, i) => x.level === i + 1) && st.every((x, i) => i === 0 || ["common", "rare", "epic", "legendary"].indexOf(x.rarity) >= ["common", "rare", "epic", "legendary"].indexOf(st[i - 1].rarity)));
   {
     // 사상가마다 기본 능력치가 달라도 뒤 관이 약해지지 않음
     const uneven = cards.map((c, i) => ({ ...c, baseAtk: 30 + ((i * 13) % 25), baseHp: 220 + ((i * 71) % 160) }));
     const p2 = buildCampaign(uneven, 5).map((x) => stageBossStats(x));
-    check("사상가 기본값이 제각각이어도 보스는 매 관 강해짐", p2.every((p, i) => i === 0 || p.hp > p2[i - 1].hp));
+    check("사상가 기본값이 제각각이어도 보스는 매 관 강해짐 (공격×체력)", p2.every((p, i) => i === 0 || p.atk * p.hp > p2[i - 1].atk * p2[i - 1].hp));
   }
   check("보스 등급: 일반 → 희귀 → 영웅 → 전설", st[0].rarity === "common" && st[9].rarity === "legendary" && st.some((x) => x.rarity === "rare") && st.some((x) => x.rarity === "epic"));
   const none = stageStatuses(st, new Set());
@@ -310,6 +321,22 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     const acts = r.events.filter((e) => e.t === "attack" || e.t === "skill" || e.t === "stunned").map((e) => ("actor" in e ? e.actor : ""));
     const boss = acts.filter((a) => a === "foe-0").length;
     check("3 vs 1: 보스와 내 팀의 행동 횟수가 같음 (±1)", Math.abs(boss - (acts.length - boss)) <= 1, `보스 ${boss} · 팀 ${acts.length - boss}`);
+  }
+  // 필살기 게이지: 필살기가 나가기 직전에는 언제나 '가득', 일반 공격 직전에는 가득이 아님
+  {
+    let okAll = true;
+    let skills = 0;
+    for (let g = 0; g < 30; g++) {
+      const r = runBattle(team("rare", 2, g), [stageBoss(st[3], byId.get(st[3].bossId)!)], `gauge${g}`);
+      const keys = ["me-0", "me-1", "me-2", "foe-0"];
+      r.events.forEach((e, i) => {
+        if (e.t !== "attack" && e.t !== "skill") return;
+        const c = chargeAt(keys, r.events, i)[e.actor];
+        if (e.t === "skill") skills++;
+        if ((e.t === "skill") !== (c === SKILL_READY)) okAll = false;
+      });
+    }
+    check("필살기 게이지가 가득일 때만 필살기가 나감 (30판 모든 행동)", okAll && skills > 0, `필살기 ${skills}번`);
   }
   // 보스 회복 필살기는 보통 카드 크기만큼만
   {

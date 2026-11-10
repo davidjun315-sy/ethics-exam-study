@@ -15,9 +15,12 @@ import {
   DEFAULT_RARITY_MULT,
   effectiveRates,
   fusionMaterials,
+  isDefaultBase,
   RARITIES,
   MAX_LEVEL_DEFAULT,
   quizCoins,
+  roleBase,
+  ROLES,
   statsFor,
   upgradeCost,
   type CoinRules,
@@ -195,6 +198,8 @@ export interface CardView {
   artBasis: "portrait" | "reconstruction";
   artNote: string;
   published: boolean;
+  /** 성향 (공격형·광역형·제압형·지원형·수호형) */
+  role?: string;
   /** 전투 캐릭터 (투명 배경 전신, 오른쪽을 봄). 015 전이거나 없으면 null */
   battleArtUrl?: string | null;
 }
@@ -221,8 +226,9 @@ const toView = (c: CardRow, p: PhRow): CardView => ({
   name: p.name,
   originalName: p.original_name,
   tradition: classifyPhilosopher({ name: p.name, tradition: p.tradition }),
-  baseAtk: c.base_atk,
-  baseHp: c.base_hp,
+  // 관리자가 기본값(40/300)을 그대로 두면 사상가 성향대로 자동 분배
+  ...(isDefaultBase(c.base_atk, c.base_hp) ? (({ atk, hp }) => ({ baseAtk: atk, baseHp: hp }))(roleBase(p.name, c.skill_effect)) : { baseAtk: c.base_atk, baseHp: c.base_hp }),
+  role: ROLES[c.skill_effect]?.name,
   skillName: c.skill_name,
   skillEffect: c.skill_effect,
   skillDesc: c.skill_desc,

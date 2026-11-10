@@ -161,6 +161,22 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
   return { first, winner, events, actions };
 }
 
+/** 필살기 게이지가 가득(다음 행동에 필살기)인 값 */
+export const SKILL_READY = SKILL_EVERY - 1;
+
+/**
+ * 필살기 게이지 (화면 표시용, runBattle 과 같은 규칙): 처음 1, 행동마다 +1, 필살기를 쓰면 0. 기절로 쉰 행동은 그대로.
+ * 값이 SKILL_READY 이면 다음 행동에 필살기.
+ */
+export function chargeAt(keys: string[], events: BattleEvent[], upto: number): Record<string, number> {
+  const c: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 1]));
+  for (const e of events.slice(0, upto)) {
+    if (e.t === "attack") c[e.actor] = (c[e.actor] ?? 1) + 1;
+    else if (e.t === "skill") c[e.actor] = 0;
+  }
+  return c;
+}
+
 /** 상대 레벨: 내 덱 평균 레벨 기준 (쉬움 -1 · 보통 0 · 어려움 +1, 1 이상) */
 export function opponentLevel(myLevels: number[], difficulty: "easy" | "normal" | "hard", maxLevel: number): number {
   const avg = myLevels.reduce((n, l) => n + l, 0) / Math.max(1, myLevels.length);

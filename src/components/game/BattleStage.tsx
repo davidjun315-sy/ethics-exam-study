@@ -5,6 +5,7 @@ import type { BattleCard, BattleReplay } from "@/lib/game/data";
 import { SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { stateAt } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
+import { chargeAt, SKILL_READY } from "@/lib/game/battle";
 
 /**
  * 도장깨기 전장: 캐릭터가 서서 싸우는 화면 (자동 배틀 기록을 재생만 함 — 결과는 서버가 정함).
@@ -108,6 +109,8 @@ const IMPACT = { attack: 300, skill: 1250 } as const;
 const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
+
+
 
 /** 전장 안 캐릭터 위치 (px) */
 function boxOf(key: string, W: number, H: number): Box {
@@ -261,7 +264,9 @@ export function BattleStage({
     return () => clearTimeout(h);
   }, [idx, current?.t, t]);
 
-  const st = stateAt(units, replay.events, impacted ? idx : Math.max(0, idx - 1));
+  const shown = impacted ? idx : Math.max(0, idx - 1);
+  const st = stateAt(units, replay.events, shown);
+  const charge = chargeAt(units.map((u) => u.key), replay.events, shown);
   const actor = current && (current.t === "attack" || current.t === "skill") ? current.actor : null;
   const skill = current?.t === "skill" ? current : null;
   const targets = new Set<string>(current?.t === "attack" ? [current.target] : skill ? skill.hits.map((h) => h.target) : []);
@@ -306,6 +311,18 @@ export function BattleStage({
           <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/20">
             <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
           </div>
+          {/* 필살기 게이지: 행동할 때마다 차오르고, 가득 차면 다음 행동에 필살기 */}
+          {!s.dead && (
+            <div className="mt-0.5 flex items-center gap-1" aria-label={`필살기 게이지 ${Math.min(SKILL_READY, charge[u.key] ?? 0)}/${SKILL_READY}`}>
+              <div className={`h-1 flex-1 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/15 ${(charge[u.key] ?? 0) >= SKILL_READY ? "bs-gauge-full" : ""}`}>
+                <div
+                  className="h-full rounded-full transition-[width] duration-300"
+                  style={{ width: `${(Math.min(SKILL_READY, charge[u.key] ?? 0) / SKILL_READY) * 100}%`, background: (charge[u.key] ?? 0) >= SKILL_READY ? "linear-gradient(90deg,#ffd36b,#fff3c4)" : "linear-gradient(90deg,#5aa2ff,#9fd8ff)" }}
+                />
+              </div>
+              {(charge[u.key] ?? 0) >= SKILL_READY && <span className="bs-gauge-label text-[8px] font-black text-[#ffd36b] sm:text-[9px]">필살</span>}
+            </div>
+          )}
           {boss && <div className="text-[9px] tabular-nums text-white/70">{s.hp}/{s.max}</div>}
         </div>
         {/* 그림자 */}

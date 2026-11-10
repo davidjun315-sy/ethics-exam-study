@@ -30,6 +30,37 @@ export const SKILL_EFFECTS: Record<SkillEffect, { name: string; desc: string }> 
   stun: { name: "기절", desc: "적 하나에게 140% 피해 + 다음 행동 1회 봉쇄" },
 };
 
+/**
+ * 사상가 성향 (필살기에 따라) — 기본 능력치를 나누는 방식. 공격 × 체력 의 곱은 거의 같게 (밸런스 유지)
+ * 관리자가 기본값(40/300)을 그대로 두면 이 성향 + 사상가마다 다른 흔들림으로 자동 분배된다.
+ */
+export const ROLES: Record<SkillEffect, { name: string; atk: number; hp: number }> = {
+  strike: { name: "공격형", atk: 1.35, hp: 0.78 },
+  sweep: { name: "광역형", atk: 1.12, hp: 0.9 },
+  stun: { name: "제압형", atk: 1.0, hp: 1.0 },
+  heal: { name: "지원형", atk: 0.82, hp: 1.22 },
+  guard: { name: "수호형", atk: 0.7, hp: 1.42 },
+};
+
+export const isDefaultBase = (atk: number, hp: number) => atk === DEFAULT_BASE.atk && hp === DEFAULT_BASE.hp;
+
+function nameHash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/** 자동 분배 능력치: 성향 배율 × 사상가마다 다른 흔들림(공격 ±14%, 그만큼 체력은 반대로) */
+export function roleBase(name: string, effect: SkillEffect): { atk: number; hp: number } {
+  const r = ROLES[effect] ?? ROLES.stun;
+  const h = nameHash(name.replace(/\s/g, ""));
+  const v = ((h % 1000) / 1000 - 0.5) * 0.28; // 공격 ±14% (체력은 반대로)
+  const w = (((h >>> 10) % 1000) / 1000 - 0.5) * 0.08; // 체력만 ±4% (같은 숫자가 나오지 않게)
+  const atk = Math.max(1, Math.round(DEFAULT_BASE.atk * r.atk * (1 + v)));
+  const hp = Math.max(10, Math.round(((DEFAULT_BASE.hp * r.hp) / (1 + v)) * (1 + w)));
+  return { atk, hp };
+}
+
 export const MAX_LEVEL_DEFAULT = 5;
 
 /** 레벨마다 공격력·체력 +12% (Lv.5 = 기본의 148%) */

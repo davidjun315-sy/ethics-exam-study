@@ -551,6 +551,11 @@ body {
 .bs-rar-halo { position: absolute; left: 50%; top: -2%; width: 46%; height: 10%; translate: -50% 0; border-radius: 50%; z-index: 0; border: 3px solid rgba(255, 228, 140, .9); box-shadow: 0 0 10px #ffc94a, inset 0 0 8px #ffc94a; animation: bs-halo 2.4s ease-in-out infinite; pointer-events: none; }
 @keyframes bs-halo { 0%, 100% { translate: -50% 0; opacity: .85; } 50% { translate: -50% -6%; opacity: 1; } }
 
+/* 필살기 게이지가 가득 차면 금빛으로 깜빡임 (투명도만 바꿈) */
+.bs-gauge-full { box-shadow: 0 0 6px rgba(255, 211, 107, 0.8); }
+@keyframes bs-gauge { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+.bs-gauge-label { animation: bs-gauge 0.8s ease-in-out infinite; text-shadow: 0 0 6px #ffc94a; }
+
 /* 전장 연출 (BattleStage): 위치는 left/top 이 중심점, 시간은 --t(1배속=1, 2배속=0.5) 배 */
 .fx-rays, .fx-ring, .fx-shard, .fx-swing, .fx-crescent, .fx-beam, .fx-orb, .fx-rain, .fx-pillar, .fx-sigil, .fx-ally-glow { position: absolute; pointer-events: none; animation-fill-mode: both; }
 .fx-rays {
@@ -648,7 +653,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .bs-idle, .bs-lunge-r, .bs-lunge-l, .bs-hit, .bs-cast, .bs-aura, .bs-slash, .bs-wave, .bs-spark, .bs-heal, .bs-dome, .bs-stars,
-  .bs-rar > img, .bs-rar > div:last-child, .bs-rar-floor, .bs-rar-motes i, .bs-rar-halo { animation: none !important; }
+  .bs-rar > img, .bs-rar > div:last-child, .bs-rar-floor, .bs-rar-motes i, .bs-rar-halo, .bs-gauge-label { animation: none !important; }
   .bs-faint { animation: none !important; filter: grayscale(1) brightness(0.45); opacity: 0.4; }
 }
 
