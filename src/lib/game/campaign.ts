@@ -41,8 +41,11 @@ export interface CampaignStage {
 
 /** 첫 관 클리어 보상 (017 전): 보스 사상가 강화 조각 */
 export const STAGE_CLEAR_SHARDS = 3;
-/** 첫 관 클리어 보상 (017): 공용 강화석 — 어느 사상가에게나 그 사상가의 강화 조각으로 바꿔 씀. 뒤 관일수록 많이 */
-export const stageStones = (no: number) => 1 + Math.ceil(no / 2);
+/**
+ * 첫 관 클리어 보상 (017): 강화석. 1~10관 1개, 11~20관 2개, 21~30관 3개 …
+ * 카드 한 장을 Lv.1 → 5 로 올리는 데 강화석 10개 (합성해도 레벨은 유지) → 10관마다 대략 카드 1~2장 분량
+ */
+export const stageStones = (no: number) => 1 + Math.floor((Math.max(1, no) - 1) / 10);
 
 const TRADITION_ORDER = ["동양윤리", "한국윤리", "서양윤리", "사회사상"];
 

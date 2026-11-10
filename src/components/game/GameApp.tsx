@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
 import { quizApi } from "@/lib/quiz/client";
-import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS } from "@/lib/game/rules";
+import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { DrawTab } from "./DrawTab";
 import { CollectionTab } from "./CollectionTab";
@@ -138,6 +138,42 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
 }
 
 /** 사상가 상세: 큰 일러스트 + 필살기·대사 + 이 사상가의 보유 카드 (등급·레벨별 한 장씩) */
+/** 상세 화면의 게임 캐릭터: 전장 배경 위에 서 있는 모습 (미획득이면 실루엣) */
+function BattleCharacter({ card, rarity, owned, bgUrl }: { card: CardView; rarity: Rarity; owned: boolean; bgUrl?: string }) {
+  const east = card.tradition === "동양윤리" || card.tradition === "한국윤리";
+  return (
+    <figure className="mt-3">
+      <div
+        className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line"
+        style={{
+          background: bgUrl
+            ? `center 70% / cover no-repeat url(${JSON.stringify(bgUrl)})`
+            : east
+              ? "linear-gradient(180deg,#f3c99a 0%,#c98a6a 45%,#4a3a52 75%,#2a2230 100%)"
+              : "linear-gradient(180deg,#9cc6ef 0%,#7d9cc8 45%,#3d4a66 75%,#222a3a 100%)",
+        }}
+      >
+        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/55 to-transparent" />
+        <div className={`bs-rar bs-rar-${rarity} absolute bottom-[8%] left-1/2 h-[82%] -translate-x-1/2`}>
+          {owned && rarity !== "common" && <span className="bs-rar-floor" aria-hidden />}
+          <div className="absolute -bottom-[2%] left-1/2 h-[8%] w-[70%] -translate-x-1/2 rounded-[50%] bg-black/45 blur-[2px]" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={card.battleArtUrl!}
+            alt={`${card.name} 게임 캐릭터`}
+            className={`relative h-full w-auto max-w-none ${owned ? "bs-idle" : ""}`}
+            style={owned ? undefined : { filter: "brightness(0) opacity(.55)" }}
+            draggable={false}
+            loading="lazy"
+          />
+        </div>
+        {!owned && <span className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-white drop-shadow">카드를 얻으면 만날 수 있어요</span>}
+      </div>
+      <figcaption className="mt-1 text-center text-[11px] text-faint">배틀 아레나에 나오는 캐릭터</figcaption>
+    </figure>
+  );
+}
+
 export function PhilosopherSheet({
   card,
   copies,
@@ -185,6 +221,7 @@ export function PhilosopherSheet({
         <div className="grid gap-5 sm:grid-cols-[minmax(0,15rem)_1fr]">
           <div className="mx-auto w-full max-w-[15rem]">
             <PhilosopherCard card={card} rarity={top?.rarity ?? "common"} level={top?.level ?? 1} locked={!top} stats={top ? { atk: top.atk, hp: top.hp } : undefined} featured={top?.cardId === state.featuredId} maxLevel={state.settings.maxLevel} />
+            {card.battleArtUrl && <BattleCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} bgUrl={state.settings.battleBg?.[card.tradition]} />}
             {card.artBasis === "reconstruction" && <p className="mt-2 text-center text-[11px] text-faint">역사적 도상을 바탕으로 재구성한 일러스트{card.artNote ? ` · ${card.artNote}` : ""}</p>}
           </div>
           <div className="min-w-0 space-y-3">

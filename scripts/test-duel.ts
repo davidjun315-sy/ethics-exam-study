@@ -389,7 +389,14 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     }
     check("일반 카드는 강화석만으로 키워도 앞 절반을 못 넘음 (뽑기·합성으로 등급을 올려야 함)", k < st.length / 2, `${k}/${st.length}관에서 막힘`);
   }
-  check("첫 클리어 강화석: 뒤 관일수록 많음 (1관 2개 … 10관 6개)", stageStones(1) === 2 && stageStones(10) === 6 && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((n, i, a) => i === 0 || stageStones(n) >= stageStones(a[i - 1])));
+  check(
+    "첫 클리어 강화석: 1~10관 1개 · 11~20관 2개 … (뒤 관일수록 많음)",
+    stageStones(1) === 1 && stageStones(10) === 1 && stageStones(11) === 2 && stageStones(25) === 3 && Array.from({ length: 60 }, (_, i) => i + 1).every((n) => n === 1 || stageStones(n) >= stageStones(n - 1)),
+  );
+  {
+    const sum = (k: number) => Array.from({ length: k }, (_, i) => stageStones(i + 1)).reduce((a, b) => a + b, 0);
+    check("앞 10관을 다 깨도 강화석 10개 (덱 3장 모두 최대 레벨엔 30개 필요)", sum(10) === 10, `40관까지 ${sum(40)}개`);
+  }
 }
 
 console.log(failed ? `\n${failed}개 실패` : "\n모두 통과");
