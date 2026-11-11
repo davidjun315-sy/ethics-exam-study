@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BattleCard, BattleReplay } from "@/lib/game/data";
 import { ROLE_COLOR, ROLES, SKILL_EFFECTS, type Rarity, type SkillEffect } from "@/lib/game/rules";
-import { stateAt } from "./BattleTab";
+import { stateAt, useImpact } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
 import { BOSS_PATTERNS, chargeAt, SKILL_READY, type BossPattern } from "@/lib/game/battle";
 import { SynergyChips } from "./SynergyChips";
@@ -167,7 +167,8 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
 
 // 사건마다 길이 · 맞는 순간 (ms, 1배속)
 const DUR = { attack: 950, skill: 2300, stunned: 700, phase: 1900, faint: 600, end: 500 } as const;
-const IMPACT = { attack: 300, skill: 1250 } as const;
+// 돌진(bs-lunge)이 가장 앞에 나간 때 · 필살기 연출(컷인 → 마법진 → 날아가는 효과)이 닿는 때
+const IMPACT = { attack: 230, skill: 1250 } as const;
 const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
@@ -294,7 +295,6 @@ export function BattleStage({
   const byKey = useMemo(() => new Map(units.map((u) => [u.key, u])), [units]);
   const [idx, setIdx] = useState(0);
   const [speed, setSpeed] = useState(1);
-  const [impacted, setImpacted] = useState(true);
   const fieldRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ W: 360, H: 300 });
   const done = idx >= replay.events.length;
@@ -319,16 +319,8 @@ export function BattleStage({
     const step = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DUR[ev.t]) * t);
     return () => clearTimeout(step);
   }, [idx, done, t, replay.events]);
-  useEffect(() => {
-    const kind = current?.t;
-    if (kind !== "attack" && kind !== "skill") return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 새 사건이 시작되면 '맞기 전' 상태로 돌렸다가 맞는 순간에 반영
-    setImpacted(reduced());
-    const h = setTimeout(() => setImpacted(true), IMPACT[kind] * t);
-    return () => clearTimeout(h);
-  }, [idx, current?.t, t]);
-
-  const shown = impacted ? idx : Math.max(0, idx - 1);
+  // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
+  const { impacted, shown } = useImpact(idx, current, t, IMPACT, reduced());
   const st = stateAt(units, replay.events, shown);
   const charge = chargeAt(units.map((u) => u.key), replay.events, shown);
   const actor = current && (current.t === "attack" || current.t === "skill") ? current.actor : null;
@@ -342,7 +334,7 @@ export function BattleStage({
   const narration = !current
     ? `${replay.first === "me" ? "내 팀" : byKey.get(replay.foe[0]?.key)?.name ?? "상대"} 선공으로 시작합니다`
     : current.t === "attack"
-      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name} ${current.dmg}${current.shielded ? " (수호막으로 반감)" : ""}`
+      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name}${impacted ? ` ${current.dmg}${current.shielded ? " (수호막으로 반감)" : ""}` : ""}`
       : current.t === "skill"
         ? `${byKey.get(current.actor)?.name}의 필살기 「${current.name}」`
         : current.t === "stunned"

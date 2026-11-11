@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { BattleCard, BattleReplay, GameState, OwnedCard } from "@/lib/game/data";
 import type { BattleEvent } from "@/lib/game/battle";
 import { BOSS_PATTERNS, DIFFICULTY_NAMES, type BossPattern, type Difficulty } from "@/lib/game/battle";
@@ -139,6 +139,25 @@ export interface UnitState {
   phase?: BossPattern;
 }
 
+/**
+ * 맞는 순간: 공격·필살기 사건은 시작하고 impact ms 뒤에야 체력·피해 숫자가 바뀐다.
+ * 사건 번호(idx)로 기억하므로, 첫 화면에서 새 체력이 먼저 번쩍이거나 속도를 바꿀 때 체력이 되돌아가는 일이 없다.
+ */
+export function useImpact(idx: number, current: BattleEvent | null, t: number, impact: { attack: number; skill: number }, instant = false) {
+  const [impactAt, setImpactAt] = useState(0);
+  const kind = current?.t;
+  const needs = !instant && (kind === "attack" || kind === "skill");
+  useEffect(() => {
+    if (!needs || impactAt >= idx) return;
+    const h = setTimeout(() => setImpactAt(idx), impact[kind as "attack" | "skill"] * t);
+    return () => clearTimeout(h);
+  }, [idx, needs, kind, impactAt, t, impact]);
+  const impacted = !needs || impactAt >= idx;
+  return { impacted, shown: impacted ? idx : Math.max(0, idx - 1) };
+}
+
+const IMPACT_QUICK = { attack: 180, skill: 260 } as const;
+
 export function stateAt(units: BattleCard[], events: BattleEvent[], upto: number): Record<string, UnitState> {
   const s: Record<string, UnitState> = Object.fromEntries(units.map((u) => [u.key, { hp: u.hp, max: u.hp, dead: false, shield: false, stun: false }]));
   for (const e of events.slice(0, upto)) {
@@ -189,7 +208,9 @@ export function BattleArena({
   const [speed, setSpeed] = useState(1);
   const done = idx >= replay.events.length;
   const current = idx > 0 ? replay.events[idx - 1] : null;
-  const st = stateAt(units, replay.events, idx);
+  // 체력 · 피해 숫자는 공격이 닿는 순간(돌진 끝)에
+  const { impacted, shown } = useImpact(idx, current, 1 / speed, IMPACT_QUICK);
+  const st = stateAt(units, replay.events, shown);
 
   useEffect(() => {
     if (done) return;
@@ -199,13 +220,13 @@ export function BattleArena({
   }, [idx, done, speed, replay.events]);
 
   const actor = current && (current.t === "attack" || current.t === "skill") ? current.actor : null;
-  const targets = new Set<string>(current?.t === "attack" ? [current.target] : current?.t === "skill" ? current.hits.map((h) => h.target) : []);
+  const targets = new Set<string>(!impacted ? [] : current?.t === "attack" ? [current.target] : current?.t === "skill" ? current.hits.map((h) => h.target) : []);
   const dmgOf = (key: string) => (current?.t === "attack" && current.target === key ? current.dmg : current?.t === "skill" ? current.hits.find((h) => h.target === key)?.dmg : undefined);
-  const healOf = (key: string) => (current?.t === "skill" && current.heal?.target === key ? current.heal.amount : undefined);
+  const healOf = (key: string) => (impacted && current?.t === "skill" && current.heal?.target === key ? current.heal.amount : undefined);
   const narration = !current
     ? `${replay.first === "me" ? "내 덱" : "상대"} 선공으로 시작합니다`
     : current.t === "attack"
-      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name} ${current.dmg}${current.shielded ? " (수호막으로 반감)" : ""}`
+      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name}${impacted ? ` ${current.dmg}${current.shielded ? " (수호막으로 반감)" : ""}` : ""}`
       : current.t === "skill"
         ? `${byKey.get(current.actor)?.name}의 필살기 「${current.name}」!`
         : current.t === "stunned"
@@ -228,7 +249,7 @@ export function BattleArena({
         const dmg = hit ? dmgOf(u.key) : undefined;
         const heal = healOf(u.key);
         return (
-          <div key={`${u.key}-${idx}`} className={`relative ${s.dead ? "faint" : isActor ? (side === "me" ? "lunge-up" : "lunge-down") : hit ? "hit-shake" : ""}`}>
+          <div key={s.dead ? `${u.key}-dead` : `${u.key}-${idx}-${hit ? 1 : 0}`} className={`relative ${s.dead ? "faint" : isActor ? (side === "me" ? "lunge-up" : "lunge-down") : hit ? "hit-shake" : ""}`}>
             <div className={`relative rounded-[14px] ${isActor && current?.t === "skill" ? "ring-4" : ""}`} style={isActor && current?.t === "skill" ? { boxShadow: `0 0 26px ${EFFECT_COLOR[current.effect]}`, ["--tw-ring-color" as string]: EFFECT_COLOR[current.effect] } : undefined}>
               <PhilosopherCard fx="lite"
                 card={{ philosopherId: u.philosopherId, name: u.name, originalName: null, tradition: u.tradition, baseAtk: u.atk, baseHp: u.hp, skillName: u.skillName, skillEffect: u.skillEffect, skillDesc: "", quote: "", artUrl: u.artUrl, artBasis: "portrait", artNote: "", published: true }}
@@ -261,7 +282,7 @@ export function BattleArena({
   );
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[radial-gradient(80%_60%_at_50%_50%,#24304a,#0c111b)] p-3 text-white sm:p-5">
+    <section className="overflow-hidden rounded-2xl border border-line bg-[radial-gradient(80%_60%_at_50%_50%,#24304a,#0c111b)] p-3 text-white sm:p-5" style={{ ["--t" as string]: 1 / speed } as CSSProperties}>
       <div className="mb-3 flex items-center gap-2 text-xs text-white/70">
         {title ?? (
           <>
