@@ -8,7 +8,7 @@ import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleE
 import { duelRulesError, normalizeDuelRules, replayDuel, toDuelCard, type DuelAction, type DuelCardDef, type DuelRules } from "./duel";
 import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
-import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats, stageStones } from "./campaign";
+import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBossStats, stageFoes, stageMinionStats, stageStones } from "./campaign";
 import { teamSynergies, withSynergy, type Synergy } from "./synergy";
 import { achievements, canUseTitle, titleSynergy, type Achievement } from "./achievements";
 import { rankWeekly, weekStart } from "./ranking";
@@ -665,14 +665,22 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   const bs = stageBossStats(stage, settings.rarity_mult);
   const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition, battleArtUrl: card.battleArtUrl ?? null };
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
-  const r = runBattle(me.map(toFighter), [stageBoss(stage, card, settings.rarity_mult)], seed);
+  // 수하 (희귀 관부터): 바로 앞 관 사상가, 한 단계 아래 등급
+  const cardMap = new Map(state.cards.map((c) => [c.philosopherId, c]));
+  // stageFoes 와 같은 순서 · 같은 키 (카드 정보가 없는 수하는 빠짐)
+  const minions: BattleCard[] = stage.minions.filter((m) => cardMap.has(m.id)).map((m, k) => {
+    const c = cardMap.get(m.id)!;
+    const ms = stageMinionStats(stage, m, settings.rarity_mult);
+    return { key: `foe-${k + 1}`, cardId: null, philosopherId: c.philosopherId, name: c.name, rarity: m.rarity, level: stage.level, atk: ms.atk, hp: ms.hp, skillName: c.skillName, skillEffect: c.skillEffect, artUrl: c.artUrl, tradition: c.tradition, battleArtUrl: c.battleArtUrl ?? null };
+  });
+  const r = runBattle(me.map(toFighter), stageFoes(stage, cardMap, settings.rarity_mult), seed);
   const win = r.winner === "me";
   const difficulty: Difficulty = stage.tier < 2 ? "easy" : stage.tier < 4 ? "normal" : "hard";
 
   const db = getAdminClient();
   const { data: saved, error } = await db
     .from("game_battles")
-    .insert({ learner, difficulty, deck: me, opponent: [{ ...boss, stage: stage.no }], seed, result: win ? "win" : "lose", turns: r.actions })
+    .insert({ learner, difficulty, deck: me, opponent: [{ ...boss, stage: stage.no }, ...minions], seed, result: win ? "win" : "lose", turns: r.actions })
     .select("id")
     .single();
   if (error) throw gameError(error.message);
@@ -692,7 +700,7 @@ export async function playStage(learner: string, bossId: string, deckIds: string
     id: saved.id as string,
     difficulty,
     me,
-    foe: [boss],
+    foe: [boss, ...minions],
     first: r.first,
     winner: r.winner,
     events: r.events,

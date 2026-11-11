@@ -67,6 +67,26 @@ function Roster({ units, st, foeLabel, synergy, pattern }: { units: { side: "me"
 }
 
 const BOSS_SLOT = { right: 4, bottom: 5, scale: 1.55 };
+// 수하가 있는 관: 보스는 조금 작게 오른쪽 뒤, 수하는 보스 앞쪽 · 내 팀은 조금 왼쪽으로
+const TEAM_SLOTS_TIGHT: { left: number; bottom: number; scale: number }[] = [
+  { left: 12, bottom: 4, scale: 0.86 },
+  { left: 0, bottom: 20, scale: 0.86 },
+  { left: 24, bottom: 20, scale: 0.86 },
+];
+// 보스는 뒤쪽(조금 위)에 크게, 수하 둘은 앞줄에 나란히 → 이름표가 겹치지 않음
+const FOE_SLOTS_MULTI: { right: number; bottom: number; scale: number }[] = [
+  { right: 1, bottom: 24, scale: 1.3 },
+  { right: 36, bottom: 2, scale: 0.78 },
+  { right: 15, bottom: 2, scale: 0.78 },
+];
+type Slot = { left?: number; right?: number; bottom: number; scale: number };
+/** 자리: 키(me-0 · foe-1 …)와 적 수로 정함 (화면 배치 · 효과 위치 공통) */
+function slotOf(key: string, foes: number): Slot {
+  const i = Number(key.split("-")[1]) || 0;
+  if (key.startsWith("foe")) return foes > 1 ? FOE_SLOTS_MULTI[i % FOE_SLOTS_MULTI.length] : BOSS_SLOT;
+  const team = foes > 1 ? TEAM_SLOTS_TIGHT : TEAM_SLOTS;
+  return team[i % team.length];
+}
 
 function Scene({ tradition, bgUrl }: { tradition: string; bgUrl?: string }) {
   const east = tradition === "동양윤리" || tradition === "한국윤리";
@@ -155,13 +175,12 @@ type Box = { x: number; y: number; feet: number; top: number; w: number; h: numb
 
 
 /** 전장 안 캐릭터 위치 (px) */
-function boxOf(key: string, W: number, H: number): Box {
-  const boss = key.startsWith("foe");
-  const slot = boss ? BOSS_SLOT : TEAM_SLOTS[Number(key.split("-")[1]) % TEAM_SLOTS.length];
+function boxOf(key: string, W: number, H: number, foes = 1): Box {
+  const slot = slotOf(key, foes);
   const h = H * 0.3 * slot.scale;
   const w = h * 0.82;
   const feet = H - (slot.bottom / 100) * H;
-  const x = "right" in slot ? W - (slot.right / 100) * W - w / 2 : (slot.left / 100) * W + w / 2;
+  const x = slot.right !== undefined ? W - (slot.right / 100) * W - w / 2 : ((slot.left ?? 0) / 100) * W + w / 2;
   return { x, y: feet - h * 0.5, feet, top: feet - h, w, h };
 }
 
@@ -282,6 +301,7 @@ export function BattleStage({
   const current = idx > 0 ? replay.events[idx - 1] : null;
   // 도장깨기 기록이면 보스 특수 패턴
   const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
+  const nFoes = replay.foe.length;
   const t = 1 / speed; // 시간 배율
 
   useLayoutEffect(() => {
@@ -337,6 +357,8 @@ export function BattleStage({
 
   const unit = (u: BattleCard, slot: { left?: number; right?: number; bottom: number; scale: number }, boss: boolean, i: number) => {
     const s = st[u.key];
+    // 수하: 휴대폰에선 이름표를 짧게 (이름 · 체력만)
+    const minion = boss && u.key !== "foe-0";
     const isActor = actor === u.key;
     const hit = targets.has(u.key) && impacted;
     const dmg = hit ? dmgOf(u.key) : undefined;
@@ -349,10 +371,12 @@ export function BattleStage({
     return (
       <div key={u.key} className="absolute" style={style} data-unit={u.key} aria-label={`${u.name} 체력 ${s.hp}/${s.max}${s.dead ? " 쓰러짐" : ""}`}>
         {/* 이름 · 체력 */}
-        <div className="absolute bottom-full left-1/2 mb-1 w-[max(4.5rem,110%)] -translate-x-1/2 text-center" style={{ opacity: s.dead ? 0.35 : 1 }}>
+        <div className={`absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-center ${minion ? "w-[104%] sm:w-[max(4.5rem,110%)]" : "w-[max(4.5rem,110%)]"}`} style={{ opacity: s.dead ? 0.35 : 1 }}>
           <div className="truncate text-[10px] font-bold text-white drop-shadow sm:text-xs">
-            {boss && <span className="mr-1 rounded bg-[#ef6a5a] px-1 text-[9px]">보스</span>}
-            <span style={{ color: RAR_TEXT[u.rarity] }}>{RARITY_LABEL[u.rarity]}</span> {u.name} <span className="font-normal text-white/70">Lv.{u.level}</span>
+            {boss && (u.key === "foe-0" ? <span className="mr-1 rounded bg-[#ef6a5a] px-1 text-[9px]">보스</span> : <span className="mr-1 rounded bg-white/20 px-1 text-[9px]">수하</span>)}
+            <span className={minion ? "hidden sm:inline" : ""} style={{ color: RAR_TEXT[u.rarity] }}>{RARITY_LABEL[u.rarity]} </span>
+            <span style={minion ? { color: RAR_TEXT[u.rarity] } : undefined}>{u.name}</span>
+            <span className={`font-normal text-white/70 ${minion ? "hidden sm:inline" : ""}`}> Lv.{u.level}</span>
           </div>
           <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/50 ring-1 ring-white/20">
             <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${(s.hp / s.max) * 100}%`, background: s.hp / s.max > 0.5 ? "#5fd08f" : s.hp / s.max > 0.25 ? "#f2c14e" : "#ef6a5a" }} />
@@ -370,13 +394,13 @@ export function BattleStage({
             </div>
           )}
           {/* 성향 · 필살기 이름 */}
-          <div className="mt-0.5 flex items-center justify-center gap-1 text-[8px] leading-tight sm:text-[10px]" style={{ opacity: s.dead ? 0.35 : 1 }}>
+          <div className={`mt-0.5 items-center justify-center gap-1 text-[8px] leading-tight sm:text-[10px] ${minion ? "hidden sm:flex" : "flex"}`} style={{ opacity: s.dead ? 0.35 : 1 }}>
             <span className="shrink-0 rounded px-1 font-black text-[#0c111b]" style={{ background: ROLE_COLOR[u.skillEffect] }}>
               {roleOf(u.skillEffect)}
             </span>
             <span className="truncate font-semibold text-[#ffe7a8] drop-shadow">✦ {u.skillName}</span>
           </div>
-          {boss && <div className="text-[9px] tabular-nums text-white/70">{s.hp}/{s.max}</div>}
+          {boss && u.key === "foe-0" && <div className="text-[9px] tabular-nums text-white/70">{s.hp}/{s.max}</div>}
         </div>
         {/* 그림자 */}
         <div className="absolute -bottom-[3%] left-1/2 h-[9%] w-[80%] -translate-x-1/2 rounded-[50%] bg-black/45 blur-[2px]" />
@@ -432,10 +456,10 @@ export function BattleStage({
   // 이번 사건의 화면 효과 (전장 좌표)
   const fx = (() => {
     if (!current || !caster || !theme || reduced()) return null;
-    const from = boxOf(caster.key, W, H);
+    const from = boxOf(caster.key, W, H, nFoes);
     const imp = IMPACT[current.t === "skill" ? "skill" : "attack"] * t;
     if (current.t === "attack") {
-      const b = boxOf(current.target, W, H);
+      const b = boxOf(current.target, W, H, nFoes);
       return (
         <>
           <span className="fx-swing" style={{ left: b.x, top: b.y, width: b.w * 1.3, height: b.w * 1.3, animationDelay: `${imp - 80 * t}ms`, ["--c0" as string]: theme.colors[0], ["--c2" as string]: theme.colors[2], ["--r" as string]: caster.key.startsWith("foe") ? "200deg" : "-20deg" } as CSSProperties} />
@@ -446,8 +470,8 @@ export function BattleStage({
     if (current.t !== "skill") return null;
     const sk = current;
     const boss = caster.key.startsWith("foe");
-    const hitBoxes = sk.hits.map((h) => boxOf(h.target, W, H));
-    const allyBoxes = sk.heal ? [boxOf(sk.heal.target, W, H)] : (sk.guarded ?? []).map((k) => boxOf(k, W, H));
+    const hitBoxes = sk.hits.map((h) => boxOf(h.target, W, H, nFoes));
+    const allyBoxes = sk.heal ? [boxOf(sk.heal.target, W, H, nFoes)] : (sk.guarded ?? []).map((k) => boxOf(k, W, H, nFoes));
     const targetsBoxes = hitBoxes.length ? hitBoxes : allyBoxes;
     return (
       <>
@@ -487,8 +511,8 @@ export function BattleStage({
       <div ref={fieldRef} className="relative h-[19rem] overflow-hidden sm:h-[26rem]" aria-label="전장" style={{ ["--t" as string]: t } as CSSProperties}>
         <div className={`absolute inset-0 ${shake || ""}`}>
           <Scene tradition={tradition} bgUrl={bgUrl} />
-          {replay.me.map((u, i) => unit(u, TEAM_SLOTS[i % TEAM_SLOTS.length], false, i))}
-          {replay.foe.map((u, i) => unit(u, BOSS_SLOT, true, i + 3))}
+          {replay.me.map((u, i) => unit(u, slotOf(u.key, nFoes), false, i))}
+          {replay.foe.map((u, i) => unit(u, slotOf(u.key, nFoes), true, i + 3))}
           <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
             {fx}
             {current?.t === "phase" && (
@@ -504,7 +528,7 @@ export function BattleStage({
         {narration}
       </p>
       {done && <div className="px-3 pb-4">{result}</div>}
-      <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "상대 팀"} synergy={replay.synergy} pattern={pattern} />
+      <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "보스와 수하"} synergy={replay.synergy} pattern={pattern} />
     </section>
   );
 }

@@ -4,7 +4,7 @@ import { chooseDuelAction } from "../src/lib/game/duelAi.ts";
 import { activeResonances, duelRulesError, normalizeDuelRules } from "../src/lib/game/duel.ts";
 import { pickDuelDeck } from "../src/lib/game/duelDeck.ts";
 import { simDeck, simGame, simulateBalance } from "../src/lib/game/duelSim.ts";
-import { buildCampaign, canPlayStage, stageBoss, stageBossStats, stageStatuses, stageStones, type StageCard } from "../src/lib/game/campaign.ts";
+import { buildCampaign, canPlayStage, MINION_COUNT, stageBoss, stageBossStats, stageFoes, stageStatuses, stageStones, type StageCard } from "../src/lib/game/campaign.ts";
 import { chargeAt, runBattle, SKILL_READY, type Fighter } from "../src/lib/game/battle.ts";
 import { isDefaultBase, roleBase, upgradeCost } from "../src/lib/game/rules.ts";
 import { seededRandom, type Difficulty } from "../src/lib/game/battle.ts";
@@ -350,7 +350,7 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   }
   const rate = (rar: "common" | "rare" | "epic" | "legendary", lv: number, idx: number) => {
     let w = 0;
-    for (let g = 0; g < 100; g++) if (runBattle(team(rar, lv, g), [stageBoss(st[idx], byId.get(st[idx].bossId)!)], `camp${idx}-${g}`).winner === "me") w++;
+    for (let g = 0; g < 100; g++) if (runBattle(team(rar, lv, g), stageFoes(st[idx], byId), `camp${idx}-${g}`).winner === "me") w++;
     return w;
   };
   const w1 = rate("common", 1, 0);
@@ -383,7 +383,7 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
       let w = 0;
       for (let g = 0; g < 60; g++) {
         const t = team("common", 1, g).map((f, i) => ({ ...f, ...statsFor({ atk: f.atk, hp: f.hp }, "common", lv[i]) }));
-        if (runBattle(t, [stageBoss(st[k], byId.get(st[k].bossId)!)], `grow${k}-${g}`).winner === "me") w++;
+        if (runBattle(t, stageFoes(st[k], byId), `grow${k}-${g}`).winner === "me") w++;
       }
       if (w < 30) break;
       stones += stageStones(k + 1);
@@ -417,12 +417,30 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
         check("재생: 최대 체력 15% 회복", e.t === "phase" && !!e.heal && e.heal.amount > 0 && e.heal.amount <= Math.round(max * 0.15) + 1);
       }
     }
+    // 수하 포함 실제 관 구성으로, 반반쯤 이기는 팀(영웅 Lv.3)과 비교
+    const full = (p: "fortress" | null, seed: string) => runBattle(team("epic", 4, 2), stageFoes({ ...st[5], pattern: p }, byId), seed);
     let wPlain = 0, wPat = 0;
-    for (let g = 0; g < 80; g++) {
-      if (boss(null, `pp${g}`).winner === "me") wPlain++;
-      if (boss("fortress", `pp${g}`).winner === "me") wPat++;
+    for (let g = 0; g < 120; g++) {
+      if (full(null, `pp${g}`).winner === "me") wPlain++;
+      if (full("fortress", `pp${g}`).winner === "me") wPat++;
     }
-    check("특수 보스는 같은 관 보통 보스보다 어려움", wPat < wPlain, `보통 ${wPlain} · 철벽 ${wPat} /80`);
+    check("특수 보스는 같은 관 보통 보스보다 어려움", wPat < wPlain, `보통 ${wPlain} · 철벽 ${wPat} /120`);
+  }
+  // 수하: 희귀 관 1명 · 영웅·전설 관 2명, 한 단계 아래 등급, 바로 앞 관의 사상가
+  {
+    const ok = st.every((x) => x.minions.length === Math.min(MINION_COUNT[x.rarity], x.index) && x.minions.every((m, k) => m.id === st[x.index - 1 - k].bossId && m.rarity === ({ common: "common", rare: "common", epic: "rare", legendary: "epic" } as const)[x.rarity]));
+    check("수하: 일반 0 · 희귀 1 · 영웅 2 · 전설 2명, 등급은 한 단계 아래, 앞 관 사상가", ok, st.map((x) => `${x.rarity[0]}${x.minions.length}`).join(" "));
+    const f = stageFoes(st[st.length - 1], byId);
+    check("수하 배틀 참가자: foe-0 보스 + foe-1 · foe-2", f.map((x) => x.key).join(",") === "foe-0,foe-1,foe-2" && f[1].hp < f[0].hp);
+    const legend = st.filter((x) => x.rarity === "legendary");
+    const epicLast = [...st].reverse().find((x) => x.rarity === "epic")!;
+    const rate = (stage: (typeof st)[number]) => {
+      let w = 0;
+      for (let g = 0; g < 100; g++) if (runBattle(team("legendary", 5, g), stageFoes(stage, byId), `lg${stage.no}-${g}`).winner === "me") w++;
+      return w;
+    };
+    const wE = rate(epicLast), wL = rate(legend[legend.length - 1]);
+    check("전설 관은 영웅 관보다 어려움 (같은 전설 Lv.5 팀)", wL < wE, `영웅 마지막 ${wE} · 전설 마지막 ${wL} /100`);
   }
   check(
     "첫 클리어 강화석: 1~10관 1개 · 11~20관 2개 … (뒤 관일수록 많음)",

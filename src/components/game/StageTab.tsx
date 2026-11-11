@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Heart, Lock, Swords } from "lucide-react";
 import type { CardView, GameState, StageReplay } from "@/lib/game/data";
-import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageStatuses, stageStones, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
+import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageMinionStats, stageStatuses, stageStones, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
 import { RARITY_NAMES } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
@@ -167,6 +167,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   const selStatus: StageStatus = statuses[sel.index];
   const boss = byId.get(sel.bossId)!;
   const bossStats = stageBossStats(sel, state.settings.rarityMult);
+  const minionInfo = sel.minions.filter((m) => byId.has(m.id)).map((m) => ({ m, c: byId.get(m.id)!, st: stageMinionStats(sel, m, state.settings.rarityMult) }));
   const teamCards = team.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
   const titleFx = titleSynergy(state.achievements, state.title.value);
   const synergy = [...teamSynergies(teamCards), ...(titleFx ? [titleFx] : [])];
@@ -230,6 +231,24 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               </div>
             </div>
           </div>
+          {minionInfo.length > 0 && (
+            <div className="mt-2.5">
+              <div className="mb-1 text-[11px] font-semibold text-white/60">함께 나오는 수하 {minionInfo.length}명 · 한 단계 아래 등급</div>
+              <ul className="flex flex-wrap gap-2">
+                {minionInfo.map(({ m, c, st }) => (
+                  <li key={m.id} className="flex items-center gap-2 rounded-lg bg-white/[0.07] py-1 pl-1 pr-2.5">
+                    <Portrait c={c} className={`h-9 w-7 rounded ring-1 ${TILE_RING[m.rarity]}`} dim={selStatus === "locked"} />
+                    <span className="leading-tight">
+                      <span className="block text-xs font-bold">{c.name}</span>
+                      <span className="block text-[10px] tabular-nums text-white/60">
+                        <span style={{ color: TILE_TEXT[m.rarity] }}>{RARITY_NAMES[m.rarity]}</span> · ⚔ {st.atk} · ♥ {st.hp}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {sel.pattern && (
             <p className="mt-2.5 rounded-lg border border-[#ef6a5a]/45 bg-[#ef6a5a]/12 px-2.5 py-1.5 text-xs text-[#ffc4b8]">
               <b className="text-[#ff8f7f]">특수 보스 · 「{BOSS_PATTERNS[sel.pattern].name}」</b> {BOSS_PATTERNS[sel.pattern].desc}
@@ -311,11 +330,16 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                     type="button"
                     onClick={() => setPicked(s.bossId)}
                     aria-pressed={on}
-                    aria-label={`${s.no}관 ${c?.name} · ${RARITY_NAMES[s.rarity]} Lv.${s.level}${s.pattern ? ` · 특수 패턴 ${BOSS_PATTERNS[s.pattern].name}` : ""} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
+                    aria-label={`${s.no}관 ${c?.name} · ${RARITY_NAMES[s.rarity]} Lv.${s.level}${s.minions.length ? ` · 수하 ${s.minions.length}명` : ""}${s.pattern ? ` · 특수 패턴 ${BOSS_PATTERNS[s.pattern].name}` : ""} · ${st === "cleared" ? "이김" : st === "current" ? "도전 중" : "잠김"}`}
                     className={`relative block w-full rounded-xl text-left ${on ? "ring-2 ring-navy ring-offset-2 ring-offset-surface" : ""}`}
                   >
                     <Portrait c={c} className={`aspect-[3/4] w-full rounded-xl ring-2 ${st === "current" ? "ring-[#ffd36b] duel-pulse" : TILE_RING[s.rarity]}`} dim={st === "locked"} />
                     <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-bold text-white">{s.no}</span>
+                    {s.minions.length > 0 && (
+                      <span className="absolute right-1 top-7 rounded bg-black/65 px-1 text-[9px] font-bold text-white" title={`수하 ${s.minions.length}명`}>
+                        +{s.minions.length}
+                      </span>
+                    )}
                     {s.pattern && (
                       <span className="absolute left-1/2 top-1 -translate-x-1/2 rounded bg-[#d9443a] px-1 text-[9px] font-black text-white shadow" title={`특수 보스 · ${BOSS_PATTERNS[s.pattern].name}`}>
                         {BOSS_PATTERNS[s.pattern].name}
@@ -341,7 +365,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         </div>
       </section>
       <p className="px-1 text-[11px] leading-5 text-faint">
-        배틀은 자동으로 진행됩니다. 필살기 게이지는 0에서 시작해 기본 공격 두 번이면 가득 차고, 세 번째 행동에 필살기를 씁니다. 보스는 혼자라 체력이 크고, 내 카드 3장이 움직일 때마다 한 번씩 움직입니다. 5관마다·마지막 관은 특수 패턴 보스입니다. 코인은 학습으로만 받습니다.
+        배틀은 자동으로 진행됩니다. 필살기 게이지는 0에서 시작해 기본 공격 두 번이면 가득 차고, 세 번째 행동에 필살기를 씁니다. 보스는 체력이 크고, 희귀 관부터 수하가 함께 나옵니다 (희귀 1명 · 영웅·전설 2명, 한 단계 아래 등급). 전설 관은 더 강합니다. 5관마다·마지막 관은 특수 패턴 보스입니다. 코인은 학습으로만 받습니다.
       </p>
     </div>
   );

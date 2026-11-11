@@ -7,7 +7,7 @@
  *  - 앞 관을 모두 깨야 다음 관이 열린다
  */
 import type { BossPattern, Fighter } from "./battle.ts";
-import { DEFAULT_RARITY_MULT, type Rarity, type SkillEffect } from "./rules.ts";
+import { DEFAULT_RARITY_MULT, RARITIES, type Rarity, type SkillEffect } from "./rules.ts";
 
 export interface StageCard {
   philosopherId: string;
@@ -39,7 +39,21 @@ export interface CampaignStage {
   shape: { atk: number; hp: number };
   /** 특수 보스 패턴 (5관마다 · 마지막 관), 없으면 null */
   pattern: BossPattern | null;
+  /** 보스와 함께 나오는 수하 (희귀 관 1명 · 영웅·전설 관 2명, 등급은 보스보다 한 단계 아래, 바로 앞 관들의 사상가) */
+  minions: { id: string; rarity: Rarity; shape: { atk: number; hp: number } }[];
 }
+
+/** 보스 등급별 수하 수 */
+export const MINION_COUNT: Record<Rarity, number> = { common: 0, rare: 1, epic: 2, legendary: 2 };
+const prevRarity = (r: Rarity): Rarity => RARITIES[Math.max(0, RARITIES.indexOf(r) - 1)];
+
+/**
+ * 수하 · 보스 조정 (시뮬레이션으로 정함, scripts/test-duel.ts)
+ *  - 수하: 평균 기본 능력치 × 한 단계 아래 등급 × 같은 레벨 배율 × minion 배율
+ *  - 수하가 있으면 보스 체력은 bossHp[수하 수] 만큼 (팀 전체 세기는 비슷하게)
+ *  - 전설 관은 legendary 배율만큼 모두 더 강하게
+ */
+export const MINION_TUNE = { atk: 0.95, hp: 1.05, bossHp: [1, 0.86, 0.86] as number[], legendary: 1.1 };
 
 /** 특수 보스: 5관마다(5 재생 · 10 격노 · 15 철벽 · 20 재생 …) + 마지막 관은 격노 */
 export function stagePattern(no: number, total: number): BossPattern | null {
@@ -109,20 +123,24 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
     const t = n > 1 ? i / (n - 1) : 0;
     const tier = Math.min(4, Math.floor(t * 5));
     // 성향 모양: 이 사상가 기본값 ÷ 평균, 곱이 1 이 되게 맞춤
-    let shape = { atk: 1, hp: 1 };
-    if (boss.baseAtk && boss.baseHp) {
-      const a = boss.baseAtk / base.atk;
-      const h = boss.baseHp / base.hp;
+    const shapeOf = (c: T) => {
+      if (!c.baseAtk || !c.baseHp) return { atk: 1, hp: 1 };
+      const a = c.baseAtk / base.atk;
+      const h = c.baseHp / base.hp;
       const k = Math.sqrt(a * h);
-      shape = { atk: a / k, hp: h / k };
-    }
+      return { atk: a / k, hp: h / k };
+    };
+    const shape = shapeOf(boss);
+    const rarity = rarityAt(t);
+    // 수하: 바로 앞 관의 사상가부터 (이미 이긴 상대가 보스를 돕는다)
+    const minions = Array.from({ length: Math.min(MINION_COUNT[rarity], i) }, (_, k) => ordered[i - 1 - k]).map((c) => ({ id: c.philosopherId, rarity: prevRarity(rarity), shape: shapeOf(c) }));
     return {
       index: i,
       no: i + 1,
       bossId: boss.philosopherId,
       tradition: boss.tradition,
       tier,
-      rarity: rarityAt(t),
+      rarity,
       level: i + 1,
       statLevel: 1 + t * (maxLevel - 1),
       hpMul: lerp(tune.hp, t),
@@ -130,6 +148,7 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
       base,
       shape,
       pattern: stagePattern(i + 1, n),
+      minions,
     };
   });
 }
@@ -163,8 +182,33 @@ export function stageBossStats(stage: CampaignStage, mult: Record<Rarity, number
   const lv = 1 + 0.12 * (stage.statLevel - 1); // statsAt 과 같은 레벨 배율 (연속값)
   const shape = stage.shape ?? { atk: 1, hp: 1 };
   // 특수 보스는 패턴이 있으니 기본 체력은 조금 낮춤 (패턴 포함해 보통 보스보다 어렵게)
-  const sp = stage.pattern ? PATTERN_HP : 1;
-  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp * sp) };
+  const mc = stage.minions?.length ?? 0;
+  // 혼자 싸우는 특수 보스만 체력을 낮춤 (수하가 있으면 패턴이 그대로 추가 위협)
+  const sp = stage.pattern && mc === 0 ? PATTERN_HP : 1;
+  const lg = stage.rarity === "legendary" ? MINION_TUNE.legendary : 1;
+  const bh = MINION_TUNE.bossHp[mc] ?? 1;
+  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk * lg), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp * sp * bh * lg) };
+}
+
+/** 수하 능력치 (보통 카드 크기, 한 단계 아래 등급) */
+export function stageMinionStats(stage: CampaignStage, m: CampaignStage["minions"][number], mult: Record<Rarity, number> = DEFAULT_RARITY_MULT) {
+  const r = mult[m.rarity] ?? 1;
+  const lv = 1 + 0.12 * (stage.statLevel - 1);
+  const lg = stage.rarity === "legendary" ? MINION_TUNE.legendary : 1;
+  return { atk: Math.round(stage.base.atk * r * lv * MINION_TUNE.atk * m.shape.atk * lg), hp: Math.round(stage.base.hp * r * lv * MINION_TUNE.hp * m.shape.hp * lg) };
+}
+
+/** 관의 적 전체 (보스 foe-0 + 수하 foe-1 · foe-2). 카드 정보가 없는 수하는 빠짐 */
+export function stageFoes(stage: CampaignStage, cards: Map<string, StageCard>, mult?: Record<Rarity, number>): Fighter[] {
+  const boss = stageBoss(stage, cards.get(stage.bossId)!, mult);
+  const minions = (stage.minions ?? [])
+    .map((m) => ({ m, c: cards.get(m.id) }))
+    .filter((x): x is { m: CampaignStage["minions"][number]; c: StageCard } => Boolean(x.c))
+    .map(({ m, c }, k) => {
+      const st = stageMinionStats(stage, m, mult);
+      return { key: `foe-${k + 1}`, philosopherId: c.philosopherId, name: c.name, atk: st.atk, hp: st.hp, skillName: c.skillName, skillEffect: c.skillEffect };
+    });
+  return [boss, ...minions];
 }
 
 /** 관 보스 → 배틀 참가자 */
