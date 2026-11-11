@@ -370,14 +370,8 @@ export function BattleStage({
     const step = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DUR[ev.t]) * t);
     return () => clearTimeout(step);
   }, [idx, done, t, replay.events, talking]);
-  // 대사 자동 넘김 (글자 수만큼 읽을 시간)
-  // (대사 배열은 화면마다 새로 만들어질 수 있으니 지금 줄의 길이에만 의존)
-  const lineLen = intro?.[introAt]?.text.length ?? 0;
-  useEffect(() => {
-    if (!talking) return;
-    const h = setTimeout(() => setIntroAt((i) => i + 1), Math.max(2200, lineLen * 75) * t);
-    return () => clearTimeout(h);
-  }, [talking, introAt, lineLen, t]);
+  // 대사는 자동으로 넘어가지 않음: 화면을 누르거나 '다음'을 눌러야 넘어감
+
   // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
   const { impacted, shown } = useImpact(idx, current, t, IMPACT, reduced());
   const st = stateAt(units, replay.events, shown);
