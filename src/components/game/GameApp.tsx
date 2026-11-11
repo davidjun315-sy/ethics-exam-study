@@ -28,7 +28,7 @@ const TABS: { key: Tab; label: string; short: string }[] = [
 
 export function Coins({ value, className = "" }: { value: number; className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border border-warn/40 bg-warn-soft px-3 py-1 text-sm font-bold tabular-nums text-warn ${className}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-warn/40 bg-warn-soft px-3 py-1 text-sm font-bold tabular-nums text-warn ${className}`}>
       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-warn text-[9px] font-black text-on-accent">C</span>
       {value.toLocaleString()}
     </span>

@@ -10,8 +10,8 @@ export type { FeaturedSummary };
 
 function CoinChip({ value }: { value: number }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-warn/40 bg-warn-soft px-2.5 py-0.5 text-sm font-bold tabular-nums text-warn">
-      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-warn text-[9px] font-black text-on-accent">C</span>
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-warn/40 bg-warn-soft px-2.5 py-0.5 text-sm font-bold tabular-nums text-warn">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-warn text-[9px] font-black text-on-accent">C</span>
       {value.toLocaleString()}
     </span>
   );
@@ -99,10 +99,15 @@ export function FeaturedPhilosopher({ game, variant, children }: { game: Feature
       <div className={`relative grid gap-4 p-4 sm:gap-5 sm:p-5 ${compact ? "grid-cols-[6.5rem_minmax(0,1fr)] sm:grid-cols-[8rem_minmax(0,1fr)]" : "grid-cols-[7.5rem_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)]"}`}>
         <div>{art}</div>
         <div className="flex min-w-0 flex-col">
-          <div className="flex items-center gap-2">
-            <span className="eyebrow">나의 대표 사상가</span>
+          {/* 좁은 화면에서 코인이 눌려 깨지지 않게: 코인은 줄어들지 않고, 칭호는 넘치면 다음 줄로 */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="eyebrow whitespace-nowrap">나의 대표 사상가</span>
             <TitleBadge title={game.title} />
-            {!compact && <span className="ml-auto"><CoinChip value={game.coins} /></span>}
+            {!compact && (
+              <span className="ml-auto shrink-0">
+                <CoinChip value={game.coins} />
+              </span>
+            )}
           </div>
           <h2 className="mt-1 truncate text-xl font-extrabold tracking-tight sm:text-2xl">{f.name}</h2>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px]">
