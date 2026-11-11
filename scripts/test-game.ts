@@ -4,6 +4,8 @@ import { canUpgrade, DEFAULT_RARITY_MULT, effectiveRates, fusionProblem, nextRar
 import { teamSynergies, withSynergy } from "../src/lib/game/synergy.ts";
 import { achievements, bonusText, canUseTitle, titleSynergy } from "../src/lib/game/achievements.ts";
 import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
+import { buildDialogue, josa, pickResponder } from "../src/lib/game/dialogue.ts";
+import { RIVALS, THOUGHTS } from "../src/lib/game/thought.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -152,6 +154,30 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
     { learner: "z", stage: 2, at: "2026-11-10T00:20:00Z" },
   ]);
   check("랭킹: 같은 관은 한 번 · 관 번호 합 · 같은 점수는 먼저 달성한 사람", r.map((x) => `${x.learner}${x.score}`).join(" ") === "y4 x4 z2", r.map((x) => `${x.learner}${x.score}`).join(" "));
+}
+
+
+// ---------------------------------------------------------------------
+// 배틀 전 논쟁 대사
+// ---------------------------------------------------------------------
+{
+  const sp = (key: string, name: string, tradition = "동양윤리") => ({ key, name, tradition, skillName: "필살기", quote: "" });
+  check("조사: 맹자가 · 정약용이 · 롤스가 · 칸트가", josa("맹자", "이", "가") === "맹자가" && josa("정약용", "이", "가") === "정약용이" && josa("롤스", "이", "가") === "롤스가" && josa("칸트", "이", "가") === "칸트가");
+  // 맞수가 팀에 있으면 그 사상가가 나서고 전용 대사
+  const d1 = buildDialogue(sp("foe-0", "순자"), [sp("me-0", "공자"), sp("me-1", "맹자"), sp("me-2", "칸트", "서양윤리")]);
+  check("맞수(순자 ↔ 맹자): 맹자가 반박", d1[2].who === "ally" && d1[2].name === "맹자" && /우물/.test(d1[2].text) && d1[1].who === "boss" && /예로 바로잡아야/.test(d1[1].text), d1.map((l) => l.text).join(" / "));
+  // 일반: 보스가 상대의 핵심어를 비판 → 상대가 보스의 핵심어를 반박 → 겨루자
+  const d2 = buildDialogue(sp("foe-0", "지눌"), [sp("me-0", "루소", "서양윤리"), sp("me-1", "공자")]);
+  check("일반 논쟁: 다른 분야 사상가가 나서고, 서로의 핵심어를 짚음", d2[1].text.includes("루소여") && d2[1].text.includes("「일반의지」라니") && d2[2].text.includes("지눌이여") && d2[2].text.includes("「돈오점수와 정혜쌍수」") && /겨루어/.test(d2[3].text), d2.map((l) => l.text).join(" / "));
+  check("부르는 말: 정약용이여 · 맹자여", buildDialogue(sp("foe-0", "정약용"), [sp("me-0", "맹자")])[2].text.startsWith("정약용이여") && buildDialogue(sp("foe-0", "정약용"), [sp("me-0", "맹자")])[1].text.startsWith("맹자여"));
+  // 표에 없는 사상가: 카드 정보로 대신
+  const d3 = buildDialogue({ key: "foe-0", name: "새사상가", tradition: "x", skillName: "새로운 빛", quote: "나는 새롭다." }, [sp("me-0", "공자")]);
+  check("표에 없는 사상가: 필살기 이름 · 대사로 대신", d3[3].text.startsWith("나는 새롭다.") && d3[4].text.includes("「새로운 빛」"));
+  check("팀이 없으면 대사 없음", buildDialogue(sp("foe-0", "공자"), []).length === 0);
+  check("맞수 우선 선택", pickResponder(sp("foe-0", "노직"), [sp("me-0", "공자"), sp("me-1", "롤스", "사회사상")]).name === "롤스");
+  // 도장깨기 순서표(BORN)의 사상가는 모두 사상 요약이 있음
+  const born = ["석가모니", "공자", "묵자", "노자", "맹자", "장자", "순자", "주희", "왕수인", "원효", "지눌", "이황", "이이", "정약용", "소크라테스", "플라톤", "아리스토텔레스", "칸트", "벤담", "밀", "롤스", "노직", "샌델", "싱어", "레건", "길리건", "나딩스", "콜버그", "루소", "홉스", "로크", "마르크스", "니체", "사르트르"];
+  check("주요 사상가 사상 요약 · 맞수 대사가 모두 채워짐", born.every((n) => THOUGHTS[n]?.k && THOUGHTS[n].c && THOUGHTS[n].r) && RIVALS.every((r) => THOUGHTS[r.a] && THOUGHTS[r.b] && r.aSays && r.bSays), born.filter((n) => !THOUGHTS[n]).join(","));
 }
 
 if (failed) {

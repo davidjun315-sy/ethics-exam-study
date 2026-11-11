@@ -7,6 +7,7 @@ import { stateAt, useImpact } from "./BattleTab";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
 import { BOSS_PATTERNS, chargeAt, SKILL_READY, type BossPattern } from "@/lib/game/battle";
 import { SynergyChips } from "./SynergyChips";
+import type { DialogueLine } from "@/lib/game/dialogue";
 
 /**
  * 도장깨기 전장: 캐릭터가 서서 싸우는 화면 (자동 배틀 기록을 재생만 함 — 결과는 서버가 정함).
@@ -278,18 +279,65 @@ function CutIn({ u, theme, name, effect, boss }: { u: BattleCard; theme: FxTheme
   );
 }
 
+/** 배틀 전 논쟁 장면: 말하는 사상가가 자기 쪽에 크게, 아래 대사 상자 (누르면 다음) */
+function DebateOverlay({ line, at, total, byKey, onNext, onSkip }: { line: DialogueLine; at: number; total: number; byKey: Map<string, BattleCard>; onNext: () => void; onSkip: () => void }) {
+  const u = line.key ? byKey.get(line.key) : undefined;
+  const boss = line.who === "boss";
+  const narration = line.who === "narration";
+  return (
+    <div className="debate absolute inset-0 z-[90] cursor-pointer select-none" onClick={onNext} role="dialog" aria-label="배틀 전 논쟁" aria-live="polite">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/30" />
+      {u && (
+        <div key={`${at}-${u.key}`} className={`debate-char absolute bottom-[26%] h-[62%] ${boss ? "debate-from-r right-[3%]" : "debate-from-l left-[3%]"}`}>
+          <Figure u={u} boss={boss} />
+        </div>
+      )}
+      <div key={at} className={`debate-box absolute inset-x-2 bottom-2 rounded-xl border px-3 py-2.5 sm:inset-x-6 sm:bottom-4 sm:px-4 sm:py-3 ${narration ? "border-white/15 bg-black/60 text-center" : boss ? "border-[#ef6a5a]/50 bg-[#1a0f12]/90" : "border-[#7fb2ff]/50 bg-[#0e1626]/90"}`}>
+        {!narration && u && (
+          <div className={`mb-1 flex items-center gap-1.5 text-xs font-black ${boss ? "justify-end text-[#ff9f92]" : "text-[#9fc6ff]"}`}>
+            <span className={`rounded px-1.5 py-px text-[10px] ${boss ? "bg-[#ef6a5a] text-white" : "bg-[#5aa2ff] text-white"}`}>{boss ? "보스" : "내 팀"}</span>
+            {u.name}
+          </div>
+        )}
+        <p className={`text-[13px] leading-relaxed text-white sm:text-[15px] ${narration ? "font-bold italic text-[#ffe7a8]" : ""}`}>{line.text}</p>
+        <div className="mt-1.5 flex items-center justify-between text-[10px] text-white/50">
+          <span>
+            {at + 1}/{total} · 게임을 위한 창작 대사
+          </span>
+          <span className="flex gap-1.5">
+            <button
+              type="button"
+              className="rounded bg-white/10 px-2 py-0.5 text-white/80 hover:bg-white/20"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkip();
+              }}
+            >
+              대화 넘기기 ≫
+            </button>
+            <span className="rounded bg-white/15 px-2 py-0.5 font-bold text-white">{at + 1 < total ? "다음 ▶" : "겨루기 시작 ▶"}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BattleStage({
   replay,
   tradition,
   bgUrl,
   title,
   result,
+  intro,
 }: {
   replay: BattleReplay;
   tradition: string;
   bgUrl?: string;
   title?: ReactNode;
   result?: ReactNode;
+  /** 배틀 전 논쟁 대사 (끝나야 배틀 시작) */
+  intro?: DialogueLine[];
 }) {
   const units = useMemo(() => [...replay.me, ...replay.foe], [replay]);
   const byKey = useMemo(() => new Map(units.map((u) => [u.key, u])), [units]);
@@ -299,6 +347,9 @@ export function BattleStage({
   const [size, setSize] = useState({ W: 360, H: 300 });
   const done = idx >= replay.events.length;
   const current = idx > 0 ? replay.events[idx - 1] : null;
+  // 배틀 전 논쟁: 다 넘기면(또는 건너뛰면) 배틀 시작
+  const [introAt, setIntroAt] = useState(0);
+  const talking = Boolean(intro?.length) && introAt < (intro?.length ?? 0);
   // 도장깨기 기록이면 보스 특수 패턴
   const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
   const nFoes = replay.foe.length;
@@ -314,11 +365,19 @@ export function BattleStage({
 
   // 다음 사건으로 · 맞는 순간에 체력·피해 숫자 반영
   useEffect(() => {
-    if (done) return;
+    if (done || talking) return;
     const ev = replay.events[idx];
     const step = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DUR[ev.t]) * t);
     return () => clearTimeout(step);
-  }, [idx, done, t, replay.events]);
+  }, [idx, done, t, replay.events, talking]);
+  // 대사 자동 넘김 (글자 수만큼 읽을 시간)
+  // (대사 배열은 화면마다 새로 만들어질 수 있으니 지금 줄의 길이에만 의존)
+  const lineLen = intro?.[introAt]?.text.length ?? 0;
+  useEffect(() => {
+    if (!talking) return;
+    const h = setTimeout(() => setIntroAt((i) => i + 1), Math.max(2200, lineLen * 75) * t);
+    return () => clearTimeout(h);
+  }, [talking, introAt, lineLen, t]);
   // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
   const { impacted, shown } = useImpact(idx, current, t, IMPACT, reduced());
   const st = stateAt(units, replay.events, shown);
@@ -494,7 +553,14 @@ export function BattleStage({
             </button>
           ))}
           {!done && (
-            <button type="button" onClick={() => setIdx(replay.events.length)} className="rounded bg-white/10 px-2 py-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setIntroAt(intro?.length ?? 0);
+                setIdx(replay.events.length);
+              }}
+              className="rounded bg-white/10 px-2 py-0.5"
+            >
               건너뛰기
             </button>
           )}
@@ -505,6 +571,7 @@ export function BattleStage({
           <Scene tradition={tradition} bgUrl={bgUrl} />
           {replay.me.map((u, i) => unit(u, slotOf(u.key, nFoes), false, i))}
           {replay.foe.map((u, i) => unit(u, slotOf(u.key, nFoes), true, i + 3))}
+          {talking && intro && <DebateOverlay line={intro[introAt]} at={introAt} total={intro.length} byKey={byKey} onNext={() => setIntroAt((i) => i + 1)} onSkip={() => setIntroAt(intro.length)} />}
           <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
             {fx}
             {current?.t === "phase" && (

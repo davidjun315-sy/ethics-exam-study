@@ -9,6 +9,7 @@ import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { initialTeam, TeamPicker } from "./BattleTab";
 import { BattleStage } from "./BattleStage";
+import { buildDialogue } from "@/lib/game/dialogue";
 import { SynergyChips } from "./SynergyChips";
 import { BOSS_PATTERNS } from "@/lib/game/battle";
 import { teamSynergies, withSynergy } from "@/lib/game/synergy";
@@ -18,6 +19,16 @@ const TILE_RING: Record<string, string> = { common: "ring-[#9aa4b5]/70", rare: "
 const TILE_TEXT: Record<string, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
 const stars = (tier: number) => "★".repeat(tier + 1) + "☆".repeat(4 - tier);
 const tShort = (t: string) => t.replace("윤리", "");
+
+/** 배틀 전 논쟁: 보스(foe-0) ↔ 내 팀 중 한 명 */
+function debateFor(replay: StageReplay, byId: Map<string, CardView>) {
+  const sp = (u: StageReplay["me"][number]) => {
+    const c = byId.get(u.philosopherId);
+    return { key: u.key, name: u.name, tradition: u.tradition, skillName: u.skillName, skillDesc: c?.skillDesc, quote: c?.quote };
+  };
+  const boss = replay.foe[0];
+  return boss ? buildDialogue(sp(boss), replay.me.map(sp)) : [];
+}
 
 function Portrait({ c, className = "", dim = false }: { c?: CardView; className?: string; dim?: boolean }) {
   return (
@@ -90,6 +101,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         replay={replay}
         tradition={boss?.tradition ?? ""}
         bgUrl={boss ? state.settings.battleBg?.[boss.tradition] : undefined}
+        intro={debateFor(replay, byId)}
         title={
           <span className="font-semibold text-[#ffd36b]">
             {replay.stage.no}관 · {boss?.name}
