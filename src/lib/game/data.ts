@@ -10,7 +10,7 @@ import { chooseDuelAction } from "./duelAi";
 import { pickDuelDeck } from "./duelDeck";
 import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBoss, stageBossStats, stageStones } from "./campaign";
 import { teamSynergies, withSynergy, type Synergy } from "./synergy";
-import { achievements, canUseTitle, type Achievement } from "./achievements";
+import { achievements, canUseTitle, titleSynergy, type Achievement } from "./achievements";
 import { rankWeekly, weekStart } from "./ranking";
 import {
   canFuseCard,
@@ -611,7 +611,9 @@ export async function playBattle(learner: string, deckIds: string[], difficulty:
   };
   const me0 = mine.map((m, i) => asBattle(m!, m!.rarity, m!.level, `me-${i}`, m!.cardId));
   const foe0 = shuffled.slice(0, 3).map((c, i) => asBattle(c, foeRarities[i], lv, `foe-${i}`, null));
-  const synergy = { me: teamSynergies(me0), foe: teamSynergies(foe0) };
+  // 내 팀: 시너지 + 달고 있는 칭호 효과 / 상대: 시너지만
+  const titleFx = titleSynergy(state.achievements, state.title.value);
+  const synergy = { me: [...teamSynergies(me0), ...(titleFx ? [titleFx] : [])], foe: teamSynergies(foe0) };
   const me = me0.map((b) => withSynergy(b, synergy.me));
   const foe = foe0.map((b) => withSynergy(b, synergy.foe));
   const toFighter = (b: BattleCard): Fighter => ({ key: b.key, philosopherId: b.philosopherId, name: b.name, atk: b.atk, hp: b.hp, skillName: b.skillName, skillEffect: b.skillEffect });
@@ -657,7 +659,8 @@ export async function playStage(learner: string, bossId: string, deckIds: string
 
   const seed = crypto.randomUUID();
   const me0: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
-  const synergy = { me: teamSynergies(me0), foe: [] as Synergy[] };
+  const titleFx = titleSynergy(state.achievements, state.title.value);
+  const synergy = { me: [...teamSynergies(me0), ...(titleFx ? [titleFx] : [])], foe: [] as Synergy[] };
   const me = me0.map((b) => withSynergy(b, synergy.me));
   const bs = stageBossStats(stage, settings.rarity_mult);
   const boss: BattleCard = { key: "foe-0", cardId: null, philosopherId: card.philosopherId, name: card.name, rarity: stage.rarity, level: stage.level, atk: bs.atk, hp: bs.hp, skillName: card.skillName, skillEffect: card.skillEffect, artUrl: card.artUrl, tradition: card.tradition, battleArtUrl: card.battleArtUrl ?? null };

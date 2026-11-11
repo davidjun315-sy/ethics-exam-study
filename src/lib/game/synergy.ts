@@ -8,14 +8,14 @@
 import type { SkillEffect } from "./rules.ts";
 
 export interface Synergy {
-  id: "same3" | "same2" | "diverse" | "vanguard" | "bulwark";
+  id: "same3" | "same2" | "diverse" | "vanguard" | "bulwark" | "title";
   name: string;
   desc: string;
   atk: number; // 더하는 비율 (0.08 = +8%)
   hp: number;
 }
 
-export const SYNERGIES: Record<Synergy["id"], Omit<Synergy, "id">> = {
+export const SYNERGIES: Record<Exclude<Synergy["id"], "title">, Omit<Synergy, "id">> = {
   same3: { name: "동문수학", desc: "같은 분야 3명 · 체력 +12%", atk: 0, hp: 0.12 },
   same2: { name: "학파", desc: "같은 분야 2명 · 체력 +6%", atk: 0, hp: 0.06 },
   diverse: { name: "백가쟁명", desc: "성향이 모두 다름 · 공격 +8%", atk: 0.08, hp: 0 },
@@ -27,7 +27,7 @@ const DPS: SkillEffect[] = ["strike", "sweep", "stun"];
 
 export function teamSynergies(team: { tradition: string; skillEffect: SkillEffect }[]): Synergy[] {
   if (team.length < 2) return [];
-  const out: Synergy["id"][] = [];
+  const out: Exclude<Synergy["id"], "title">[] = [];
   const byTrad = new Map<string, number>();
   for (const m of team) byTrad.set(m.tradition, (byTrad.get(m.tradition) ?? 0) + 1);
   const most = Math.max(...byTrad.values());

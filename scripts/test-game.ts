@@ -2,7 +2,7 @@
 import { opponentLevel, runBattle, seededRandom, type Fighter } from "../src/lib/game/battle.ts";
 import { canUpgrade, DEFAULT_RARITY_MULT, effectiveRates, fusionProblem, nextRarity, quizCoins, RARITIES, SHARDS_FOR_CARD, statsAt, statsFor, upgradeCost } from "../src/lib/game/rules.ts";
 import { teamSynergies, withSynergy } from "../src/lib/game/synergy.ts";
-import { achievements, canUseTitle } from "../src/lib/game/achievements.ts";
+import { achievements, bonusText, canUseTitle, titleSynergy } from "../src/lib/game/achievements.ts";
 import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
@@ -124,6 +124,22 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
   check("업적: 못 채운 것은 미달성 (서양 · 만물박사 · 백전노장)", !done.has("서양의 철인") && !done.has("만물박사") && !done.has("백전노장") && canUseTitle(some, "논객") && !canUseTitle(some, "백전노장"));
   check("업적: 공개 사상가가 적으면 목표도 줄어듦 (5명 → 3명)", some.find((a) => a.id === "collect5")!.count === "2/3");
 
+  // 칭호 효과: 어려운 칭호일수록 큼
+  {
+    const all = achievements({ ...base, cards: Array.from({ length: 30 }, (_, i) => ({ philosopherId: `p${i}`, tradition: ["동양윤리", "한국윤리", "서양윤리", "사회사상"][i % 4] })), stagesTotal: 20 });
+    const power = (a: (typeof all)[number]) => a.bonus.atk + a.bonus.hp;
+    const ordered = [...all].sort((a, b) => a.tier - b.tier);
+    check("칭호 효과: 등급(★)이 높을수록 효과 합이 작아지지 않음", ordered.every((a, i) => i === 0 || power(a) >= power(ordered[i - 1]) - 1e-9), ordered.map((a) => `${a.title}★${a.tier}:${Math.round(power(a) * 100)}`).join(" "));
+    const by = (id: string) => all.find((a) => a.id === id)!;
+    check("칭호 효과: 견습 철학도(+2%) < 전설을 부르는 자 < 천하제일(+12%)", power(by("first")) < power(by("legend")) && power(by("legend")) < power(by("stageAll")) && Math.round(power(by("stageAll")) * 100) === 12);
+    check("칭호 효과: 모든 칭호에 효과가 있음", all.every((a) => power(a) > 0));
+    check("칭호 효과 문구", bonusText({ atk: 0.04, hp: 0.01 }) === "공격 +4% · 체력 +1%");
+    const got = achievements({ ...base, owned: [{ philosopherId: "a", rarity: "legendary", level: 5 }] });
+    const fx = titleSynergy(got, "전설을 부르는 자");
+    check("달고 있는 칭호 → 팀 효과 (얻은 칭호만)", !!fx && fx.atk === 0.04 && titleSynergy(got, "천하제일") === null && titleSynergy(got, null) === null);
+    const w2 = withSynergy({ atk: 100, hp: 1000 }, [fx!]);
+    check("칭호 효과 반영: 공격 104 · 체력 1010", w2.atk === 104 && w2.hp === 1010, JSON.stringify(w2));
+  }
   // 한국 시간 월요일 0시
   check("주 시작: 한국 시간 일요일 밤 → 그 주 월요일 0시", weekStart(new Date("2026-11-15T14:00:00Z")).toISOString() === "2026-11-08T15:00:00.000Z");
   check("주 시작: 한국 시간 월요일 0시 직후 → 그날", weekStart(new Date("2026-11-15T15:00:01Z")).toISOString() === "2026-11-15T15:00:00.000Z");

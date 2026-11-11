@@ -4,6 +4,7 @@
  * 달성한 업적의 이름이 곧 칭호이고, 고른 칭호 하나를 game_profiles.title 에 저장한다 (019).
  */
 import type { Rarity } from "./rules.ts";
+import type { Synergy } from "./synergy.ts";
 
 export interface AchievementInput {
   owned: { philosopherId: string; rarity: Rarity; level: number }[];
@@ -27,6 +28,46 @@ export interface Achievement {
   progress: number; // 0~1
   /** 진행 표시 (예: 3/5) */
   count?: string;
+  /** 칭호 등급 1~5 (어려울수록 높음) */
+  tier: number;
+  /** 칭호를 달면 배틀에서 내 팀 능력치 +비율 */
+  bonus: { atk: number; hp: number };
+}
+
+/**
+ * 칭호 효과: 얻기 어려운 칭호일수록 큼 (도장깨기 · 빠른 대전의 내 팀, 하나만 달 수 있음)
+ *  ★1 +1~2% · ★2 +2~3% · ★3 +3~5% · ★4 +5~7% · ★5 +8%
+ */
+const TITLE_EFFECT: Record<string, { tier: number; atk: number; hp: number }> = {
+  first: { tier: 1, atk: 0, hp: 0.02 },
+  stage1: { tier: 1, atk: 0.02, hp: 0 },
+  collect5: { tier: 2, atk: 0.01, hp: 0.02 },
+  epic: { tier: 2, atk: 0.02, hp: 0.01 },
+  win10: { tier: 2, atk: 0.03, hp: 0 },
+  max1: { tier: 2, atk: 0, hp: 0.03 },
+  special1: { tier: 3, atk: 0.03, hp: 0.02 },
+  legend: { tier: 3, atk: 0.04, hp: 0.01 },
+  stage10: { tier: 3, atk: 0.02, hp: 0.03 },
+  trad: { tier: 3, atk: 0.02, hp: 0.03 },
+  collect15: { tier: 4, atk: 0.03, hp: 0.03 },
+  max3: { tier: 4, atk: 0.04, hp: 0.03 },
+  win50: { tier: 4, atk: 0.05, hp: 0.02 },
+  collectAll: { tier: 5, atk: 0.05, hp: 0.05 },
+  stageAll: { tier: 5, atk: 0.06, hp: 0.06 },
+};
+const effectOf = (id: string) => TITLE_EFFECT[id.startsWith("trad:") ? "trad" : id] ?? { tier: 1, atk: 0, hp: 0 };
+
+/** 달고 있는 칭호 → 팀 능력치 효과 (시너지와 같은 모양, 없으면 null) */
+export function titleSynergy(list: Achievement[], title: string | null | undefined): Synergy | null {
+  const a = title ? list.find((x) => x.done && x.title === title) : undefined;
+  if (!a || (!a.bonus.atk && !a.bonus.hp)) return null;
+  return { id: "title", name: `칭호 「${a.title}」`, desc: `칭호 · ${bonusText(a.bonus)}`, atk: a.bonus.atk, hp: a.bonus.hp };
+}
+
+/** 예: "공격 +4% · 체력 +2%" */
+export function bonusText(b: { atk: number; hp: number }): string {
+  const parts = [b.atk ? `공격 +${Math.round(b.atk * 100)}%` : "", b.hp ? `체력 +${Math.round(b.hp * 100)}%` : ""].filter(Boolean);
+  return parts.join(" · ") || "효과 없음";
 }
 
 const TRADITION_TITLES: Record<string, string> = { 동양윤리: "동양의 현자", 한국윤리: "해동의 선비", 서양윤리: "서양의 철인", 사회사상: "시대의 사상가" };
@@ -39,7 +80,8 @@ export function achievements(i: AchievementInput): Achievement[] {
   const out: Achievement[] = [];
   const add = (id: string, title: string, desc: string, group: Achievement["group"], cur: number, goal: number, showCount = true) => {
     const g = Math.max(1, goal);
-    out.push({ id, title, desc, group, done: cur >= g, progress: Math.min(1, cur / g), ...(showCount ? { count: `${Math.min(cur, g)}/${g}` } : {}) });
+    const e = effectOf(id);
+    out.push({ id, title, desc, group, done: cur >= g, progress: Math.min(1, cur / g), ...(showCount ? { count: `${Math.min(cur, g)}/${g}` } : {}), tier: e.tier, bonus: { atk: e.atk, hp: e.hp } });
   };
   // 수집 (공개 사상가 수보다 많이 요구하지 않음)
   add("first", "견습 철학도", "첫 카드를 얻는다", "수집", i.owned.length, 1, false);

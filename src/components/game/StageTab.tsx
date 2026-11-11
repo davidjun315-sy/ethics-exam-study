@@ -12,6 +12,7 @@ import { BattleStage } from "./BattleStage";
 import { SynergyChips } from "./SynergyChips";
 import { BOSS_PATTERNS } from "@/lib/game/battle";
 import { teamSynergies, withSynergy } from "@/lib/game/synergy";
+import { titleSynergy } from "@/lib/game/achievements";
 
 const TILE_RING: Record<string, string> = { common: "ring-[#9aa4b5]/70", rare: "ring-[#5aa2ff]", epic: "ring-[#b07cff]", legendary: "ring-[#ffc94a]" };
 const TILE_TEXT: Record<string, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
@@ -167,7 +168,8 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   const boss = byId.get(sel.bossId)!;
   const bossStats = stageBossStats(sel, state.settings.rarityMult);
   const teamCards = team.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
-  const synergy = teamSynergies(teamCards);
+  const titleFx = titleSynergy(state.achievements, state.title.value);
+  const synergy = [...teamSynergies(teamCards), ...(titleFx ? [titleFx] : [])];
   // 시너지 반영한 팀 합계 (배틀과 같은 계산)
   const teamPower = teamCards.map((o) => withSynergy(o, synergy)).reduce((n, o) => ({ atk: n.atk + o.atk, hp: n.hp + o.hp }), { atk: 0, hp: 0 });
   const allClear = clearedCount === stages.length;
@@ -275,6 +277,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               onToggle={(id) => setTeam((d) => (d.includes(id) ? d.filter((x) => x !== id) : d.length >= 3 ? d : [...d, id]))}
               maxLevel={state.settings.maxLevel}
               featuredId={state.featuredId}
+              extra={titleFx}
             />
           ) : (
             <div className="space-y-2">

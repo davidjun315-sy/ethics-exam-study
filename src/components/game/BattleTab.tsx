@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BattleCard, BattleReplay, GameState, OwnedCard } from "@/lib/game/data";
 import type { BattleEvent } from "@/lib/game/battle";
 import { BOSS_PATTERNS, DIFFICULTY_NAMES, type BossPattern, type Difficulty } from "@/lib/game/battle";
-import { teamSynergies } from "@/lib/game/synergy";
+import { teamSynergies, type Synergy } from "@/lib/game/synergy";
+import { titleSynergy } from "@/lib/game/achievements";
 import { SynergyChips, SynergyGuide } from "./SynergyChips";
 import { SKILL_EFFECTS, type SkillEffect } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
@@ -46,7 +47,7 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
           <h2 className="text-sm font-bold">덱 구성 <span className="font-normal text-muted">{deck.length}/3</span></h2>
           <span className="text-xs text-faint">대표 카드와 별개로 저장됩니다</span>
         </div>
-        <TeamPicker owned={state.owned} deck={deck} onToggle={toggle} maxLevel={state.settings.maxLevel} featuredId={state.featuredId} />
+        <TeamPicker owned={state.owned} deck={deck} onToggle={toggle} maxLevel={state.settings.maxLevel} featuredId={state.featuredId} extra={titleSynergy(state.achievements, state.title.value)} />
       </section>
       <aside className="card space-y-4 p-4 lg:sticky lg:top-20 lg:self-start">
         <div>
@@ -94,12 +95,12 @@ export function BattleTab({ state, reload, goDraw }: { state: GameState; reload:
 }
 
 /** 보유 카드에서 3장 고르기 (빠른 대전 · 도장깨기 팀 공용) */
-export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId }: { owned: OwnedCard[]; deck: string[]; onToggle: (id: string) => void; maxLevel: number; featuredId: string | null }) {
+export function TeamPicker({ owned, deck, onToggle, maxLevel, featuredId, extra = null }: { owned: OwnedCard[]; deck: string[]; onToggle: (id: string) => void; maxLevel: number; featuredId: string | null; extra?: Synergy | null }) {
   const team = deck.map((id) => owned.find((o) => o.cardId === id)).filter((o): o is OwnedCard => Boolean(o));
   return (
     <div className="space-y-2">
       <div className="space-y-1.5 rounded-lg bg-surface-2/60 p-2.5">
-        <SynergyChips list={teamSynergies(team)} empty={team.length < 3 ? "카드 3장을 고르면 팀 시너지가 보입니다." : "이 팀엔 시너지가 없습니다. 분야·성향을 맞춰 보세요."} />
+        <SynergyChips list={[...teamSynergies(team), ...(extra ? [extra] : [])]} empty={team.length < 3 ? "카드 3장을 고르면 팀 시너지가 보입니다." : "이 팀엔 시너지가 없습니다. 분야·성향을 맞춰 보세요."} />
         <SynergyGuide />
       </div>
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5" aria-label="보유 카드">

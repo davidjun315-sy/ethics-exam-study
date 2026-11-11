@@ -11,10 +11,18 @@ export function SynergyChips({ list, dark = false, empty }: { list: Synergy[]; d
         <li
           key={s.id}
           title={s.desc}
-          className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${dark ? "border-[#ffd36b]/40 bg-[#ffd36b]/10 text-[#ffe7a8]" : "border-[#c99a2e]/40 bg-[#ffd36b]/15 text-[#8a5a00] dark:text-[#ffd36b]"}`}
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${
+            s.id === "title"
+              ? dark
+                ? "border-white/25 bg-white/10 text-white/90"
+                : "border-navy/30 bg-navy-soft text-navy"
+              : dark
+                ? "border-[#ffd36b]/40 bg-[#ffd36b]/10 text-[#ffe7a8]"
+                : "border-[#c99a2e]/40 bg-[#ffd36b]/15 text-[#8a5a00] dark:text-[#ffd36b]"
+          }`}
         >
-          ✦ {s.name}
-          <span className="ml-1 font-medium opacity-80">{s.desc.split(" · ")[1]}</span>
+          {s.id === "title" ? "♛" : "✦"} {s.name}
+          <span className="ml-1 font-medium opacity-80">{s.desc.slice(s.desc.indexOf(" · ") + 3)}</span>
         </li>
       ))}
     </ul>
@@ -33,6 +41,7 @@ export function SynergyGuide() {
           </li>
         ))}
         <li className="text-faint">「학파」와 「동문수학」은 둘 중 하나만 적용됩니다.</li>
+        <li className="text-faint">달고 있는 칭호도 내 팀 능력치를 올립니다 (어려운 칭호일수록 큼 · 명예의 전당에서 확인).</li>
       </ul>
     </details>
   );

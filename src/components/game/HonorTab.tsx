@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, Crown, Medal, Trophy } from "lucide-react";
 import type { GameState, WeeklyRanking } from "@/lib/game/data";
-import type { Achievement } from "@/lib/game/achievements";
+import { bonusText, type Achievement } from "@/lib/game/achievements";
 import { quizApi } from "@/lib/quiz/client";
 
 const GROUPS: Achievement["group"][] = ["수집", "성장", "도장깨기", "대전", "분야"];
@@ -41,7 +41,8 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
     };
   }, []);
 
-  const done = state.achievements.filter((a) => a.done);
+  // 효과가 큰 칭호부터
+  const done = state.achievements.filter((a) => a.done).sort((a, b) => b.tier - a.tier || b.bonus.atk + b.bonus.hp - (a.bonus.atk + a.bonus.hp));
   const current = state.title.value;
 
   async function choose(title: string | null) {
@@ -87,11 +88,22 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
                 >
                   {current === a.title && <Check className="mr-1 inline h-3 w-3" aria-hidden />}
                   {a.title}
+                  <span className="ml-1.5 text-[10px] text-[#c99a2e]" aria-label={`등급 ${a.tier}`}>{"★".repeat(a.tier)}</span>
+                  <span className="ml-1 text-[10px] opacity-75">{bonusText(a.bonus)}</span>
                 </button>
               ))}
             </div>
           )}
-          <p className="text-[11px] text-faint">고른 칭호는 주간 랭킹과 홈의 대표 사상가 옆에 보입니다. 같은 칭호를 다시 누르면 뗍니다.</p>
+          {(() => {
+            const cur = done.find((a) => a.title === current);
+            return cur ? (
+              <p className="rounded-lg bg-navy-soft/60 px-3 py-2 text-xs">
+                지금 효과 · 배틀에서 내 팀 <b className="text-navy">{bonusText(cur.bonus)}</b>
+                <span className="text-muted"> (도장깨기 · 빠른 대전)</span>
+              </p>
+            ) : null;
+          })()}
+          <p className="text-[11px] text-faint">칭호를 달면 배틀에서 내 팀 능력치가 오릅니다. 얻기 어려운 칭호(★이 많을수록)일수록 효과가 큽니다. 하나만 달 수 있고, 같은 칭호를 다시 누르면 뗍니다.</p>
           {msg && <p className={`text-sm font-semibold ${msg.ok ? "text-ok" : "text-danger"}`}>{msg.text}</p>}
         </section>
 
@@ -118,6 +130,10 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
                           <div className="text-[11px] text-muted">{a.desc}</div>
                         </div>
                         {a.count && <span className="shrink-0 text-xs tabular-nums text-muted">{a.count}</span>}
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1.5 pl-9 text-[11px]">
+                        <span className="text-[#c99a2e]" aria-label={`칭호 등급 ${a.tier}`}>{"★".repeat(a.tier)}<span className="text-line-strong">{"★".repeat(5 - a.tier)}</span></span>
+                        <span className={a.done ? "font-semibold text-navy" : "text-muted"}>칭호 효과 {bonusText(a.bonus)}</span>
                       </div>
                       {!a.done && (
                         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(a.progress * 100)} aria-label={`${a.title} 진행도`}>
