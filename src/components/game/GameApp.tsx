@@ -287,7 +287,7 @@ export function PhilosopherSheet({
             {quiz && quiz.total === 0 && (
               <div className="rounded-lg border border-line p-3 text-[11px] text-muted" data-quiz-progress>
                 <h3 className="mb-0.5 text-sm font-bold text-ink">윤리 퀴즈 진행</h3>
-                아직 이 사상가의 퀴즈 문제가 없습니다 (지금 출제 범위 기준).
+                아직 이 사상가의 기출 실전 문제가 없습니다 (정복 지도는 기출문제만 셉니다).
               </div>
             )}
             {quiz && quiz.total > 0 && (
@@ -312,8 +312,8 @@ export function PhilosopherSheet({
                   {quiz.reward === "claimable" && " · 정복 지도에서 보상을 받으세요"}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Link href={`/quiz/free?philosopher=${encodeURIComponent(card.name)}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
-                    이 사상가 문제 풀기 →
+                  <Link href={`/quiz/play?mode=free&kind=exam&philosopher=${encodeURIComponent(card.name)}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
+                    이 사상가 기출문제 풀기 →
                   </Link>
                   <Link href="/quiz/map" className="text-xs font-semibold text-navy hover:underline">
                     정복 지도

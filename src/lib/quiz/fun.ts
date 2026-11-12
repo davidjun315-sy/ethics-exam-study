@@ -26,6 +26,9 @@ const loadItems = cached("quiz-fun-items", () =>
   fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, format, philosopher_names, area").eq("status", "approved").order("id").range(from, to)),
 );
 
+/** 정복 지도에서 세는 문제: 기출 실전 문제만 (개념 다지기 연습문제 · 예상 문제 제외, 출제 범위 설정과 무관) */
+const conquestItems = (items: ItemRow[]) => items.filter((it) => it.kind === "exam");
+
 function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()) {
   // 이름 · 별칭을 같은 사상가끼리 묶고(비슷한 이름 포함), 묶음마다 대표 한 줄:
   // 게임 카드가 있는 줄 → 괄호 없는 이름 → 짧은 이름 순
@@ -184,16 +187,14 @@ function mapTradition(name: string, cardTradition: string | undefined, phTraditi
 
 export async function getConquest(learner: string): Promise<Conquest> {
   const db = getAdminClient();
-  const [phs, items, correct, prof, claims, cards] = await Promise.all([
+  const [phs, items, correct, claims, cards] = await Promise.all([
     loadPhilosophers(),
     loadItems(),
     correctIds(learner),
-    db.from("quiz_profiles").select("*").eq("learner", learner).maybeSingle(),
     db.from("quiz_conquest").select("philosopher_id").eq("learner", learner),
     import("@/lib/game/data").then((m) => m.publishedCards()).catch(() => []),
   ]);
-  const scope = ((prof.data as { question_scope?: string } | null)?.question_scope ?? "both") as "both" | "exam" | "expected";
-  const inScope = items.filter((it) => scope === "both" || it.kind === scope);
+  const inScope = conquestItems(items);
   const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((c) => c.philosopherId)));
   const cells = conquestCells(
     inScope.map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
@@ -301,18 +302,17 @@ export async function getQuizStats(learner: string): Promise<QuizStats> {
   const db = getAdminClient();
   try {
     const [prof, missions, essays, items, correct] = await Promise.all([
-      db.from("quiz_profiles").select("total_answered, best_streak, question_scope").eq("learner", learner).maybeSingle(),
+      db.from("quiz_profiles").select("total_answered, best_streak").eq("learner", learner).maybeSingle(),
       db.from("quiz_daily").select("learner", { count: "exact", head: true }).eq("learner", learner).not("completed_at", "is", null),
       db.from("quiz_progress").select("item_id, quiz_items!inner(format)", { count: "exact", head: true }).eq("learner", learner).gt("correct_count", 0).eq("quiz_items.format", "essay"),
       loadItems(),
       correctIds(learner),
     ]);
-    const p = prof.data as { total_answered?: number; best_streak?: number; question_scope?: string } | null;
-    const scope = p?.question_scope ?? "both";
+    const p = prof.data as { total_answered?: number; best_streak?: number } | null;
     const phs = await loadPhilosophers();
     const canon = canonFor(phs);
     const cells = conquestCells(
-      items.filter((it) => scope === "both" || it.kind === scope).map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
+      conquestItems(items).map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
       correct,
       (n) => canon(n)?.name ?? null,
     );
