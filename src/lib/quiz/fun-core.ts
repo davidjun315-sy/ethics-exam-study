@@ -23,6 +23,47 @@ export function mainTradition(t: string | null | undefined): string {
 }
 export const OTHER = "그 밖의 사상가";
 
+// 비슷한 이름 묶기: '토마스 아퀴나스' ⊃ '아퀴나스' · '나바에츠' ≈ '나바에즈' (한 글자, 소리가 비슷할 때만)
+// 정약용 · 정약전처럼 실제로 다른 사람은 소리가 달라 묶이지 않음
+const SAME_INIT = [[0, 1, 15], [3, 4, 16], [7, 8, 17], [9, 10], [12, 13, 14]]; // ㄱㄲㅋ · ㄷㄸㅌ · ㅂㅃㅍ · ㅅㅆ · ㅈㅉㅊ
+const SAME_VOWEL = [[1, 5], [3, 7], [10, 11, 15]]; // ㅐㅔ · ㅒㅖ · ㅙㅚㅞ
+const jamo = (ch: string) => {
+  const c = ch.charCodeAt(0) - 0xac00;
+  return c < 0 || c > 11171 ? null : [Math.floor(c / 588), Math.floor((c % 588) / 28), c % 28];
+};
+const sameGroup = (groups: number[][], a: number, b: number) => a === b || groups.some((g) => g.includes(a) && g.includes(b));
+function soundsAlike(a: string, b: string): boolean {
+  const x = jamo(a), y = jamo(b);
+  return Boolean(x && y && sameGroup(SAME_INIT, x[0], y[0]) && sameGroup(SAME_VOWEL, x[1], y[1]) && x[2] === y[2]);
+}
+
+/** 같은 사상가 이름인가 (공백·괄호 부연을 뗀 이름끼리) */
+export function sameName(a0: string, b0: string): boolean {
+  const a = baseName(a0), b = baseName(b0);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  if (s.length >= 3 && l.endsWith(s)) return true; // 토마스아퀴나스 ⊃ 아퀴나스
+  // 두 글자 이름은 띄어 쓴 마지막 낱말일 때만 (임마누엘 칸트 ⊃ 칸트)
+  const words = (n: string) => n.replace(/[(（[].*?[)）\]]/g, "").trim().split(/\s+/);
+  const lastA = words(a0), lastB = words(b0);
+  if (s.length === 2 && ((lastA.length > 1 && lastA[lastA.length - 1] === s) || (lastB.length > 1 && lastB[lastB.length - 1] === s))) return true;
+  if (a.length === b.length && a.length >= 3) {
+    const diff = [...a].map((ch, i) => (ch === b[i] ? -1 : i)).filter((i) => i >= 0);
+    return diff.length === 1 && soundsAlike(a[diff[0]], b[diff[0]]);
+  }
+  return false;
+}
+
+/** 이름들을 같은 사상가끼리 묶음 → 이름마다 묶음 번호 */
+export function clusterNames(names: string[]): Map<string, number> {
+  const list = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+  const parent = list.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (sameName(list[i], list[j])) parent[find(i)] = find(j);
+  return new Map(list.map((n, i) => [n, find(i)]));
+}
+
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
 export const CONQUEST_MIN = 30;
 

@@ -206,6 +206,7 @@ export function PhilosopherSheet({
   onClose,
   onLevelUp,
   onFuse,
+  quiz,
 }: {
   card: CardView;
   copies: OwnedCard[];
@@ -214,6 +215,8 @@ export function PhilosopherSheet({
   onClose: () => void;
   onLevelUp: (cardId: string) => void;
   onFuse: (cardId: string) => void;
+  /** 윤리 퀴즈 정복 지도에서 열면: 이 사상가 문제 진행 */
+  quiz?: { done: number; total: number; rewardable: boolean; reward: string; min: number };
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -268,6 +271,31 @@ export function PhilosopherSheet({
               </div>
               <button type="button" onClick={onClose} className="text-2xl leading-none text-faint hover:text-ink" aria-label="닫기">×</button>
             </div>
+            {quiz && (
+              <div className="rounded-lg border border-line p-3" data-quiz-progress>
+                <div className="mb-1 flex items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-bold">윤리 퀴즈 진행</h3>
+                  <span className="text-xs tabular-nums text-muted">
+                    맞힌 문제 <b className="text-ink">{quiz.done}</b>/{quiz.total} · 남은 {Math.max(0, quiz.total - quiz.done)}문제
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={quiz.total} aria-valuenow={quiz.done} aria-label="정복 진행">
+                  <div className={`h-full rounded-full ${quiz.done >= quiz.total ? "bg-[#d9a520]" : "bg-gradient-to-r from-navy/70 to-navy"}`} style={{ width: `${quiz.total ? (quiz.done / quiz.total) * 100 : 0}%` }} />
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted">
+                  {quiz.done >= quiz.total
+                    ? "정복 완료!"
+                    : quiz.rewardable
+                      ? `남은 ${quiz.total - quiz.done}문제를 맞히면 정복 · 영웅 카드 보상`
+                      : `한 번 이상 맞힌 문제 기준 (카드 보상은 문제 ${quiz.min}개 이상인 사상가만)`}
+                  {quiz.reward === "claimed" && " · 보상 받음"}
+                  {quiz.reward === "claimable" && " · 지도에서 보상을 받으세요"}
+                </p>
+                <Link href={`/quiz/free?philosopher=${encodeURIComponent(card.name)}`} className="btn-primary mt-2 inline-flex !py-1.5 text-xs font-bold">
+                  이 사상가 문제 풀기 →
+                </Link>
+              </div>
+            )}
             <div className="rounded-lg border border-line p-3">
               <div className="text-xs text-muted">필살기 · {SKILL_EFFECTS[card.skillEffect].name}</div>
               <div className="font-bold">✦ {card.skillName}</div>

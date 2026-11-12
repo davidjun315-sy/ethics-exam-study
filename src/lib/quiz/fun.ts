@@ -4,7 +4,7 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
-import { baseName, CONQUEST_MIN, conquestCells, mainTradition, OTHER, rankDaily, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { baseName, clusterNames, CONQUEST_MIN, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 
 /**
  * 윤리 퀴즈 재미 요소 (서버)
@@ -25,25 +25,51 @@ const loadItems = cached("quiz-fun-items", () =>
   fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, format, philosopher_names, area").eq("status", "approved").order("id").range(from, to)),
 );
 
-function canonFor(phs: PhRow[]) {
-  // 같은 사상가가 이름만 달리 여러 줄이면 괄호 없는 줄(대표)로 모은다
-  const rep = new Map<string, PhRow>();
+function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()) {
+  // 이름 · 별칭을 같은 사상가끼리 묶고(비슷한 이름 포함), 묶음마다 대표 한 줄:
+  // 게임 카드가 있는 줄 → 괄호 없는 이름 → 짧은 이름 순
+  const cl = clusterNames([...phs.map((p) => p.name), ...phs.flatMap((p) => p.aliases ?? [])]);
+  const rowsBy = new Map<number, PhRow[]>();
+  const link = (k: number | undefined, p: PhRow) => {
+    if (k === undefined) return;
+    const list = rowsBy.get(k) ?? [];
+    if (!list.includes(p)) list.push(p);
+    rowsBy.set(k, list);
+  };
   for (const p of phs) {
-    const k = baseName(p.name);
-    const cur = rep.get(k);
-    if (!cur || (baseName(cur.name) !== cur.name.replace(/\s/g, "") && baseName(p.name) === p.name.replace(/\s/g, ""))) rep.set(k, p);
+    link(cl.get(p.name.trim()), p);
+    for (const a of p.aliases ?? []) link(cl.get(a.trim()), p);
   }
-  const map = new Map<string, PhRow>();
+  const score = (p: PhRow) => (cardIds.has(p.id) ? 0 : 10) + (baseName(p.name) === p.name.replace(/\s/g, "") ? 0 : 5) + p.name.length * 0.01;
+  // 별칭으로 이어진 묶음은 한 사람 → 같은 대표
+  const repOf = new Map<PhRow, PhRow>();
+  for (const list of rowsBy.values()) {
+    const all = new Set<PhRow>(list);
+    for (const p of list) for (const [, other] of rowsBy) if (other.includes(p)) other.forEach((o) => all.add(o));
+    const rep = [...all].sort((a, b) => score(a) - score(b))[0];
+    for (const p of all) if (!repOf.has(p) || score(rep) < score(repOf.get(p)!)) repOf.set(p, rep);
+  }
+  const exact = new Map<string, PhRow>();
   for (const p of phs) {
-    const main = rep.get(baseName(p.name))!;
-    map.set(p.name.replace(/\s/g, ""), main);
-    map.set(baseName(p.name), main);
-    for (const a of p.aliases ?? []) {
-      map.set(a.replace(/\s/g, ""), main);
-      map.set(baseName(a), main);
+    const rep = repOf.get(p) ?? p;
+    for (const n of [p.name, ...(p.aliases ?? [])]) {
+      exact.set(n.replace(/\s/g, ""), rep);
+      exact.set(baseName(n), rep);
     }
   }
-  return (n: string) => map.get(n.replace(/\s/g, "")) ?? map.get(baseName(n)) ?? null;
+  const names = [...exact.keys()];
+  const memo = new Map<string, PhRow | null>();
+  return (n: string): PhRow | null => {
+    const key = n.replace(/\s/g, "");
+    const hit = exact.get(key) ?? exact.get(baseName(n));
+    if (hit) return hit;
+    if (memo.has(n)) return memo.get(n)!;
+    // 표에 없는 이름 변형 (토마스 아퀴나스 · 나바에즈 …)
+    const m = names.find((x) => sameName(n, x));
+    const r = m ? exact.get(m)! : null;
+    memo.set(n, r);
+    return r;
+  };
 }
 
 
@@ -123,6 +149,8 @@ export interface ConquestTile {
   /** 카드 보상: claimable 지금 받을 수 있음 · claimed 받음 · unavailable 카드가 아직 공개되지 않음 */
   reward: "none" | "claimable" | "claimed" | "locked" | "unavailable";
   artUrl: string | null;
+  /** 공개된 게임 카드가 있음 (누르면 카드 상세) */
+  hasCard: boolean;
 }
 export interface Conquest {
   groups: { tradition: string; tiles: ConquestTile[] }[];
@@ -150,7 +178,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
   ]);
   const scope = ((prof.data as { question_scope?: string } | null)?.question_scope ?? "both") as "both" | "exam" | "expected";
   const inScope = items.filter((it) => scope === "both" || it.kind === scope);
-  const canon = canonFor(phs);
+  const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((c) => c.philosopherId)));
   const cells = conquestCells(
     inScope.map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
     correct,
@@ -164,7 +192,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
       const p = byName.get(c.name)!;
       const card = cardOf.get(p.id);
       const reward: ConquestTile["reward"] = !c.rewardable ? "none" : claimed.has(p.id) ? "claimed" : !card ? "unavailable" : c.full ? "claimable" : "locked";
-      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, tradition: mainTradition(card?.tradition) !== OTHER ? mainTradition(card?.tradition) : mainTradition(p.tradition) };
+      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, hasCard: Boolean(card), tradition: mainTradition(card?.tradition) !== OTHER ? mainTradition(card?.tradition) : mainTradition(p.tradition) };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const order = [...TRADITIONS, OTHER];

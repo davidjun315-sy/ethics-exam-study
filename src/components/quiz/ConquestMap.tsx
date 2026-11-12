@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Check, Gift } from "lucide-react";
 import type { Conquest, ConquestTile } from "@/lib/quiz/fun";
 import { quizApi } from "@/lib/quiz/client";
+import { FeaturedCardOpener } from "@/components/game/FeaturedCardOpener";
 
 /** 진행 고리 + 초상 (정복하면 금빛) */
 export function Ring({ t, size = 64 }: { t: Pick<ConquestTile, "done" | "total" | "full" | "artUrl" | "name">; size?: number }) {
@@ -74,13 +75,27 @@ export function ConquestMap({ c }: { c: Conquest }) {
       <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6" aria-label={`${group?.tradition} 사상가`}>
         {group?.tiles.map((t) => (
           <li key={t.id} className={`flex flex-col items-center rounded-xl border p-2.5 text-center ${t.full ? "border-[#d9a520]/40 bg-[#ffd36b]/[0.07]" : "border-line"}`} data-conquest={t.name}>
-            <Link href={`/quiz/free?philosopher=${encodeURIComponent(t.name)}`} className="flex flex-col items-center" title={`${t.name} 문제 풀기`}>
-              <Ring t={t} />
-              <span className="mt-1.5 max-w-full truncate text-sm font-bold">{t.name}</span>
-              <span className="text-[11px] tabular-nums text-muted">
-                {t.done}/{t.total}
-              </span>
-            </Link>
+            {(() => {
+              const face = (
+                <span className="flex flex-col items-center">
+                  <Ring t={t} />
+                  <span className="mt-1.5 max-w-full truncate text-sm font-bold">{t.name}</span>
+                  <span className="text-[11px] tabular-nums text-muted">
+                    {t.done}/{t.total}
+                  </span>
+                </span>
+              );
+              // 카드가 있으면 도감과 같은 카드 상세 창 (+ 퀴즈 진행), 없으면 그 사상가 문제 풀기
+              return t.hasCard ? (
+                <FeaturedCardOpener philosopherId={t.id} label={`${t.name} 카드 상세 · 퀴즈 진행 ${t.done}/${t.total}`} quiz={{ done: t.done, total: t.total, rewardable: t.rewardable, reward: t.reward, min: c.min }} className="!w-auto !text-center">
+                  {face}
+                </FeaturedCardOpener>
+              ) : (
+                <Link href={`/quiz/free?philosopher=${encodeURIComponent(t.name)}`} title={`${t.name} 문제 풀기`}>
+                  {face}
+                </Link>
+              );
+            })()}
             {t.reward === "claimable" ? (
               <button type="button" disabled={busy !== null} onClick={() => claim(t)} className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-[#ffd36b] px-2.5 py-1 text-[11px] font-black text-[#3a2600] disabled:opacity-60">
                 <Gift className="h-3 w-3" aria-hidden /> {busy === t.id ? "받는 중…" : "영웅 카드 받기"}
@@ -96,7 +111,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
         ))}
       </ul>
       <p className="text-[11px] text-faint">
-        고리는 그 사상가 문제 중 <b>한 번 이상 맞힌 문제</b>의 비율입니다 (지금 출제 범위 기준). 고리를 다 채우면 정복! 문제가 {c.min}개 이상인 사상가는 정복하면 <b>영웅 카드</b>를 한 장 받습니다. 사상가를 누르면 그 사상가 문제를 풉니다.
+        고리는 그 사상가 문제 중 <b>한 번 이상 맞힌 문제</b>의 비율입니다 (지금 출제 범위 기준). 고리를 다 채우면 정복! 문제가 {c.min}개 이상인 사상가는 정복하면 <b>영웅 카드</b>를 한 장 받습니다. 사상가를 누르면 카드 상세와 퀴즈 진행이 열립니다 (카드가 아직 없는 사상가는 바로 문제 풀기).
         {!c.ready && " (카드 보상은 관리자가 업데이트를 적용하면 받을 수 있습니다.)"}
       </p>
     </div>
