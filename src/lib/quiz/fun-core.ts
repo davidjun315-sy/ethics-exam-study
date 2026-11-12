@@ -64,6 +64,16 @@ export function clusterNames(names: string[]): Map<string, number> {
   return new Map(list.map((n, i) => [n, find(i)]));
 }
 
+/** 카드 상세 창의 '윤리 퀴즈 진행' (도감 · 홈 · 정복 지도 어디서 열어도 같은 내용) */
+export interface QuizProgress {
+  done: number;
+  total: number;
+  rewardable: boolean;
+  reward: string;
+  min: number;
+  rarityName?: string;
+}
+
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
 export const CONQUEST_MIN = 10;
 

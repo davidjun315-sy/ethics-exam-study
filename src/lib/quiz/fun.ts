@@ -4,7 +4,7 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
-import { baseName, clusterNames, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { baseName, clusterNames, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, type QuizProgress, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 import { classifyPhilosopher } from "@/lib/traditions";
 
 /**
@@ -218,6 +218,16 @@ export async function getConquest(learner: string): Promise<Conquest> {
     ready: !claims.error,
     min: CONQUEST_MIN,
   };
+}
+
+/** 사상가 한 명의 퀴즈 진행 (카드 상세 창용). 그 사상가 문제가 없으면 total 0 */
+export async function conquestFor(learner: string, philosopherId: string, name?: string): Promise<QuizProgress> {
+  const c = await getConquest(learner);
+  const tiles = c.groups.flatMap((g) => g.tiles);
+  // 카드가 있는 사상가가 묶음의 대표라 보통 id 로 찾히고, 아니면 비슷한 이름으로
+  const t = tiles.find((x) => x.id === philosopherId) ?? (name ? tiles.find((x) => sameName(x.name, name)) : undefined);
+  if (!t) return { done: 0, total: 0, rewardable: false, reward: "none", min: c.min };
+  return { done: t.done, total: t.total, rewardable: t.rewardable, reward: t.reward, min: c.min, rarityName: t.rarity ? CONQUEST_RARITY_NAME[t.rarity] : undefined };
 }
 
 export const QUIZ_021_HINT = "정복 보상 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/021_quiz_conquest.sql 을 실행하세요.";

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
 import { quizApi } from "@/lib/quiz/client";
+import type { QuizProgress } from "@/lib/quiz/fun-core";
 import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { DrawTab } from "./DrawTab";
@@ -206,7 +207,7 @@ export function PhilosopherSheet({
   onClose,
   onLevelUp,
   onFuse,
-  quiz,
+  quiz: quizProp,
 }: {
   card: CardView;
   copies: OwnedCard[];
@@ -215,9 +216,21 @@ export function PhilosopherSheet({
   onClose: () => void;
   onLevelUp: (cardId: string) => void;
   onFuse: (cardId: string) => void;
-  /** 윤리 퀴즈 정복 지도에서 열면: 이 사상가 문제 진행 */
-  quiz?: { done: number; total: number; rewardable: boolean; reward: string; min: number; rarityName?: string };
+  /** 이미 알고 있는 퀴즈 진행 (정복 지도). 없으면 창이 열릴 때 불러옴 */
+  quiz?: QuizProgress;
 }) {
+  const [loaded, setLoaded] = useState<QuizProgress | null>(null);
+  useEffect(() => {
+    if (quizProp) return;
+    let alive = true;
+    quizApi<QuizProgress>(`/api/quiz/conquest?philosopher=${card.philosopherId}&name=${encodeURIComponent(card.name)}`)
+      .then((q) => alive && setLoaded(q))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [quizProp, card.philosopherId, card.name]);
+  const quiz = quizProp ?? loaded;
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -271,7 +284,13 @@ export function PhilosopherSheet({
               </div>
               <button type="button" onClick={onClose} className="text-2xl leading-none text-faint hover:text-ink" aria-label="닫기">×</button>
             </div>
-            {quiz && (
+            {quiz && quiz.total === 0 && (
+              <div className="rounded-lg border border-line p-3 text-[11px] text-muted" data-quiz-progress>
+                <h3 className="mb-0.5 text-sm font-bold text-ink">윤리 퀴즈 진행</h3>
+                아직 이 사상가의 퀴즈 문제가 없습니다 (지금 출제 범위 기준).
+              </div>
+            )}
+            {quiz && quiz.total > 0 && (
               <div className="rounded-lg border border-line p-3" data-quiz-progress>
                 <div className="mb-1 flex items-baseline justify-between gap-2">
                   <h3 className="text-sm font-bold">윤리 퀴즈 진행</h3>
@@ -290,11 +309,16 @@ export function PhilosopherSheet({
                       : `한 번 이상 맞힌 문제 기준 (카드 보상은 문제 ${quiz.min}개 이상인 사상가만)`}
                   {quiz.rewardable && quiz.done >= quiz.total && quiz.rarityName && ` · ${quiz.rarityName} 등급 카드`}
                   {quiz.reward === "claimed" && " · 보상 받음"}
-                  {quiz.reward === "claimable" && " · 지도에서 보상을 받으세요"}
+                  {quiz.reward === "claimable" && " · 정복 지도에서 보상을 받으세요"}
                 </p>
-                <Link href={`/quiz/free?philosopher=${encodeURIComponent(card.name)}`} className="btn-primary mt-2 inline-flex !py-1.5 text-xs font-bold">
-                  이 사상가 문제 풀기 →
-                </Link>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Link href={`/quiz/free?philosopher=${encodeURIComponent(card.name)}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
+                    이 사상가 문제 풀기 →
+                  </Link>
+                  <Link href="/quiz/map" className="text-xs font-semibold text-navy hover:underline">
+                    정복 지도
+                  </Link>
+                </div>
               </div>
             )}
             <div className="rounded-lg border border-line p-3">
