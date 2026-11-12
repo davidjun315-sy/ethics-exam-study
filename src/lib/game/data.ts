@@ -13,6 +13,7 @@ import { teamSynergies, withSynergy, type Synergy } from "./synergy";
 import { achievements, canUseTitle, titleSynergy, type Achievement } from "./achievements";
 import { rankWeekly, weekStart } from "./ranking";
 import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow, type LifeState } from "./lives";
+import { getQuizStats } from "@/lib/quiz/fun";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -349,7 +350,7 @@ type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: 
 
 export async function getGameState(learner: string): Promise<GameState> {
   const db = getAdminClient();
-  const [settings, cards, wallet, uc, col, prof, free, camp] = await Promise.all([
+  const [settings, cards, wallet, uc, col, prof, free, camp, quizStats] = await Promise.all([
     // 강화석 통일(018) 전이라고 저장돼 있으면 DB 를 다시 확인 → SQL 실행 즉시 반영 (통일 후엔 추가 조회 없음)
     getGameSettings().then((s) => (s.stones_unified ? s : freshStonesUnified().then((u) => ({ ...s, stones_unified: u })))),
     publishedCards(),
@@ -360,6 +361,8 @@ export async function getGameState(learner: string): Promise<GameState> {
     db.from("game_profiles").select("*").eq("learner", learner).maybeSingle(),
     db.from("game_free_draws").select("learner").eq("learner", learner).maybeSingle(),
     db.from("game_campaign").select("philosopher_id, cleared_at, turns").eq("learner", learner),
+    // 윤리 퀴즈 업적용 (실패해도 0 으로)
+    getQuizStats(learner),
   ]);
   for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
   const rows = (uc.data ?? []) as UserCardRow[];
@@ -388,6 +391,7 @@ export async function getGameState(learner: string): Promise<GameState> {
     stagesTotal: stages.length,
     specialCleared: stages.filter((x) => x.pattern && clearedIds.has(x.bossId)).length,
     wins: p?.wins ?? 0,
+    quiz: quizStats,
   });
   const titleRaw = (p as { title?: string | null } | null)?.title ?? null;
   return {

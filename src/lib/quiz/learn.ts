@@ -547,6 +547,25 @@ export interface AttemptResult {
   /** 철학자 대난투 코인 (학습 보상, 게임 테이블이 없으면 0) */
   coins: number;
   coinNote: string;
+  /** 정답 직후 그 문제의 사상가가 한마디 (게임 캐릭터 · 창작 대사). 없으면 null */
+  cheer: { name: string; artUrl: string | null; line: string } | null;
+}
+
+/** 정답 직후 한마디: 그 문제 사상가의 게임 카드(그림·대사), 대사가 없으면 사상 요약 첫 문장 */
+async function cheerFor(names: string[] | null | undefined): Promise<AttemptResult["cheer"]> {
+  const name = names?.[0];
+  if (!name) return null;
+  try {
+    const [{ publishedCards }, { THOUGHTS }] = await Promise.all([import("@/lib/game/data"), import("@/lib/game/thought")]);
+    const cards = await publishedCards();
+    const n = name.replace(/\s/g, "");
+    const card = cards.find((c) => c.name.replace(/\s/g, "") === n);
+    const line = card?.quote?.trim() || THOUGHTS[n]?.c.split(/(?<=[.!?])\s/)[0] || "";
+    if (!line && !card) return null;
+    return { name: card?.name ?? name, artUrl: card?.battleArtUrl ?? card?.artUrl ?? null, line: line || "잘 짚었소!" };
+  } catch {
+    return null;
+  }
 }
 
 function toState(raw: Record<string, unknown> | undefined): ProgressState {
@@ -719,6 +738,7 @@ export async function recordAttempt(
     difficulty: it.difficulty,
     coins: coin.coins,
     coinNote: coin.note,
+    cheer: result === "correct" ? await cheerFor(it.philosopher_names) : null,
   };
 }
 

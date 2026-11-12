@@ -16,6 +16,8 @@ export interface AchievementInput {
   /** 깬 특수 보스 수 */
   specialCleared: number;
   wins: number;
+  /** 윤리 퀴즈 기록 (없으면 퀴즈 업적은 진행 0) */
+  quiz?: { answered: number; bestStreak: number; missions: number; essayCorrect: number; conquered: number };
 }
 
 export interface Achievement {
@@ -23,7 +25,7 @@ export interface Achievement {
   /** 칭호 (업적 이름) */
   title: string;
   desc: string;
-  group: "수집" | "성장" | "도장깨기" | "대전" | "분야";
+  group: "퀴즈" | "수집" | "성장" | "도장깨기" | "대전" | "분야";
   done: boolean;
   progress: number; // 0~1
   /** 진행 표시 (예: 3/5) */
@@ -54,6 +56,17 @@ const TITLE_EFFECT: Record<string, { tier: number; atk: number; hp: number }> = 
   win50: { tier: 4, atk: 0.05, hp: 0.02 },
   collectAll: { tier: 5, atk: 0.05, hp: 0.05 },
   stageAll: { tier: 5, atk: 0.06, hp: 0.06 },
+  // 윤리 퀴즈
+  quiz1: { tier: 1, atk: 0.01, hp: 0.01 },
+  quiz100: { tier: 2, atk: 0.02, hp: 0.01 },
+  streak7: { tier: 2, atk: 0.01, hp: 0.02 },
+  mission10: { tier: 2, atk: 0.01, hp: 0.02 },
+  quiz500: { tier: 3, atk: 0.03, hp: 0.02 },
+  essay30: { tier: 3, atk: 0.02, hp: 0.03 },
+  conquer1: { tier: 3, atk: 0.03, hp: 0.02 },
+  quiz1000: { tier: 4, atk: 0.04, hp: 0.03 },
+  streak30: { tier: 4, atk: 0.03, hp: 0.04 },
+  conquer10: { tier: 5, atk: 0.05, hp: 0.05 },
 };
 const effectOf = (id: string) => TITLE_EFFECT[id.startsWith("trad:") ? "trad" : id] ?? { tier: 1, atk: 0, hp: 0 };
 
@@ -83,6 +96,18 @@ export function achievements(i: AchievementInput): Achievement[] {
     const e = effectOf(id);
     out.push({ id, title, desc, group, done: cur >= g, progress: Math.min(1, cur / g), ...(showCount ? { count: `${Math.min(cur, g)}/${g}` } : {}), tier: e.tier, bonus: { atk: e.atk, hp: e.hp } });
   };
+  // 윤리 퀴즈 (공부한 만큼)
+  const q = i.quiz ?? { answered: 0, bestStreak: 0, missions: 0, essayCorrect: 0, conquered: 0 };
+  add("quiz1", "첫걸음", "윤리 퀴즈 첫 문제를 푼다", "퀴즈", q.answered, 1, false);
+  add("quiz100", "성실한 학도", "윤리 퀴즈 100문제를 푼다", "퀴즈", q.answered, 100);
+  add("quiz500", "문제은행 탐험가", "윤리 퀴즈 500문제를 푼다", "퀴즈", q.answered, 500);
+  add("quiz1000", "천 문제의 현자", "윤리 퀴즈 1000문제를 푼다", "퀴즈", q.answered, 1000);
+  add("streak7", "개근상", "7일 연속으로 오늘의 미션을 완주한다", "퀴즈", q.bestStreak, 7);
+  add("streak30", "불굴의 학구열", "30일 연속으로 오늘의 미션을 완주한다", "퀴즈", q.bestStreak, 30);
+  add("mission10", "미션 완주자", "오늘의 미션을 10번 완주한다", "퀴즈", q.missions, 10);
+  add("essay30", "서술형 장인", "서술형 30문제를 맞힌다", "퀴즈", q.essayCorrect, 30);
+  add("conquer1", "사상가 정복자", "정복 지도에서 사상가 1명을 모두 채운다", "퀴즈", q.conquered, 1, false);
+  add("conquer10", "정복왕", "정복 지도에서 사상가 10명을 모두 채운다", "퀴즈", q.conquered, 10);
   // 수집 (공개 사상가 수보다 많이 요구하지 않음)
   add("first", "견습 철학도", "첫 카드를 얻는다", "수집", i.owned.length, 1, false);
   add("collect5", "사상 수집가", "서로 다른 사상가 5명을 모은다", "수집", distinct, Math.min(5, total));

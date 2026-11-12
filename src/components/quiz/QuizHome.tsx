@@ -10,6 +10,11 @@ import { TRACK_NAMES } from "@/lib/quiz/srs";
 import { FeaturedPhilosopher, type FeaturedSummary } from "@/components/game/MyPhilosopher";
 import { WeeklyRanking } from "./WeeklyRanking";
 import type { QuizWeekly } from "@/lib/quiz/weekly";
+import type { Conquest, DailyRanking as DailyRankingData } from "@/lib/quiz/fun";
+import type { WeekReport } from "@/lib/quiz/fun-core";
+import { DailyRanking } from "./DailyRanking";
+import { WeeklyReport } from "./WeeklyReport";
+import { ConquestSummary } from "./ConquestMap";
 
 function Flame({ on }: { on: boolean }) {
   return (
@@ -47,7 +52,21 @@ function Fold({ title, summary, children, id }: { title: string; summary: React.
  * 윤리 퀴즈 홈. 순서: 프로필 → 오늘의 미션 → 실전 도전 → 자유 학습·오답 복습 → 성장 요약 → 숙련도 → 달력·배지 → 출제 범위
  * 게임 지표(체크포인트·콤보)와 실제 학습 지표(정답률·고난도 정답·숙련도)를 구분해서 보여 준다.
  */
-export function QuizHome({ d, game = null, weekly = null }: { d: Dashboard; game?: FeaturedSummary | null; weekly?: QuizWeekly | null }) {
+export function QuizHome({
+  d,
+  game = null,
+  weekly = null,
+  daily = null,
+  report = null,
+  conquest = null,
+}: {
+  d: Dashboard;
+  game?: FeaturedSummary | null;
+  weekly?: QuizWeekly | null;
+  daily?: DailyRankingData | null;
+  report?: WeekReport | null;
+  conquest?: Conquest | null;
+}) {
   const { level, today, todayStats: ts, week } = d;
   const xp = d.profile?.xp ?? 0;
   const lvProgress = (xp - level.current) / (level.next - level.current);
@@ -164,6 +183,10 @@ export function QuizHome({ d, game = null, weekly = null }: { d: Dashboard; game
         </div>
       </section>
 
+      {/* 오늘의 미션 랭킹 · 사상가 정복 지도 */}
+      {daily && <DailyRanking r={daily} />}
+      {conquest && conquest.totals.philosophers > 0 && <ConquestSummary c={conquest} />}
+
       {/* 3. 오늘의 실전 도전 */}
       <section id="challenges" className="scroll-mt-20">
         <div className="mb-2 flex items-baseline justify-between">
@@ -220,6 +243,9 @@ export function QuizHome({ d, game = null, weekly = null }: { d: Dashboard; game
 
       {/* 이번 주 랭킹 */}
       {weekly && <WeeklyRanking w={weekly} />}
+
+      {/* 주간 학습 리포트 */}
+      {report && <WeeklyReport r={report} />}
 
       {/* 5. 학습 성장 요약 (실제 학습 지표) */}
       <section className="card p-4">

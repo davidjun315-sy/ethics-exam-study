@@ -7,6 +7,7 @@ import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { buildDialogue, josa, pickResponder } from "../src/lib/game/dialogue.ts";
 import { RIVALS, THOUGHTS } from "../src/lib/game/thought.ts";
 import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow } from "../src/lib/game/lives.ts";
+import { CONQUEST_MIN, conquestCells, mondayOf, rankDaily, weekReport } from "../src/lib/quiz/fun-core.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -132,7 +133,9 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
     const all = achievements({ ...base, cards: Array.from({ length: 30 }, (_, i) => ({ philosopherId: `p${i}`, tradition: ["동양윤리", "한국윤리", "서양윤리", "사회사상"][i % 4] })), stagesTotal: 20 });
     const power = (a: (typeof all)[number]) => a.bonus.atk + a.bonus.hp;
     const ordered = [...all].sort((a, b) => a.tier - b.tier);
-    check("칭호 효과: 등급(★)이 높을수록 효과 합이 작아지지 않음", ordered.every((a, i) => i === 0 || power(a) >= power(ordered[i - 1]) - 1e-9), ordered.map((a) => `${a.title}★${a.tier}:${Math.round(power(a) * 100)}`).join(" "));
+    // 높은 등급의 가장 약한 칭호 ≥ 낮은 등급의 가장 강한 칭호
+    const byTier = [1, 2, 3, 4, 5].map((t) => all.filter((a) => a.tier === t).map(power));
+    check("칭호 효과: 등급(★)이 높을수록 효과 합이 작아지지 않음", byTier.every((list, t) => t === 0 || !list.length || !byTier[t - 1].length || Math.min(...list) >= Math.max(...byTier[t - 1]) - 1e-9), ordered.map((a) => `${a.title}★${a.tier}:${Math.round(power(a) * 100)}`).join(" "));
     const by = (id: string) => all.find((a) => a.id === id)!;
     check("칭호 효과: 견습 철학도(+2%) < 전설을 부르는 자 < 천하제일(+12%)", power(by("first")) < power(by("legend")) && power(by("legend")) < power(by("stageAll")) && Math.round(power(by("stageAll")) * 100) === 12);
     check("칭호 효과: 모든 칭호에 효과가 있음", all.every((a) => power(a) > 0));
@@ -197,6 +200,54 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
   const s0 = { lives: 0, livesAt: t0.toISOString() };
   check("0개 → 가득 차는 시각 150분 뒤", lifeNow(s0, at(1)).fullAt === at(150).toISOString());
   check("시계 표시", clock(65_000) === "1:05" && clock(3_725_000) === "1:02:05" && clock(-5) === "0:00");
+}
+
+
+// ---------------------------------------------------------------------
+// 윤리 퀴즈 재미 요소: 오늘의 미션 랭킹 · 정복 지도 · 주간 리포트 · 퀴즈 업적
+// ---------------------------------------------------------------------
+{
+  const r = rankDaily([
+    { learner: "a", answered: 6, total: 10, correct: 5, completedAt: null, updatedAt: "2026-11-12T01:00:00Z" },
+    { learner: "b", answered: 10, total: 10, correct: 8, completedAt: "2026-11-12T03:00:00Z", updatedAt: "2026-11-12T03:00:00Z" },
+    { learner: "c", answered: 10, total: 10, correct: 9, completedAt: "2026-11-12T02:00:00Z", updatedAt: "2026-11-12T02:00:00Z" },
+    { learner: "d", answered: 6, total: 10, correct: 6, completedAt: null, updatedAt: "2026-11-12T01:30:00Z" },
+    { learner: "e", answered: 0, total: 10, correct: 0, completedAt: null, updatedAt: "2026-11-12T00:00:00Z" },
+  ]);
+  check("미션 랭킹: 완주자 먼저(먼저 완주한 순) → 푼 수 → 정답 수, 안 푼 사람은 제외", r.map((x) => x.learner).join("") === "cbda", r.map((x) => x.learner).join(""));
+  const canon = (n: string) => (n === "양명" ? "왕수인" : n);
+  const cells = conquestCells(
+    [
+      { id: "1", names: ["주희"] },
+      { id: "2", names: ["주희", "왕수인"] },
+      { id: "3", names: ["양명"] },
+      { id: "4", names: ["왕수인", "양명"] },
+    ],
+    new Set(["1", "2", "3", "4"].filter((x) => x !== "4")),
+    canon,
+  );
+  const by = Object.fromEntries(cells.map((c) => [c.name, c]));
+  check("정복 지도: 별칭을 합쳐 셈 · 한 문제에 같은 사상가가 두 번 있어도 한 번", by["왕수인"].total === 3 && by["왕수인"].done === 2 && !by["왕수인"].full && by["주희"].full);
+  check(`정복 보상은 문제 ${CONQUEST_MIN}개 이상 사상가만`, CONQUEST_MIN === 30 && !by["주희"].rewardable && conquestCells(Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, names: ["칸트"] })), new Set(), (n) => n)[0].rewardable);
+  check("주의 월요일 (한국 날짜)", mondayOf("2026-11-12") === "2026-11-09" && mondayOf("2026-11-09") === "2026-11-09" && mondayOf("2026-11-15") === "2026-11-09");
+  const wr = weekReport(
+    [
+      { day: "2026-11-03", result: "correct", names: ["칸트"], area: "서양" },
+      { day: "2026-11-10", result: "wrong", names: ["맹자"], area: "동양" },
+      { day: "2026-11-10", result: "partial", names: ["맹자"], area: "동양" },
+      { day: "2026-11-11", result: "correct", names: ["칸트"], area: "서양" },
+      { day: "2026-11-11", result: "correct", names: ["칸트"], area: "서양" },
+      { day: "2026-11-12", result: "correct", names: ["칸트"], area: "서양" },
+    ],
+    "2026-11-12",
+  );
+  check("주간 리포트: 이번 주 5문제 · 지난주 1문제 · 공부한 날 화수목", wr.thisWeek.answered === 5 && wr.lastWeek.answered === 1 && wr.thisWeek.days.map((d) => (d ? 1 : 0)).join("") === "0111000" && wr.thisWeek.activeDays === 3);
+  check("주간 리포트: 정답률(일부 0.5) · 약한 사상가 맹자(1.5) · 잘한 사상가 칸트", Math.abs((wr.thisWeek.accuracy ?? 0) - 3.5 / 5) < 1e-9 && wr.weakPhilosophers[0].name === "맹자" && wr.weakPhilosophers[0].missed === 1.5 && wr.strongPhilosophers[0].name === "칸트");
+  const base2 = { owned: [], cards: [{ philosopherId: "a", tradition: "동양윤리" }], maxLevel: 5, stagesCleared: 0, stagesTotal: 3, specialCleared: 0, wins: 0 };
+  const qa = achievements({ ...base2, quiz: { answered: 120, bestStreak: 8, missions: 3, essayCorrect: 31, conquered: 1 } });
+  const qd = new Set(qa.filter((a) => a.done).map((a) => a.title));
+  check("퀴즈 업적: 첫걸음 · 성실한 학도 · 개근상 · 서술형 장인 · 사상가 정복자 달성, 미션 완주자 · 정복왕은 아직", ["첫걸음", "성실한 학도", "개근상", "서술형 장인", "사상가 정복자"].every((t) => qd.has(t)) && !qd.has("미션 완주자") && !qd.has("정복왕"), [...qd].join(","));
+  check("퀴즈 업적도 칭호 효과가 있음 (정복왕 ★5)", qa.find((a) => a.id === "conquer10")!.tier === 5 && qa.filter((a) => a.group === "퀴즈").every((a) => a.bonus.atk + a.bonus.hp > 0));
 }
 
 if (failed) {

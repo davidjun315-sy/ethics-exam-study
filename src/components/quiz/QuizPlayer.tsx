@@ -575,8 +575,17 @@ function OutcomePanel({ r, auto, prevCombo, cp, children }: { r: AttemptResult; 
       : r.result === "partial"
         ? "해설에서 빠진 채점 요소를 확인하세요. 이틀 뒤 복습에 다시 나옵니다."
         : "해설을 읽어 두면 다음 학습에서 다시 만날 때 맞힐 수 있어요.";
+  // 연속 정답 이정표: 3 · 5 · 10 · 그 뒤 10 마다
+  const milestone = r.result === "correct" && (r.combo === 3 || r.combo === 5 || (r.combo >= 10 && r.combo % 10 === 0)) ? r.combo : 0;
   return (
-    <section className={`quiz-rise rounded-lg border p-4 ${tone}`} aria-live="polite">
+    <section className={`quiz-rise relative rounded-lg border p-4 ${tone} ${milestone ? "streak-glow" : ""}`} aria-live="polite">
+      {milestone > 0 && (
+        <div className="streak-pop pointer-events-none absolute -top-3 left-1/2 z-10 -translate-x-1/2" aria-hidden>
+          <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-1 text-xs font-black shadow-md ${milestone >= 10 ? "bg-gradient-to-r from-[#ffcf5a] to-[#ff9b4a] text-[#3a1a00]" : milestone >= 5 ? "bg-[#ffd36b] text-[#3a2600]" : "bg-ok text-on-accent"}`}>
+            <span className="streak-flame">🔥</span> {milestone}연속 정답!
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {r.result === "correct" && (
           <span className="quiz-pop quiz-ring flex h-7 w-7 items-center justify-center rounded-full bg-ok text-sm font-bold text-on-accent" aria-hidden>
@@ -596,6 +605,22 @@ function OutcomePanel({ r, auto, prevCombo, cp, children }: { r: AttemptResult; 
         </span>
       </div>
       {hint && <p className="mt-1 text-sm text-muted">{hint}</p>}
+      {/* 정답 직후 그 사상가의 한마디 (게임 캐릭터) */}
+      {r.cheer && (
+        <div className="cheer-in mt-2.5 flex items-end gap-2">
+          {r.cheer.artUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={r.cheer.artUrl} alt="" className="h-12 w-12 shrink-0 rounded-full bg-surface-2 object-cover object-top ring-2 ring-ok/40" loading="lazy" draggable={false} />
+          ) : (
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-lg font-black text-ok ring-2 ring-ok/40">{r.cheer.name[0]}</span>
+          )}
+          <div className="relative min-w-0 rounded-2xl rounded-bl-sm border border-line bg-surface px-3 py-2 text-sm shadow-sm">
+            <span className="mr-1.5 text-xs font-bold text-ok">{r.cheer.name}</span>
+            <span className="text-ink">“{r.cheer.line}”</span>
+            <span className="block text-[10px] text-faint">게임을 위한 창작 대사</span>
+          </div>
+        </div>
+      )}
       <p className="mt-1 text-xs text-faint">
         {r.hardBonus > 0 && `난이도 '상' 보너스 +${r.hardBonus} 포함. `}
         {r.xp === 0 && "오늘 이미 경험치를 받은 문제라 기록만 남깁니다. "}

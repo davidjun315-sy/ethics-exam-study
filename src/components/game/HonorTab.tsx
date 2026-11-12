@@ -6,7 +6,7 @@ import type { GameState, WeeklyRanking } from "@/lib/game/data";
 import { bonusText, type Achievement } from "@/lib/game/achievements";
 import { quizApi } from "@/lib/quiz/client";
 
-const GROUPS: Achievement["group"][] = ["수집", "성장", "도장깨기", "대전", "분야"];
+const GROUPS: Achievement["group"][] = ["퀴즈", "수집", "성장", "도장깨기", "대전", "분야"];
 
 /**
  * 칭호 표시 (랭킹 · 홈 · 게임 위쪽 공통). 배지처럼 튀지 않게 주변 글자와 같은 결로:
