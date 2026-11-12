@@ -79,7 +79,7 @@ function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()) {
 
 
 async function namesOf(learners: string[]) {
-  const ids = learners.filter((l) => l.startsWith("m:")).map((l) => l.slice(2));
+  const ids = learners.filter((l) => l.startsWith("m:")).map((l) => l.slice(2)).filter((id) => /^[0-9a-f-]{36}$/i.test(id));
   const db = getAdminClient();
   const [members, profs] = await Promise.all([
     ids.length ? db.from("members").select("id, display_name").in("id", ids) : Promise.resolve({ data: [] }),
