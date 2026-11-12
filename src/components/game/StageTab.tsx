@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Check, Heart, Lock, Swords } from "lucide-react";
 import type { CardView, GameState, StageReplay } from "@/lib/game/data";
 import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageMinionStats, stageStatuses, stageStones, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
@@ -40,27 +40,67 @@ function useLives(lives: GameState["lives"]) {
     const h = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(h);
   }, [full]);
-  if (!lives.ready) return { ready: false, count: lives.max, max: lives.max, nextIn: 0, empty: false };
-  if (full) return { ready: true, count: lives.max, max: lives.max, nextIn: 0, empty: false };
+  const regenMs = lives.regenSec * 1000;
+  if (!lives.ready) return { ready: false, count: lives.max, max: lives.max, nextIn: 0, empty: false, regenMs };
+  if (full) return { ready: true, count: lives.max, max: lives.max, nextIn: 0, empty: false, regenMs };
   const next = new Date(lives.nextAt!).getTime();
   const step = lives.regenSec * 1000;
   const gained = now >= next ? 1 + Math.floor((now - next) / step) : 0;
   const count = Math.min(lives.max, lives.count + gained);
   const nextIn = count >= lives.max ? 0 : next + gained * step - now;
-  return { ready: true, count, max: lives.max, nextIn, empty: count < 1 };
+  return { ready: true, count, max: lives.max, nextIn, empty: count < 1, regenMs };
 }
 
-/** 생명력 표시: ♥♥♥♡♡ · 다음 12:34 */
+const HEART = "M12 21.3c-.3 0-.6-.1-.8-.3C6.5 16.9 2.5 13.3 2.5 8.9 2.5 6 4.8 3.7 7.6 3.7c1.7 0 3.3.8 4.4 2.1 1.1-1.3 2.7-2.1 4.4-2.1 2.8 0 5.1 2.3 5.1 5.2 0 4.4-4 8-8.7 12.1-.2.2-.5.3-.8.3Z";
+
+/** 하트 하나: full 꽉 참 · fill(0~1) 아래부터 차오르는 중 · 0 빈 하트 */
+function LifeHeart({ fill, dark }: { fill: number; dark: boolean }) {
+  const id = useId().replace(/:/g, "");
+  const empty = dark ? "rgba(255,255,255,.16)" : "rgba(148,163,184,.35)";
+  return (
+    <svg viewBox="0 0 24 24" className={`h-[15px] w-[15px] shrink-0 ${fill >= 1 ? "drop-shadow-[0_1px_1.5px_rgba(200,30,40,.45)]" : ""}`} aria-hidden>
+      <defs>
+        <linearGradient id={`g${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ff8a8a" />
+          <stop offset="1" stopColor="#e5383b" />
+        </linearGradient>
+        <clipPath id={`c${id}`}>
+          <rect x="0" y={24 - 24 * Math.max(0, Math.min(1, fill))} width="24" height="24" />
+        </clipPath>
+      </defs>
+      <path d={HEART} fill={empty} />
+      {fill > 0 && <path d={HEART} fill={`url(#g${id})`} clipPath={`url(#c${id})`} opacity={fill >= 1 ? 1 : 0.75} />}
+      {fill >= 1 && <ellipse cx="8.2" cy="8" rx="2.3" ry="1.5" fill="#fff" opacity=".55" transform="rotate(-30 8.2 8)" />}
+    </svg>
+  );
+}
+
+/** 생명력 표시: 하트 5개 (다음 하트는 아래부터 차오름) · 남은 시간 */
 function LivesChip({ l, dark = false }: { l: ReturnType<typeof useLives>; dark?: boolean }) {
   if (!l.ready) return null;
+  const progress = l.nextIn > 0 ? 1 - l.nextIn / l.regenMs : 0;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold tabular-nums ${dark ? "border-white/15 bg-white/10 text-white" : "border-[#ef6a5a]/40 bg-[#ef6a5a]/10 text-[#c2412f] dark:text-[#ff9f92]"}`} title={`생명력 ${l.count}/${l.max} · 도장깨기에 도전할 때마다 1개 사용, 30분마다 1개씩 다시 참`} aria-label={`생명력 ${l.count}/${l.max}${l.nextIn ? `, 다음 충전까지 ${clock(l.nextIn)}` : ""}`}>
-      <span aria-hidden className="tracking-[-0.1em]">
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold tabular-nums ${dark ? "border-white/15 bg-white/10 text-white" : "border-line bg-surface shadow-sm"}`}
+      title={`생명력 ${l.count}/${l.max} · 도장깨기에 도전할 때마다 1개 사용, 30분마다 1개씩 다시 참`}
+      aria-label={`생명력 ${l.count}/${l.max}${l.nextIn ? `, 다음 충전까지 ${clock(l.nextIn)}` : ""}`}
+    >
+      <span className="flex items-center gap-[2px]">
         {Array.from({ length: l.max }, (_, i) => (
-          <span key={i} className={i < l.count ? "text-[#ff5a5a]" : "opacity-25"}>{"\u2665\uFE0E"}</span>
+          <LifeHeart key={i} fill={i < l.count ? 1 : i === l.count ? progress : 0} dark={dark} />
         ))}
       </span>
-      {l.nextIn > 0 && <span className={`font-semibold ${dark ? "text-white/70" : "text-muted"}`}>+1 {clock(l.nextIn)}</span>}
+      {l.nextIn > 0 ? (
+        <span className={`flex items-center gap-1 font-semibold ${dark ? "text-white/75" : "text-muted"}`}>
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          {clock(l.nextIn)}
+        </span>
+      ) : (
+        <span className={`font-semibold ${dark ? "text-white/60" : "text-faint"}`}>가득</span>
+      )}
     </span>
   );
 }
