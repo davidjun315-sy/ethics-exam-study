@@ -17,6 +17,7 @@ import {
   Search,
   Shield,
   Sparkles,
+  Swords,
   User,
   Users,
   X,
@@ -34,10 +35,11 @@ interface NavItem {
 /** 데스크톱 상단 메뉴 */
 const NAV: NavItem[] = [
   { href: "/", label: "홈", icon: House },
-  { href: "/exams", label: "기출문제", icon: BookOpenText },
-  { href: "/philosophers", label: "사상가", icon: Users },
   { href: "/quiz", label: "윤리 퀴즈", icon: Sparkles },
+  { href: "/quiz/game", label: "철학자 대난투", icon: Swords },
+  { href: "/exams", label: "기출문제", icon: BookOpenText },
   { href: "/trends", label: "출제분석", icon: ChartLine },
+  { href: "/philosophers", label: "사상가", icon: Users },
   { href: "/concepts", label: "개념", icon: Lightbulb },
   { href: "/sources", label: "원전", icon: ScrollText },
 ];
@@ -52,6 +54,7 @@ const TABS: NavItem[] = [
 
 /** 더보기 시트 */
 const MORE: (NavItem & { desc: string })[] = [
+  { href: "/quiz/game", label: "철학자 대난투", icon: Swords, desc: "사상가 카드 수집 · 도장깨기" },
   { href: "/trends", label: "출제분석", icon: ChartLine, desc: "연도별 출제 경향 · 예측" },
   { href: "/concepts", label: "개념", icon: Lightbulb, desc: "핵심 개념별 기출" },
   { href: "/sources", label: "원전", icon: ScrollText, desc: "원전 인용과 해설" },
@@ -60,7 +63,10 @@ const MORE: (NavItem & { desc: string })[] = [
   { href: "/my", label: "내 학습 기록", icon: NotebookPen, desc: "메모 · 표시한 문제" },
 ];
 
-const activeFor = (pathname: string) => (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+const matches = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+/** 메뉴 중 더 구체적인 항목이 맞으면 그쪽만 (예: /quiz/game → '철학자 대난투'만, '윤리 퀴즈'는 아님) */
+const activeFor = (pathname: string) => (href: string) =>
+  matches(pathname, href) && !NAV.some((n) => n.href !== href && n.href.length > href.length && n.href.startsWith(href) && matches(pathname, n.href));
 
 export function SiteHeader({ member }: { member: string | null }) {
   const pathname = usePathname();
