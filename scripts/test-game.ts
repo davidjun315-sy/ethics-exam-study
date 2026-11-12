@@ -235,7 +235,7 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
   check("다른 사람은 묶지 않음: 정약용≠정약전 · 정호≠정이 · 순자≠공자 · 이황≠이이 · 왕수인≠왕양명(별칭은 따로)", !sameName("정약용", "정약전") && !sameName("정호", "정이") && !sameName("순자", "공자") && !sameName("이황", "이이") && !sameName("왕수인", "왕양명") && !sameName("장자", "맹자"));
   const cl = clusterNames(["토마스 아퀴나스", "아퀴나스", "나바에츠", "나바에즈", "칸트"]);
   check("묶음: 아퀴나스 둘 · 나바에츠 둘 · 칸트 혼자", cl.get("토마스 아퀴나스") === cl.get("아퀴나스") && cl.get("나바에츠") === cl.get("나바에즈") && new Set(cl.values()).size === 3);
-  check(`정복 보상은 문제 ${CONQUEST_MIN}개 이상 사상가만`, CONQUEST_MIN === 30 && !by["주희"].rewardable && conquestCells(Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, names: ["칸트"] })), new Set(), (n) => n)[0].rewardable);
+  check(`정복 보상은 문제 ${CONQUEST_MIN}개 이상 사상가만`, CONQUEST_MIN === 10 && conquestCells(Array.from({ length: 9 }, (_, i) => ({ id: `y${i}`, names: ["칸트"] })), new Set(), (n) => n)[0].rewardable === false && conquestCells(Array.from({ length: 10 }, (_, i) => ({ id: `x${i}`, names: ["칸트"] })), new Set(), (n) => n)[0].rewardable);
   check("주의 월요일 (한국 날짜)", mondayOf("2026-11-12") === "2026-11-09" && mondayOf("2026-11-09") === "2026-11-09" && mondayOf("2026-11-15") === "2026-11-09");
   const wr = weekReport(
     [
@@ -260,5 +260,11 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
 if (failed) {
   console.log(`\n${failed}개 실패`);
   process.exit(1);
+}
+{
+  const { classifyPhilosopher } = await import("../src/lib/traditions.ts");
+  const k = (name: string, tradition: string | null) => classifyPhilosopher({ name, tradition });
+  check("한국 사상가는 분야 값이 동양이어도 한국윤리 (이황 · 이이 · 원효 · 정약용(다산))", k("이황", "동양윤리") === "한국윤리" && k("이이", "성리학") === "한국윤리" && k("원효", "불교") === "한국윤리" && k("정약용(다산)", "동양윤리") === "한국윤리" && k("율곡 이이", null) !== "동양윤리");
+  check("중국 · 서양 사상가는 그대로 (주희 · 왕수인 · 칸트)", k("주희", "동양윤리") === "동양윤리" && k("왕수인", null) === "동양윤리" && k("칸트", null) === "서양윤리");
 }
 console.log("\n모두 통과");

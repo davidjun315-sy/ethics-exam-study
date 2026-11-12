@@ -18,9 +18,17 @@ const RULES: [Tradition, RegExp][] = [
 const KNOWN: Record<Tradition, string[]> = {
   동양윤리: [
     "공자", "맹자", "순자", "주희", "주자", "왕수인", "왕양명", "정이", "정호", "장재", "주돈이", "육구연", "육상산", "대진", "왕부지",
-    "노자", "장자", "묵자", "한비자", "고자", "양주", "석가모니", "붓다", "용수", "혜능", "원효", "지눌", "의상", "간디",
+    "노자", "장자", "묵자", "한비자", "고자", "양주", "석가모니", "붓다", "용수", "혜능", "간디",
   ],
-  한국윤리: ["이황", "이이", "기대승", "정약용", "정제두", "박지원", "최한기", "서경덕", "조식", "성혼", "송시열", "한원진", "이간", "최제우", "최시형", "안창호", "정도전", "휴정", "보조"],
+  한국윤리: [
+    // 불교 · 고려 이전
+    "원효", "의상", "의천", "지눌", "보조", "혜초", "균여", "일연", "도선", "휴정", "서산대사", "기화", "김시습",
+    // 성리학 · 조선
+    "정도전", "권근", "서경덕", "이언적", "조광조", "이황", "퇴계", "이이", "율곡", "기대승", "조식", "성혼", "송시열", "김장생", "한원진", "이간", "정제두", "하곡",
+    // 실학 · 근대
+    "유형원", "이익", "성호", "안정복", "홍대용", "박지원", "연암", "박제가", "정약용", "다산", "정약전", "최한기", "김정희", "이제마",
+    "이항로", "기정진", "최익현", "유인석", "최제우", "수운", "최시형", "해월", "손병희", "강일순", "나철", "박중빈", "한용운", "박은식", "신채호", "안창호", "도산", "김구", "안중근", "함석헌", "장지연", "정인보",
+  ],
   서양윤리: [
     "소크라테스", "플라톤", "아리스토텔레스", "에피쿠로스", "에픽테토스", "세네카", "아우구스티누스", "아퀴나스", "토마스 아퀴나스", "흄", "칸트", "벤담", "밀",
     "시지윅", "무어", "로스", "프랭크퍼트", "헤어", "매킨타이어", "맥킨타이어", "니체", "사르트르", "레비나스", "요나스", "싱어", "레건", "테일러", "레오폴드",
@@ -34,11 +42,19 @@ const KNOWN: Record<Tradition, string[]> = {
 };
 const KNOWN_BY_NAME = new Map(Object.entries(KNOWN).flatMap(([t, names]) => names.map((n) => [n.replace(/\s+/g, ""), t as Tradition])));
 
-/** 분야 값 → 이름 순으로 분류 */
+/** 이름 정리: 공백 · 괄호 부연 · 『책 이름』 을 뗌 (예: 이황(퇴계) → 이황) */
+const plainName = (n: string) => n.replace(/[(（[].*?[)）\]]/g, "").replace(/[『「].*?[』」]/g, "").replace(/\s+/g, "");
+
+/**
+ * 분류 순서: 한국 사상가 이름 → 분야 값 → 이름.
+ * 한국 사상가는 분야 값이 '동양윤리'·'성리학'·'불교'처럼 적혀 있어도 한국윤리로 (예: 이황 · 이이 · 원효)
+ */
 export function classifyPhilosopher(p: { name: string; tradition: string | null }): Tradition | typeof UNCLASSIFIED {
+  const name = plainName(p.name);
+  if (KNOWN_BY_NAME.get(name) === "한국윤리") return "한국윤리";
   const byTradition = classifyTradition(p.tradition);
   if (byTradition !== UNCLASSIFIED) return byTradition;
-  return KNOWN_BY_NAME.get(p.name.replace(/\s+/g, "")) ?? UNCLASSIFIED;
+  return KNOWN_BY_NAME.get(name) ?? UNCLASSIFIED;
 }
 
 export function classifyTradition(tradition: string | null | undefined): Tradition | typeof UNCLASSIFIED {

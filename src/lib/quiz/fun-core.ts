@@ -65,7 +65,7 @@ export function clusterNames(names: string[]): Map<string, number> {
 }
 
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
-export const CONQUEST_MIN = 30;
+export const CONQUEST_MIN = 10;
 
 // ---------------------------------------------------------------------
 // 오늘의 미션 랭킹: 오늘 10문제 중 몇 문제를 풀었나 (다 푼 사람은 '완주')

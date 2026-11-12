@@ -5,6 +5,7 @@ import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
 import { baseName, clusterNames, CONQUEST_MIN, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { classifyPhilosopher } from "@/lib/traditions";
 
 /**
  * 윤리 퀴즈 재미 요소 (서버)
@@ -166,6 +167,19 @@ async function correctIds(learner: string) {
   return new Set(rows.map((r) => r.item_id));
 }
 
+/** 지도 탭: 한국 사상가 이름이 먼저, 그다음 카드 분야 · 사상가 분야 (도덕교육론 · 미분류는 '그 밖') */
+function mapTradition(name: string, cardTradition: string | undefined, phTradition: string | null): string {
+  for (const t of [cardTradition, phTradition]) {
+    const k = classifyPhilosopher({ name, tradition: t ?? null });
+    if (k === "한국윤리") return k;
+  }
+  for (const t of [cardTradition, phTradition]) {
+    const m = mainTradition(classifyPhilosopher({ name, tradition: t ?? null }));
+    if (m !== OTHER) return m;
+  }
+  return OTHER;
+}
+
 export async function getConquest(learner: string): Promise<Conquest> {
   const db = getAdminClient();
   const [phs, items, correct, prof, claims, cards] = await Promise.all([
@@ -192,7 +206,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
       const p = byName.get(c.name)!;
       const card = cardOf.get(p.id);
       const reward: ConquestTile["reward"] = !c.rewardable ? "none" : claimed.has(p.id) ? "claimed" : !card ? "unavailable" : c.full ? "claimable" : "locked";
-      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, hasCard: Boolean(card), tradition: mainTradition(card?.tradition) !== OTHER ? mainTradition(card?.tradition) : mainTradition(p.tradition) };
+      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, hasCard: Boolean(card), tradition: mapTradition(c.name, card?.tradition, p.tradition) };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const order = [...TRADITIONS, OTHER];
