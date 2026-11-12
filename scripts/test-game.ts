@@ -7,7 +7,7 @@ import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { buildDialogue, josa, pickResponder } from "../src/lib/game/dialogue.ts";
 import { RIVALS, THOUGHTS } from "../src/lib/game/thought.ts";
 import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow } from "../src/lib/game/lives.ts";
-import { CONQUEST_MIN, conquestCells, mondayOf, rankDaily, weekReport } from "../src/lib/quiz/fun-core.ts";
+import { baseName, CONQUEST_MIN, conquestCells, mainTradition, mondayOf, OTHER, rankDaily, weekReport } from "../src/lib/quiz/fun-core.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -228,6 +228,9 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
   );
   const by = Object.fromEntries(cells.map((c) => [c.name, c]));
   check("정복 지도: 별칭을 합쳐 셈 · 한 문제에 같은 사상가가 두 번 있어도 한 번", by["왕수인"].total === 3 && by["왕수인"].done === 2 && !by["왕수인"].full && by["주희"].full);
+  check("이름 변형 합치기: 석가모니(붓다) · 석가모니(불교 일반) · 주희(『대학장구』) · 천태 지의", baseName("석가모니(붓다)") === "석가모니" && baseName("석가모니(불교 일반)") === "석가모니" && baseName("주희(『대학장구』)") === "주희" && baseName("천태 지의") === "천태지의");
+  const tr = ["동양윤리", "한국윤리", "서양윤리", "사회사상", "서양윤리(사회사상)", "도덕교육론", "통일 교육", "북한 이해", "", null].map((t) => mainTradition(t));
+  check("분야 정리: 4개 분야 + 그 밖", tr.join(",") === ["동양윤리", "한국윤리", "서양윤리", "사회사상", "사회사상", OTHER, OTHER, OTHER, OTHER, OTHER].join(","), tr.join(","));
   check(`정복 보상은 문제 ${CONQUEST_MIN}개 이상 사상가만`, CONQUEST_MIN === 30 && !by["주희"].rewardable && conquestCells(Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, names: ["칸트"] })), new Set(), (n) => n)[0].rewardable);
   check("주의 월요일 (한국 날짜)", mondayOf("2026-11-12") === "2026-11-09" && mondayOf("2026-11-09") === "2026-11-09" && mondayOf("2026-11-15") === "2026-11-09");
   const wr = weekReport(

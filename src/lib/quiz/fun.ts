@@ -4,7 +4,7 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
-import { CONQUEST_MIN, conquestCells, rankDaily, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { baseName, CONQUEST_MIN, conquestCells, mainTradition, OTHER, rankDaily, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 
 /**
  * 윤리 퀴즈 재미 요소 (서버)
@@ -26,13 +26,27 @@ const loadItems = cached("quiz-fun-items", () =>
 );
 
 function canonFor(phs: PhRow[]) {
+  // 같은 사상가가 이름만 달리 여러 줄이면 괄호 없는 줄(대표)로 모은다
+  const rep = new Map<string, PhRow>();
+  for (const p of phs) {
+    const k = baseName(p.name);
+    const cur = rep.get(k);
+    if (!cur || (baseName(cur.name) !== cur.name.replace(/\s/g, "") && baseName(p.name) === p.name.replace(/\s/g, ""))) rep.set(k, p);
+  }
   const map = new Map<string, PhRow>();
   for (const p of phs) {
-    map.set(p.name.replace(/\s/g, ""), p);
-    for (const a of p.aliases ?? []) map.set(a.replace(/\s/g, ""), p);
+    const main = rep.get(baseName(p.name))!;
+    map.set(p.name.replace(/\s/g, ""), main);
+    map.set(baseName(p.name), main);
+    for (const a of p.aliases ?? []) {
+      map.set(a.replace(/\s/g, ""), main);
+      map.set(baseName(a), main);
+    }
   }
-  return (n: string) => map.get(n.replace(/\s/g, "")) ?? null;
+  return (n: string) => map.get(n.replace(/\s/g, "")) ?? map.get(baseName(n)) ?? null;
 }
+
+
 
 async function namesOf(learners: string[]) {
   const ids = learners.filter((l) => l.startsWith("m:")).map((l) => l.slice(2));
@@ -150,10 +164,10 @@ export async function getConquest(learner: string): Promise<Conquest> {
       const p = byName.get(c.name)!;
       const card = cardOf.get(p.id);
       const reward: ConquestTile["reward"] = !c.rewardable ? "none" : claimed.has(p.id) ? "claimed" : !card ? "unavailable" : c.full ? "claimable" : "locked";
-      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, tradition: p.tradition ?? card?.tradition ?? "기타" };
+      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, tradition: mainTradition(card?.tradition) !== OTHER ? mainTradition(card?.tradition) : mainTradition(p.tradition) };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  const order = [...TRADITIONS, ...[...new Set(tiles.map((t) => t.tradition))].filter((t) => !TRADITIONS.includes(t))];
+  const order = [...TRADITIONS, OTHER];
   return {
     groups: order.map((tradition) => ({ tradition, tiles: tiles.filter((t) => t.tradition === tradition) })).filter((g) => g.tiles.length),
     totals: { philosophers: tiles.length, full: tiles.filter((t) => t.full).length, items: inScope.length, done: inScope.filter((it) => correct.has(it.id)).length },

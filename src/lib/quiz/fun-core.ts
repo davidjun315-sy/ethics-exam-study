@@ -3,6 +3,26 @@
  *  - 오늘의 미션 랭킹 · 사상가 정복 지도 · 주간 학습 리포트
  */
 
+// 사상가 이름 · 분야 정리 (데이터의 이름 변형 · 세부 분야를 지도용으로)
+/** 이름 정리: 공백 · 괄호 부연 · 『책 이름』 을 떼어 같은 사상가로 (예: 석가모니(붓다) · 주희(『대학장구』) → 석가모니 · 주희) */
+export const baseName = (n: string) =>
+  n
+    .replace(/[(（[].*?[)）\]]/g, "")
+    .replace(/[『「].*?[』」]/g, "")
+    .replace(/\s/g, "");
+
+/** 분야 정리: 지도 탭은 동양 · 한국 · 서양 · 사회사상 + 그 밖 (예: '서양윤리(사회사상)' → 사회사상, '도덕교육론' → 그 밖) */
+export function mainTradition(t: string | null | undefined): string {
+  const s = (t ?? "").replace(/\s/g, "");
+  if (!s) return OTHER;
+  if (/사회사상|정치|사회철학/.test(s)) return "사회사상";
+  if (/한국/.test(s)) return "한국윤리";
+  if (/동양|중국|불교|유교|도가/.test(s)) return "동양윤리";
+  if (/서양/.test(s)) return "서양윤리";
+  return OTHER;
+}
+export const OTHER = "그 밖의 사상가";
+
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
 export const CONQUEST_MIN = 30;
 

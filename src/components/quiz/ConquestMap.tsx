@@ -33,7 +33,7 @@ export function Ring({ t, size = 64 }: { t: Pick<ConquestTile, "done" | "total" 
   );
 }
 
-const TRAD_SHORT: Record<string, string> = { 동양윤리: "동양", 한국윤리: "한국", 서양윤리: "서양", 사회사상: "사회사상" };
+const TRAD_SHORT: Record<string, string> = { 동양윤리: "동양", 한국윤리: "한국", 서양윤리: "서양", 사회사상: "사회사상", "그 밖의 사상가": "그 밖" };
 
 export function ConquestMap({ c }: { c: Conquest }) {
   const router = useRouter();
@@ -63,7 +63,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
         {c.groups.map((g) => {
           const full = g.tiles.filter((t) => t.full).length;
           return (
-            <button key={g.tradition} type="button" role="tab" aria-selected={g.tradition === group?.tradition} onClick={() => setTab(g.tradition)} className={`min-w-0 flex-1 whitespace-nowrap rounded-lg px-2 py-2 text-sm font-semibold ${g.tradition === group?.tradition ? "bg-navy text-on-accent" : "text-muted hover:bg-surface-2"}`}>
+            <button key={g.tradition} type="button" role="tab" aria-selected={g.tradition === group?.tradition} onClick={() => setTab(g.tradition)} className={`shrink-0 grow basis-auto whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold ${g.tradition === group?.tradition ? "bg-navy text-on-accent" : "text-muted hover:bg-surface-2"}`}>
               {TRAD_SHORT[g.tradition] ?? g.tradition}
               <span className="ml-1 text-[11px] font-normal opacity-80">{full}/{g.tiles.length}</span>
             </button>
