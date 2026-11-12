@@ -24,6 +24,9 @@ async function postWithRetry<T>(url: string, body: unknown): Promise<T> {
   }
 }
 
+/** 뒤집기 전 기다리는 시간 (등급이 높을수록 길게) */
+const TEASE_MS = { common: 200, rare: 750, epic: 1050, legendary: 1500 } as const;
+
 export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: () => Promise<GameState>; onOpen: (id: string) => void }) {
   const [phase, setPhase] = useState<"idle" | "drawing" | "reveal">("idle");
   const [result, setResult] = useState<DrawResult | null>(null);
@@ -46,7 +49,8 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
       const [r] = await Promise.all([postWithRetry<DrawResult>("/api/game/draw", { requestId, free }), new Promise((ok) => setTimeout(ok, 700))]);
       setResult(r);
       setPhase("reveal");
-      setTimeout(() => setFlipped(true), 150);
+      // 두근두근: 등급이 높을수록 뒤집기 전에 오래 · 강하게 (일반은 바로)
+      setTimeout(() => setFlipped(true), TEASE_MS[r.card.rarity]);
       reload().catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -65,7 +69,9 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
               <p className="mt-4 text-sm text-muted">{free ? "첫 카드는 코인 없이 뽑을 수 있어요" : "퀴즈로 모은 코인으로 철학자를 영입하세요"}</p>
             </div>
           ) : (
-            <div className="flip-scene relative w-52 sm:w-60">
+            <div className={`flip-scene relative w-52 sm:w-60 ${result && phase === "reveal" && !flipped && result.card.rarity !== "common" ? `draw-tease draw-tease-${result.card.rarity}` : ""}`} style={result ? ({ ["--burst" as string]: BURST[result.card.rarity] } as React.CSSProperties) : undefined}>
+              {/* 전설: 하늘에서 빛기둥 */}
+              {result && phase === "reveal" && result.card.rarity === "legendary" && <span className="draw-pillar" aria-hidden />}
               {result && flipped && <span className="card-burst" style={{ ["--burst" as string]: BURST[result.card.rarity] }} />}
               <div className={`flip-card ${flipped ? "is-flipped" : ""} ${phase === "drawing" ? "card-enter" : ""}`} style={{ aspectRatio: "3 / 4" }}>
                 <div className="flip-face">

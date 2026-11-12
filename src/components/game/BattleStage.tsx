@@ -110,6 +110,7 @@ function Scene({ tradition, bgUrl, weather }: { tradition: string; bgUrl?: strin
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={bgUrl} alt="" className="absolute inset-0 h-full w-full object-cover object-bottom" draggable={false} />
         <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(8,10,18,.35) 0%, transparent 22%, transparent 70%, rgba(8,10,18,.35) 100%)" }} />
+        {weather && <Weather kind={weather} />}
       </div>
     );
   return (
@@ -152,6 +153,34 @@ function Scene({ tradition, bgUrl, weather }: { tradition: string; bgUrl?: strin
         }}
       />
       <div className="absolute inset-x-0 bottom-0 h-[34%] opacity-25" style={{ background: "repeating-linear-gradient(180deg,transparent 0 22%,rgba(255,255,255,.25) 22% 23%)" }} />
+      {weather && <Weather kind={weather} />}
+    </div>
+  );
+}
+
+/** 보스 등장 컷인: 관 번호 · 보스 · 등급 · 수하 · 특수 패턴 경고 (잠깐 보이고 저절로, 누르면 바로 넘어감) */
+function BossEntrance({ boss, minions, stageNo, pattern, onDone }: { boss?: BattleCard; minions: number; stageNo?: number; pattern: BossPattern | null; onDone: () => void }) {
+  if (!boss) return null;
+  return (
+    <div className={`boss-entrance absolute inset-0 z-[95] cursor-pointer select-none overflow-hidden ent-${boss.rarity}`} onClick={onDone} role="dialog" aria-label={`${stageNo ? `${stageNo}관 · ` : ""}보스 ${boss.name} 등장`}>
+      <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/25" />
+      <div className="ent-rays absolute inset-0" aria-hidden />
+      <div className="ent-char absolute bottom-[4%] right-[4%] h-[86%]">
+        <Figure u={boss} boss />
+      </div>
+      <div className="ent-text absolute left-[5%] top-1/2 max-w-[62%] -translate-y-1/2">
+        {stageNo && <div className="text-[11px] font-bold tracking-[0.35em] text-white/70 sm:text-xs">{stageNo}관</div>}
+        <div className="mt-0.5 text-[11px] font-black tracking-[0.2em] sm:text-sm" style={{ color: RAR_TEXT[boss.rarity] }}>
+          {RARITY_LABEL[boss.rarity]} · Lv.{boss.level}
+        </div>
+        <div className="ent-name mt-1 text-3xl font-black leading-none text-white sm:text-5xl">{boss.name}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-bold sm:text-xs">
+          <span className="rounded bg-[#ef6a5a] px-1.5 py-0.5 text-white">보스</span>
+          {minions > 0 && <span className="rounded bg-white/15 px-1.5 py-0.5 text-white/90">수하 {minions}명</span>}
+          {pattern && <span className="ent-warn rounded bg-[#ffd36b] px-1.5 py-0.5 text-[#3a1a00]">⚠ 특수 패턴 「{BOSS_PATTERNS[pattern].name}」</span>}
+        </div>
+      </div>
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-white/45">눌러서 넘기기</div>
     </div>
   );
 }
@@ -417,7 +446,7 @@ export function BattleStage({
   const narration = !current
     ? `${replay.first === "me" ? "내 팀" : byKey.get(replay.foe[0]?.key)?.name ?? "상대"} 선공으로 시작합니다`
     : current.t === "attack"
-      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name}${impacted ? ` ${current.dmg}${current.shielded ? " (수호막으로 반감)" : ""}` : ""}`
+      ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name}${impacted ? ` ${current.dmg}${current.crit ? " · 치명타!" : ""}${current.shielded ? " (수호막으로 반감)" : ""}` : ""}`
       : current.t === "skill"
         ? `${byKey.get(current.actor)?.name}의 필살기 「${current.name}」`
         : current.t === "stunned"
