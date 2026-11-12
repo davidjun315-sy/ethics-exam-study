@@ -12,6 +12,7 @@ import { buildCampaign, canPlayStage, STAGE_CLEAR_SHARDS, stageBossStats, stageF
 import { teamSynergies, withSynergy, type Synergy } from "./synergy";
 import { achievements, canUseTitle, titleSynergy, type Achievement } from "./achievements";
 import { rankWeekly, weekStart } from "./ranking";
+import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow, type LifeState } from "./lives";
 import {
   canFuseCard,
   DEFAULT_COIN_RULES,
@@ -340,6 +341,8 @@ export interface GameState {
   achievements: Achievement[];
   /** 고른 칭호 (ready=false 면 019 적용 전) */
   title: { ready: boolean; value: string | null };
+  /** 도장깨기 생명력 (ready=false 면 020 적용 전 → 제한 없음) */
+  lives: LifeState & { ready: boolean; regenSec: number };
 }
 
 type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free"; created_at: string };
@@ -424,6 +427,11 @@ export async function getGameState(learner: string): Promise<GameState> {
     achievements: ach,
     // 달성 조건이 사라졌으면(카드 분해 등) 표시하지 않음
     title: { ready: p ? "title" in p : true, value: titleRaw && canUseTitle(ach, titleRaw) ? titleRaw : null },
+    lives: {
+      ready: p ? "lives" in p : true,
+      regenSec: LIFE_REGEN_SEC,
+      ...lifeNow({ lives: (p as { lives?: number | null } | null)?.lives, livesAt: (p as { lives_at?: string | null } | null)?.lives_at }),
+    },
   };
 }
 
@@ -642,6 +650,8 @@ export interface StageReplay extends BattleReplay {
   firstClear: boolean;
   reward: { kind: "stones" | "shards"; amount: number } | null;
   cleared: number; // 이번 결과까지 깬 관 수
+  /** 도전 뒤 남은 생명력 (020 전이면 null) */
+  lives: LifeState | null;
 }
 
 export async function playStage(learner: string, bossId: string, deckIds: string[]): Promise<StageReplay> {
@@ -656,6 +666,8 @@ export async function playStage(learner: string, bossId: string, deckIds: string
   if (!stage || !card) throw new GameError("없는 관입니다.", 404);
   const cleared = new Set(state.campaign.cleared.map((c) => c.id));
   if (!canPlayStage(stages, cleared, bossId)) throw new GameError("앞 관을 먼저 깨야 열립니다.", 409);
+  // 생명력 1개 사용 (020 전이면 제한 없음)
+  const lives = await spendLife(learner);
 
   const seed = crypto.randomUUID();
   const me0: BattleCard[] = mine.map((m, i) => ({ key: `me-${i}`, cardId: m!.cardId, philosopherId: m!.philosopherId, name: m!.name, rarity: m!.rarity, level: m!.level, atk: m!.atk, hp: m!.hp, skillName: m!.skillName, skillEffect: m!.skillEffect, artUrl: m!.artUrl, tradition: m!.tradition, battleArtUrl: m!.battleArtUrl ?? null }));
@@ -710,7 +722,24 @@ export async function playStage(learner: string, bossId: string, deckIds: string
     firstClear,
     reward: firstClear ? (state.stones.ready ? { kind: "stones", amount: stageStones(stage.no, Boolean(stage.pattern)) } : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
     cleared: stages.filter((x) => cleared.has(x.bossId)).length,
+    lives,
   };
+}
+
+/** 도장깨기 생명력 1개 사용 (DB 함수가 원자적으로). 없으면 다음 충전 시각과 함께 거절. 020 적용 전이면 null (제한 없음) */
+async function spendLife(learner: string): Promise<LifeState | null> {
+  const { data, error } = await getAdminClient().rpc("game_use_life", { p_learner: learner, p_max: LIFE_MAX, p_regen: LIFE_REGEN_SEC });
+  if (error) {
+    if (/game_use_life|lives|schema cache|does not exist|Could not find/i.test(error.message)) return null;
+    throw gameError(error.message);
+  }
+  const d = data as { ok: boolean; lives: number; livesAt: string };
+  const now = lifeNow({ lives: d.lives, livesAt: d.livesAt });
+  if (!d.ok) {
+    const wait = now.nextAt ? clock(new Date(now.nextAt).getTime() - Date.now()) : "";
+    throw new GameError(`생명력이 없습니다. ${wait ? `${wait} 뒤에 1개가 찹니다.` : "잠시 후 다시 도전하세요."}`, 429);
+  }
+  return now;
 }
 
 export const GAME_017_HINT = "강화석 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/017_game_stones.sql 을 실행하세요.";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Heart, Lock, Swords } from "lucide-react";
 import type { CardView, GameState, StageReplay } from "@/lib/game/data";
 import { buildCampaign, STAGE_CLEAR_SHARDS, stageBossStats, stageMinionStats, stageStatuses, stageStones, type CampaignStage, type StageStatus } from "@/lib/game/campaign";
@@ -10,6 +10,7 @@ import { PhilosopherCard } from "./PhilosopherCard";
 import { initialTeam, TeamPicker } from "./BattleTab";
 import { BattleStage } from "./BattleStage";
 import { buildDialogue } from "@/lib/game/dialogue";
+import { clock } from "@/lib/game/lives";
 import { SynergyChips } from "./SynergyChips";
 import { BOSS_PATTERNS } from "@/lib/game/battle";
 import { teamSynergies, withSynergy } from "@/lib/game/synergy";
@@ -28,6 +29,40 @@ function debateFor(replay: StageReplay, byId: Map<string, CardView>) {
   };
   const boss = replay.foe[0];
   return boss ? buildDialogue(sp(boss), replay.me.map(sp)) : [];
+}
+
+/** 생명력: 서버가 준 값에서 시간이 지나면 화면에서도 1개씩 채움 (실제 차감·충전은 서버가 계산) */
+function useLives(lives: GameState["lives"]) {
+  const [now, setNow] = useState(() => Date.now());
+  const full = lives.count >= lives.max || !lives.nextAt;
+  useEffect(() => {
+    if (full) return;
+    const h = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(h);
+  }, [full]);
+  if (!lives.ready) return { ready: false, count: lives.max, max: lives.max, nextIn: 0, empty: false };
+  if (full) return { ready: true, count: lives.max, max: lives.max, nextIn: 0, empty: false };
+  const next = new Date(lives.nextAt!).getTime();
+  const step = lives.regenSec * 1000;
+  const gained = now >= next ? 1 + Math.floor((now - next) / step) : 0;
+  const count = Math.min(lives.max, lives.count + gained);
+  const nextIn = count >= lives.max ? 0 : next + gained * step - now;
+  return { ready: true, count, max: lives.max, nextIn, empty: count < 1 };
+}
+
+/** 생명력 표시: ♥♥♥♡♡ · 다음 12:34 */
+function LivesChip({ l, dark = false }: { l: ReturnType<typeof useLives>; dark?: boolean }) {
+  if (!l.ready) return null;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold tabular-nums ${dark ? "border-white/15 bg-white/10 text-white" : "border-[#ef6a5a]/40 bg-[#ef6a5a]/10 text-[#c2412f] dark:text-[#ff9f92]"}`} title={`생명력 ${l.count}/${l.max} · 도장깨기에 도전할 때마다 1개 사용, 30분마다 1개씩 다시 참`} aria-label={`생명력 ${l.count}/${l.max}${l.nextIn ? `, 다음 충전까지 ${clock(l.nextIn)}` : ""}`}>
+      <span aria-hidden className="tracking-[-0.1em]">
+        {Array.from({ length: l.max }, (_, i) => (
+          <span key={i} className={i < l.count ? "text-[#ff5a5a]" : "opacity-25"}>{"\u2665\uFE0E"}</span>
+        ))}
+      </span>
+      {l.nextIn > 0 && <span className={`font-semibold ${dark ? "text-white/70" : "text-muted"}`}>+1 {clock(l.nextIn)}</span>}
+    </span>
+  );
 }
 
 function Portrait({ c, className = "", dim = false }: { c?: CardView; className?: string; dim?: boolean }) {
@@ -49,6 +84,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   const clearedIds = useMemo(() => new Set(state.campaign.cleared.map((c) => c.id)), [state.campaign.cleared]);
   const statuses = useMemo(() => stageStatuses(stages, clearedIds), [stages, clearedIds]);
   const byId = useMemo(() => new Map(state.cards.map((c) => [c.philosopherId, c])), [state.cards]);
+  const lives = useLives(state.lives);
   const current = stages[statuses.indexOf("current")] ?? null;
   const clearedCount = stages.filter((s) => clearedIds.has(s.bossId)).length;
 
@@ -153,20 +189,25 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <button
                   type="button"
                   className="rounded-xl bg-[#ffd36b] py-2.5 text-sm font-black text-[#2a1d00] hover:bg-[#ffe08f] disabled:opacity-50"
-                  disabled={busy}
+                  disabled={busy || lives.empty}
                   onClick={() => {
                     setPicked(nextStage.bossId);
                     challenge(nextStage.bossId);
                   }}
                 >
-                  다음 관: {byId.get(nextStage.bossId)?.name}
+                  {lives.empty ? `충전 중 ${clock(lives.nextIn)}` : `다음 관: ${byId.get(nextStage.bossId)?.name}`}
                 </button>
               ) : (
-                <button type="button" className="btn-primary py-2.5 font-bold" disabled={busy} onClick={() => challenge(replay.stage.bossId)}>
-                  다시 도전
+                <button type="button" className="btn-primary py-2.5 font-bold" disabled={busy || lives.empty} onClick={() => challenge(replay.stage.bossId)}>
+                  {lives.empty ? `충전 중 ${clock(lives.nextIn)}` : "다시 도전"}
                 </button>
               )}
             </div>
+            {lives.ready && (
+              <div className="mt-2 flex justify-center">
+                <LivesChip l={lives} dark />
+              </div>
+            )}
             {error && <p className="mt-2 text-xs text-[#ffb4a8]">{error}</p>}
           </div>
         }
@@ -194,10 +235,13 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
 
       <section className="card space-y-4 p-4 sm:p-5" aria-labelledby="campaign-h">
         <div>
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 id="campaign-h" className="text-lg font-black">사상가 도장깨기</h2>
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+            <h2 id="campaign-h" className="whitespace-nowrap text-lg font-black">사상가 도장깨기</h2>
+            <span className="ml-auto">
+              <LivesChip l={lives} />
+            </span>
             {state.stones.ready && (
-              <span className="ml-auto rounded-full border border-[#7fd0ff]/50 bg-[#7fd0ff]/10 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[#2b7fbf] dark:text-[#9fd8ff]" title="강화석: 어느 카드 레벨업에나 쓰는 강화 재료">
+              <span className="rounded-full border border-[#7fd0ff]/50 bg-[#7fd0ff]/10 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[#2b7fbf] dark:text-[#9fd8ff]" title="강화석: 어느 카드 레벨업에나 쓰는 강화 재료">
                 ◆ 강화석 {state.stones.count}
               </span>
             )}
@@ -214,6 +258,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               : state.stones.ready
                 ? `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 강화석(어느 사상가에게나 쓰는 강화 재료)을 받습니다.`
                 : `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 그 사상가의 강화 조각 ${STAGE_CLEAR_SHARDS}개.`}
+            {lives.ready && " 도전할 때마다 생명력 ♥ 1개를 씁니다 (최대 5개, 30분마다 1개씩 다시 참)."}
           </p>
         </div>
 
@@ -281,11 +326,11 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
             <button
               type="button"
               className={`ml-auto inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-black ${selStatus === "current" ? "bg-[#ffd36b] text-[#2a1d00] hover:bg-[#ffe08f]" : "bg-white/15 hover:bg-white/25"} disabled:opacity-40`}
-              disabled={busy || selStatus === "locked" || !state.campaign.ready || team.length !== 3}
+              disabled={busy || selStatus === "locked" || !state.campaign.ready || team.length !== 3 || lives.empty}
               onClick={() => challenge(sel.bossId)}
             >
               <Swords className="h-4 w-4" aria-hidden />
-              {busy ? "겨루는 중…" : selStatus === "cleared" ? "다시 도전" : "도전"}
+              {busy ? "겨루는 중…" : lives.empty ? `생명력 충전 중 ${clock(lives.nextIn)}` : selStatus === "cleared" ? "다시 도전" : "도전"}
             </button>
           </div>
         </div>

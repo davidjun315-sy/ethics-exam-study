@@ -6,6 +6,7 @@ import { achievements, bonusText, canUseTitle, titleSynergy } from "../src/lib/g
 import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { buildDialogue, josa, pickResponder } from "../src/lib/game/dialogue.ts";
 import { RIVALS, THOUGHTS } from "../src/lib/game/thought.ts";
+import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow } from "../src/lib/game/lives.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -178,6 +179,24 @@ check("생존 인물은 조사 단계 없음", !artPrompt({ name: "싱어", orig
   // 도장깨기 순서표(BORN)의 사상가는 모두 사상 요약이 있음
   const born = ["석가모니", "공자", "묵자", "노자", "맹자", "장자", "순자", "주희", "왕수인", "원효", "지눌", "이황", "이이", "정약용", "소크라테스", "플라톤", "아리스토텔레스", "칸트", "벤담", "밀", "롤스", "노직", "샌델", "싱어", "레건", "길리건", "나딩스", "콜버그", "루소", "홉스", "로크", "마르크스", "니체", "사르트르"];
   check("주요 사상가 사상 요약 · 맞수 대사가 모두 채워짐", born.every((n) => THOUGHTS[n]?.k && THOUGHTS[n].c && THOUGHTS[n].r) && RIVALS.every((r) => THOUGHTS[r.a] && THOUGHTS[r.b] && r.aSays && r.bSays), born.filter((n) => !THOUGHTS[n]).join(","));
+}
+
+
+// ---------------------------------------------------------------------
+// 도장깨기 생명력
+// ---------------------------------------------------------------------
+{
+  const t0 = new Date("2026-11-12T10:00:00Z");
+  const at = (min: number) => new Date(t0.getTime() + min * 60000);
+  check("생명력: 최대 5 · 30분", LIFE_MAX === 5 && LIFE_REGEN_SEC === 1800);
+  check("기록이 없으면 가득", lifeNow({ lives: null, livesAt: null }, t0).count === 5 && lifeNow({ lives: null, livesAt: null }, t0).nextAt === null);
+  const s3 = { lives: 3, livesAt: t0.toISOString() };
+  check("3개 → 29분 뒤에도 3개, 다음 충전 30분 뒤", lifeNow(s3, at(29)).count === 3 && lifeNow(s3, at(29)).nextAt === at(30).toISOString());
+  check("30분 뒤 4개, 다음 충전 60분 뒤", lifeNow(s3, at(30)).count === 4 && lifeNow(s3, at(30)).nextAt === at(60).toISOString());
+  check("60분 뒤 가득(5), 시계 멈춤 · 오래 지나도 5를 넘지 않음", lifeNow(s3, at(60)).count === 5 && lifeNow(s3, at(60)).nextAt === null && lifeNow(s3, at(600)).count === 5);
+  const s0 = { lives: 0, livesAt: t0.toISOString() };
+  check("0개 → 가득 차는 시각 150분 뒤", lifeNow(s0, at(1)).fullAt === at(150).toISOString());
+  check("시계 표시", clock(65_000) === "1:05" && clock(3_725_000) === "1:02:05" && clock(-5) === "0:00");
 }
 
 if (failed) {
