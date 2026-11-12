@@ -35,6 +35,8 @@ export interface CampaignStage {
   hpMul: number;
   atkMul: number;
   base: { atk: number; hp: number };
+  /** 중반 강화 배율 (첫 관 · 마지막 관 1, 가운데에서 가장 큼). 보스 · 수하 모두 공격·체력에 √ramp 씩 */
+  ramp: number;
   /** 보스 사상가의 성향 모양 (공격형은 공격↑ 체력↓ …). 공격×체력 곱은 1 → 전체 강함은 그대로 */
   shape: { atk: number; hp: number };
   /** 특수 보스 패턴 (5관마다 · 마지막 관), 없으면 null */
@@ -53,7 +55,7 @@ const prevRarity = (r: Rarity): Rarity => RARITIES[Math.max(0, RARITIES.indexOf(
  *  - 수하가 있으면 보스 체력은 bossHp[수하 수] 만큼 (팀 전체 세기는 비슷하게)
  *  - 전설 관은 legendary 배율만큼 모두 더 강하게
  */
-export const MINION_TUNE = { atk: 0.95, hp: 1.05, bossHp: [1, 0.86, 0.86] as number[], legendary: 1.1 };
+export const MINION_TUNE = { atk: 0.95, hp: 1.05, bossHp: [1, 0.93, 0.86] as number[], legendary: 1.0 };
 
 /** 특수 보스: 5관마다(5 재생 · 10 격노 · 15 철벽 · 20 재생 …) + 마지막 관은 격노 */
 export function stagePattern(no: number, total: number): BossPattern | null {
@@ -104,10 +106,14 @@ export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "nam
   return [...cards].sort((a, b) => ti(a.tradition) - ti(b.tradition) || bornYear(a.name) - bornYear(b.name) || a.name.localeCompare(b.name) || a.philosopherId.localeCompare(b.philosopherId));
 }
 
-/** 보스 배율: 첫 관 → 마지막 관 (시뮬레이션으로 정함, scripts/test-duel.ts) */
-export const BOSS_TUNE = { hp: [2.1, 2.25] as [number, number], atk: [0.85, 0.8] as [number, number] };
-/** 진행도(0~1)에 따른 보스 등급: 앞 20% 일반 · 45% 까지 희귀 · 75% 까지 영웅 · 나머지 전설 */
-const rarityAt = (t: number): Rarity => (t < 0.2 ? "common" : t < 0.45 ? "rare" : t < 0.75 ? "epic" : "legendary");
+/**
+ * 보스 배율: 첫 관 → 마지막 관 (시뮬레이션으로 정함, scripts/test-duel.ts)
+ *  mid: 초중반 강화 — ramp = 1 + mid × (1 − (1 − t)^5). 빨리 오르고 뒤에선 평평 (매 관 약해지지 않음)
+ *  재도전이 무제한이라 초반이 너무 쉬웠던 것을 보정 (조금 키운 팀으로 절반을 깨던 문제)
+ */
+export const BOSS_TUNE = { hp: [2.1, 1.6] as [number, number], atk: [0.85, 0.6] as [number, number], mid: 0.7 };
+/** 진행도(0~1)에 따른 보스 등급: 앞 12% 일반 · 42% 까지 희귀 · 72% 까지 영웅 · 나머지 전설 */
+const rarityAt = (t: number): Rarity => (t < 0.12 ? "common" : t < 0.42 ? "rare" : t < 0.72 ? "epic" : "legendary");
 
 const lerp = ([a, b]: [number, number], t: number) => Math.round((a + (b - a) * t) * 100) / 100;
 
@@ -143,6 +149,7 @@ export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name"
       rarity,
       level: i + 1,
       statLevel: 1 + t * (maxLevel - 1),
+      ramp: Math.round((1 + (tune.mid ?? 0) * (1 - (1 - t) ** 5)) * 1000) / 1000,
       hpMul: lerp(tune.hp, t),
       atkMul: lerp(tune.atk, t),
       base,
@@ -187,7 +194,8 @@ export function stageBossStats(stage: CampaignStage, mult: Record<Rarity, number
   const sp = stage.pattern && mc === 0 ? PATTERN_HP : 1;
   const lg = stage.rarity === "legendary" ? MINION_TUNE.legendary : 1;
   const bh = MINION_TUNE.bossHp[mc] ?? 1;
-  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk * lg), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp * sp * bh * lg) };
+  const rp = Math.sqrt(stage.ramp ?? 1);
+  return { atk: Math.round(stage.base.atk * r * lv * stage.atkMul * shape.atk * lg * rp), hp: Math.round(stage.base.hp * r * lv * stage.hpMul * shape.hp * sp * bh * lg * rp) };
 }
 
 /** 수하 능력치 (보통 카드 크기, 한 단계 아래 등급) */
@@ -195,7 +203,8 @@ export function stageMinionStats(stage: CampaignStage, m: CampaignStage["minions
   const r = mult[m.rarity] ?? 1;
   const lv = 1 + 0.12 * (stage.statLevel - 1);
   const lg = stage.rarity === "legendary" ? MINION_TUNE.legendary : 1;
-  return { atk: Math.round(stage.base.atk * r * lv * MINION_TUNE.atk * m.shape.atk * lg), hp: Math.round(stage.base.hp * r * lv * MINION_TUNE.hp * m.shape.hp * lg) };
+  const rp = Math.sqrt(stage.ramp ?? 1);
+  return { atk: Math.round(stage.base.atk * r * lv * MINION_TUNE.atk * m.shape.atk * lg * rp), hp: Math.round(stage.base.hp * r * lv * MINION_TUNE.hp * m.shape.hp * lg * rp) };
 }
 
 /** 관의 적 전체 (보스 foe-0 + 수하 foe-1 · foe-2). 카드 정보가 없는 수하는 빠짐 */

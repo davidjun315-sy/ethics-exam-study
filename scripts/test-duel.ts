@@ -295,14 +295,18 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   const st = buildCampaign(cards, 5);
   check("관 순서: 동양 → 한국 → 서양 → 사회사상, 분야 안에서는 태어난 순", st.map((x) => name(x.bossId)).join(",") === "공자,맹자,주희,이황,이이,플라톤,칸트,밀,롤스,노직", st.map((x) => name(x.bossId)).join(","));
   // 기본 능력치 비교 (특수 보스는 패턴이 있어 체력을 조금 낮추므로 패턴 없는 값으로)
+  // 적 전체(보스 + 수하)의 공격×체력 합 (특수 보스는 패턴이 있어 체력을 조금 낮추므로 패턴 없는 값으로)
+  const teamPow = (stages: typeof st) => stages.map((x) => stageFoes({ ...x, pattern: null }, byId).reduce((n, f) => n + f.atk * f.hp, 0));
   const power = st.map((x) => stageBossStats({ ...x, pattern: null }));
-  check("관마다 보스 한 명 · 매 관 더 강해짐 (공격×체력이 매번 늘고, 마지막이 첫 관보다 훨씬 강함)", power.every((p, i) => i === 0 || p.atk * p.hp > power[i - 1].atk * power[i - 1].hp) && power[9].atk * power[9].hp > power[0].atk * power[0].hp * 5, power.map((p) => `${p.atk}/${p.hp}`).join(" "));
+  const tp = teamPow(st);
+  check("관마다 보스 한 명 · 매 관 더 강해짐 (공격×체력이 매번 늘고, 마지막이 첫 관보다 훨씬 강함)", tp.every((p, i) => i === 0 || p > tp[i - 1]) && tp[9] > tp[0] * 5, tp.map((p) => Math.round(p / 1000)).join(" "));
   check("보스 레벨 = 관 번호 (매 관 오름) · 등급은 내려가지 않음", st.every((x, i) => x.level === i + 1) && st.every((x, i) => i === 0 || ["common", "rare", "epic", "legendary"].indexOf(x.rarity) >= ["common", "rare", "epic", "legendary"].indexOf(st[i - 1].rarity)));
   {
     // 사상가마다 기본 능력치가 달라도 뒤 관이 약해지지 않음
     const uneven = cards.map((c, i) => ({ ...c, baseAtk: 30 + ((i * 13) % 25), baseHp: 220 + ((i * 71) % 160) }));
-    const p2 = buildCampaign(uneven, 5).map((x) => stageBossStats({ ...x, pattern: null }));
-    check("사상가 기본값이 제각각이어도 보스는 매 관 강해짐 (공격×체력)", p2.every((p, i) => i === 0 || p.atk * p.hp > p2[i - 1].atk * p2[i - 1].hp));
+    const ub = new Map(uneven.map((c) => [c.philosopherId, c]));
+    const p2 = buildCampaign(uneven, 5).map((x) => stageFoes({ ...x, pattern: null }, ub).reduce((n, f) => n + f.atk * f.hp, 0));
+    check("사상가 기본값이 제각각이어도 적 전체는 매 관 강해짐 (공격×체력 합)", p2.every((p, i) => i === 0 || p > p2[i - 1]), p2.map((p) => Math.round(p / 1000)).join(" "));
   }
   check("보스 등급: 일반 → 희귀 → 영웅 → 전설", st[0].rarity === "common" && st[9].rarity === "legendary" && st.some((x) => x.rarity === "rare") && st.some((x) => x.rarity === "epic"));
   const none = stageStatuses(st, new Set());
@@ -360,7 +364,7 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
   const wl = rate("common", 1, 9);
   check("새내기 팀으로는 마지막 관을 못 깸 (뽑기·강화가 필요)", wl <= 5, `${wl}/100`);
   const wt = rate("legendary", 5, 9);
-  check("전설 Lv.5 팀은 마지막 관도 깰 수 있음", wt >= 15, `${wt}/100`);
+  check("전설 Lv.5 팀은 마지막 관도 몇 번 도전하면 깰 수 있음 (시너지·칭호 없이 한 판 8% 이상)", wt >= 8, `${wt}/100`);
   // 강화석 성장만으로는 보스를 못 넘음: 깬 관 강화석을 덱 3장 레벨업에 모두 쓴 일반 팀 (코인 무제한 가정)
   {
     const lvFrom = (stones: number) => {
@@ -398,7 +402,7 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     check("특수 보스는 강화석 +1", stageStones(5, true) === 2 && stageStones(5) === 1);
     const boss = (p: "enrage" | "regen" | "fortress" | null, seed: string) => {
       const b = stageBoss({ ...st[5], pattern: p }, byId.get(st[5].bossId)!);
-      return runBattle(team("epic", 4, 2), [b], seed);
+      return runBattle(team("legendary", 4, 2), [b], seed);
     };
     for (const p of ["enrage", "regen", "fortress"] as const) {
       const r = boss(p, `pat-${p}`);
@@ -441,6 +445,29 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     };
     const wE = rate(epicLast), wL = rate(legend[legend.length - 1]);
     check("전설 관은 영웅 관보다 어려움 (같은 전설 Lv.5 팀)", wL < wE, `영웅 마지막 ${wE} · 전설 마지막 ${wL} /100`);
+  }
+  // 재도전 포함 진행도: 조금만 키운 팀(일반 Lv.1 두 장 + 희귀 Lv.2)은 재도전 5번씩 해도 앞쪽 20%를 못 넘음
+  {
+    const big = Array.from({ length: 40 }, (_, i) => ({ philosopherId: `b${i}`, name: `b${i}`, tradition: "서양윤리", baseAtk: 40, baseHp: 300, skillEffect: EFF2[(i * 3) % 5], skillName: "s", artUrl: null }));
+    const bigById = new Map(big.map((c) => [c.philosopherId, c]));
+    const camp = buildCampaign(big, 5);
+    const reach = (spec: ["common" | "rare" | "epic" | "legendary", number][]) => {
+      let k = 0;
+      for (; k < camp.length; k++) {
+        let won = false;
+        for (let a = 0; a < 5 && !won; a++) {
+          const t = spec.map(([r, lv], i) => { const x = statsFor({ atk: 40, hp: 300 }, r, lv); return { key: `me-${i}`, philosopherId: `t${i}`, name: `t${i}`, atk: x.atk, hp: x.hp, skillName: "s", skillEffect: EFF2[(a + k + i) % 5] }; });
+          won = runBattle(t, stageFoes(camp[k], bigById), `reach${k}-${a}`).winner === "me";
+        }
+        if (!won) break;
+      }
+      return k;
+    };
+    const light = reach([["common", 1], ["common", 1], ["rare", 2]]);
+    const rare3 = reach([["rare", 3], ["rare", 3], ["rare", 3]]);
+    const leg5 = reach([["legendary", 5], ["legendary", 5], ["legendary", 5]]);
+    check("조금 키운 팀(일반1·일반1·희귀2)은 재도전 5번씩 해도 40관 중 20%를 못 넘음", light < 8, `${light}/40`);
+    check("키울수록 멀리 감: 조금 키운 팀 < 희귀 Lv.3 < 전설 Lv.5 (전설은 65% 이상)", light < rare3 && rare3 < leg5 && leg5 >= 26, `${light} · ${rare3} · ${leg5} /40`);
   }
   check(
     "첫 클리어 강화석: 1~10관 1개 · 11~20관 2개 … (뒤 관일수록 많음)",
