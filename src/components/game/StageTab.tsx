@@ -108,21 +108,21 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
           </span>
         }
         result={
-          <div className="card-enter mx-auto mt-3 max-w-sm rounded-2xl border border-white/15 bg-black/40 p-5 text-center backdrop-blur">
+          <div className={`mx-auto max-w-sm rounded-2xl border p-4 text-center shadow-2xl backdrop-blur-md sm:p-5 ${win ? "border-[#ffd36b]/45 bg-[#140f04]/90" : "border-white/15 bg-[#0b0f18]/90"}`}>
             {win ? (
               <>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ffd36b]">{replay.stage.no}관</div>
-                <div className="text-4xl font-black text-[#ffd36b]">클리어!</div>
+                <div className="result-title text-3xl font-black text-[#ffd36b] sm:text-4xl">클리어!</div>
                 <p className="mt-1 text-sm text-white/80">{boss?.name}에게 이겼습니다.</p>
               </>
             ) : (
               <>
-                <div className="text-4xl font-black text-white/85">패배</div>
+                <div className="text-3xl font-black text-white/85 sm:text-4xl">패배</div>
                 <p className="mt-1 text-sm text-white/70">{boss?.name} · 아직 버거운 상대입니다. 카드를 뽑고 레벨업·합성으로 팀을 키워 다시 도전하세요.</p>
               </>
             )}
             {replay.firstClear && replay.reward && (
-              <p className="mt-3 rounded-lg bg-[#ffd36b]/15 px-3 py-2 text-sm font-bold text-[#ffd36b]">
+              <p className="mt-2.5 rounded-lg bg-[#ffd36b]/15 px-3 py-1.5 text-sm font-bold text-[#ffd36b]">
                 {replay.reward.kind === "stones" ? (
                   <>
                     보상: 강화석 +{replay.reward.amount}
@@ -134,7 +134,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               </p>
             )}
             {win && !replay.firstClear && <p className="mt-2 text-xs text-white/60">이미 깬 관입니다 (보상은 처음 한 번)</p>}
-            <div className="mt-3">
+            <div className="mt-2.5">
               <div className="flex justify-between text-[11px] text-white/60">
                 <span>도장깨기</span>
                 <span className="tabular-nums">
@@ -145,7 +145,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <div className="h-full rounded-full bg-gradient-to-r from-[#5a78d1] to-[#ffd36b]" style={{ width: `${(replay.cleared / Math.max(1, replay.stage.total)) * 100}%` }} />
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={() => setReplay(null)}>
                 지도로
               </button>

@@ -630,6 +630,14 @@ body {
 .fx-dmg-big { font-size: 2.1rem; -webkit-text-stroke-width: 2px; }
 @keyframes fx-dmg { 0% { opacity: 0; scale: 0.3; translate: -50% 10px; } 18% { opacity: 1; scale: 1.45; translate: -50% -8px; } 32% { scale: 1; } 75% { opacity: 1; } 100% { opacity: 0; translate: -50% -42px; } }
 /* 컷인 */
+/* 배틀 결과: 전장 위에 떠오름 */
+.result-overlay { animation: result-dim 0.45s ease-out both; }
+.result-win { background: radial-gradient(60% 55% at 50% 50%, rgba(255, 201, 74, 0.28), rgba(10, 8, 2, 0.55) 70%, rgba(4, 4, 8, 0.75)); }
+.result-lose { background: radial-gradient(60% 55% at 50% 50%, rgba(40, 52, 80, 0.35), rgba(4, 6, 12, 0.72) 70%); }
+@keyframes result-dim { from { opacity: 0; } to { opacity: 1; } }
+.result-rise { animation: result-rise 0.5s cubic-bezier(.2,.9,.3,1.15) 0.1s both; }
+@keyframes result-rise { from { opacity: 0; transform: translateY(22px) scale(0.94); } to { opacity: 1; transform: none; } }
+.result-title { text-shadow: 0 0 18px rgba(255, 201, 74, 0.65), 0 2px 0 rgba(0,0,0,.45); }
 /* 배틀 전 논쟁 */
 .debate-char { animation: debate-in 0.35s cubic-bezier(.2,.8,.3,1) both; filter: drop-shadow(0 8px 18px rgba(0,0,0,.55)); }
 .debate-from-l { --dx: -30px; }

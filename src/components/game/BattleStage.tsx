@@ -348,6 +348,7 @@ export function BattleStage({
   const current = idx > 0 ? replay.events[idx - 1] : null;
   // 배틀 전 논쟁: 다 넘기면(또는 건너뛰면) 배틀 시작
   const [introAt, setIntroAt] = useState(0);
+  const [showResult, setShowResult] = useState(true);
   const talking = Boolean(intro?.length) && introAt < (intro?.length ?? 0);
   // 도장깨기 기록이면 보스 특수 패턴
   const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
@@ -559,7 +560,7 @@ export function BattleStage({
           )}
         </span>
       </div>
-      <div ref={fieldRef} className="relative h-[19rem] overflow-hidden sm:h-[26rem]" aria-label="전장" style={{ ["--t" as string]: t } as CSSProperties}>
+      <div ref={fieldRef} className={`relative overflow-hidden transition-[height] duration-300 sm:h-[26rem] ${done && result && showResult ? "h-[23rem]" : "h-[19rem]"}`} aria-label="전장" style={{ ["--t" as string]: t } as CSSProperties}>
         <div className={`absolute inset-0 ${shake || ""}`}>
           <Scene tradition={tradition} bgUrl={bgUrl} />
           {replay.me.map((u, i) => unit(u, slotOf(u.key, nFoes), false, i))}
@@ -575,11 +576,24 @@ export function BattleStage({
             )}
           </div>
         </div>
+        {/* 결과: 전장 위에 떠오름 (전장을 어둡게 · 이기면 금빛) */}
+        {done && result && showResult && (
+          <div className={`result-overlay absolute inset-0 z-[85] flex items-center justify-center overflow-y-auto p-3 ${replay.winner === "me" ? "result-win" : "result-lose"}`}>
+            <button type="button" onClick={() => setShowResult(false)} className="absolute right-2 top-2 z-10 rounded-full bg-black/45 px-2.5 py-1 text-[11px] text-white/80 hover:bg-black/65" aria-label="결과 닫고 전장 보기">
+              전장 보기 ✕
+            </button>
+            <div className="result-rise w-full max-w-sm">{result}</div>
+          </div>
+        )}
+        {done && result && !showResult && (
+          <button type="button" onClick={() => setShowResult(true)} className="absolute bottom-3 left-1/2 z-[85] -translate-x-1/2 rounded-full bg-[#ffd36b] px-4 py-1.5 text-xs font-black text-[#2a1d00] shadow-lg">
+            결과 보기
+          </button>
+        )}
       </div>
       <p className="min-h-10 border-t border-white/10 bg-black/30 px-3 py-2 text-center text-[13px] text-white/85" aria-live="polite">
         {narration}
       </p>
-      {done && <div className="px-3 pb-4">{result}</div>}
       <Roster units={[{ side: "me", list: replay.me }, { side: "foe", list: replay.foe }]} st={st} foeLabel={replay.foe.length === 1 ? "보스" : "보스와 수하"} synergy={replay.synergy} pattern={pattern} />
     </section>
   );
