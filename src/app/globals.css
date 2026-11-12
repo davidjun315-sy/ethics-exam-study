@@ -670,16 +670,16 @@ body {
 .fx-title-text { color: #fff; -webkit-text-stroke: 1.2px color-mix(in srgb, var(--c1) 45%, #0a0d16); paint-order: stroke fill; text-shadow: 0 1px 2px rgba(0,0,0,.7), 0 0 10px rgba(0,0,0,.45), 0 0 18px var(--c0); }
 .fx-title-sub { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.75), 0 0 8px rgba(0,0,0,.4); }
 
+/* 동작 줄이기: 배틀의 핵심 동작(돌진 · 피격 · 필살기 효과 · 피해 숫자)은 그대로 두고, 화면 흔들림 · 번쩍임 · 반복 장식만 끔 */
 @media (prefers-reduced-motion: reduce) {
-  .fx-layer, .fx-cutin { display: none !important; }
+  .fx-flash { display: none !important; }
   .bs-phase-enrage { animation: none !important; }
-  .fx-shake, .fx-shake-big, .fx-dmg { animation: none !important; }
+  .fx-shake, .fx-shake-big { animation: none !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bs-idle, .bs-lunge-r, .bs-lunge-l, .bs-hit, .bs-cast, .bs-aura, .bs-slash, .bs-wave, .bs-spark, .bs-heal, .bs-dome, .bs-stars,
+  .bs-idle, .bs-aura,
   .bs-rar > img, .bs-rar > div:last-child, .bs-rar-floor, .bs-rar-motes i, .bs-rar-halo, .bs-gauge-label { animation: none !important; }
-  .bs-faint { animation: none !important; filter: grayscale(1) brightness(0.45); opacity: 0.4; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -689,9 +689,7 @@ body {
   .pcard-sparkles { display: none; }
   .pcard-glow { opacity: 0.8 !important; }
   .card-enter, .card-burst, .card-float, .level-pop, .upgrade-glow,
-  .lunge-up, .lunge-down, .hit-shake, .dmg-float, .faint, .skill-banner,
   .fuse-left, .fuse-right, .fuse-flash, .fuse-reveal { animation: none !important; }
-  .faint { filter: grayscale(1) brightness(0.5); opacity: 0.55; }
 }
 
 /* 시트·모달 등장 (동작 줄이기면 끔) */

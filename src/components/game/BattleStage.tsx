@@ -170,7 +170,6 @@ function Figure({ u, boss }: { u: BattleCard; boss: boolean }) {
 const DUR = { attack: 950, skill: 2300, stunned: 700, phase: 1900, faint: 600, end: 500 } as const;
 // 돌진(bs-lunge)이 가장 앞에 나간 때 · 필살기 연출(컷인 → 마법진 → 날아가는 효과)이 닿는 때
 const IMPACT = { attack: 230, skill: 1250 } as const;
-const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
 
@@ -373,7 +372,7 @@ export function BattleStage({
   // 대사는 자동으로 넘어가지 않음: 화면을 누르거나 '다음'을 눌러야 넘어감
 
   // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
-  const { impacted, shown } = useImpact(idx, current, t, IMPACT, reduced());
+  const { impacted, shown } = useImpact(idx, current, t, IMPACT);
   const st = stateAt(units, replay.events, shown);
   const charge = chargeAt(units.map((u) => u.key), replay.events, shown);
   const actor = current && (current.t === "attack" || current.t === "skill") ? current.actor : null;
@@ -500,7 +499,7 @@ export function BattleStage({
 
   // 이번 사건의 화면 효과 (전장 좌표)
   const fx = (() => {
-    if (!current || !caster || !theme || reduced()) return null;
+    if (!current || !caster || !theme) return null;
     const from = boxOf(caster.key, W, H, nFoes);
     const imp = IMPACT[current.t === "skill" ? "skill" : "attack"] * t;
     if (current.t === "attack") {
