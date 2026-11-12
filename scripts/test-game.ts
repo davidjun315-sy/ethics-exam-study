@@ -7,7 +7,7 @@ import { rankWeekly, weekStart } from "../src/lib/game/ranking.ts";
 import { buildDialogue, josa, pickResponder } from "../src/lib/game/dialogue.ts";
 import { RIVALS, THOUGHTS } from "../src/lib/game/thought.ts";
 import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow } from "../src/lib/game/lives.ts";
-import { baseName, clusterNames, CONQUEST_MIN, conquestCells, mainTradition, mondayOf, OTHER, rankDaily, sameName, weekReport } from "../src/lib/quiz/fun-core.ts";
+import { baseName, clusterNames, CONQUEST_MIN, conquestCells, conquestRarity, mainTradition, mondayOf, OTHER, rankDaily, sameName, weekReport } from "../src/lib/quiz/fun-core.ts";
 import { artPrompt, faceFor, portraitSearchUrl, suggestFor } from "../src/lib/game/suggestions.ts";
 
 let failed = 0;
@@ -261,6 +261,7 @@ if (failed) {
   console.log(`\n${failed}개 실패`);
   process.exit(1);
 }
+check("정복 보상 등급: 10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설", [9, 10, 19, 20, 29, 30, 39, 40, 93].map(conquestRarity).join(",") === ",common,common,rare,rare,epic,epic,legendary,legendary");
 {
   const { classifyPhilosopher } = await import("../src/lib/traditions.ts");
   const k = (name: string, tradition: string | null) => classifyPhilosopher({ name, tradition });

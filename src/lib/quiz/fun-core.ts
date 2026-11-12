@@ -67,6 +67,17 @@ export function clusterNames(names: string[]): Map<string, number> {
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
 export const CONQUEST_MIN = 10;
 
+/** 정복 보상 카드 등급: 문제가 많은 사상가일수록 높은 등급 (10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설) */
+export const CONQUEST_TIERS = [
+  { min: 40, rarity: "legendary" },
+  { min: 30, rarity: "epic" },
+  { min: 20, rarity: "rare" },
+  { min: CONQUEST_MIN, rarity: "common" },
+] as const;
+export type ConquestRarity = (typeof CONQUEST_TIERS)[number]["rarity"];
+export const conquestRarity = (total: number): ConquestRarity | null => CONQUEST_TIERS.find((t) => total >= t.min)?.rarity ?? null;
+export const CONQUEST_RARITY_NAME: Record<ConquestRarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
+
 // ---------------------------------------------------------------------
 // 오늘의 미션 랭킹: 오늘 10문제 중 몇 문제를 풀었나 (다 푼 사람은 '완주')
 // ---------------------------------------------------------------------
@@ -102,6 +113,8 @@ export interface ConquestCell {
   full: boolean;
   /** 카드 보상 대상 (문제 수 CONQUEST_MIN 이상) */
   rewardable: boolean;
+  /** 정복하면 받는 카드 등급 (보상 대상이 아니면 null) */
+  rarity: ConquestRarity | null;
 }
 
 /** items: 문제 id · 사상가 이름들 / correct: 한 번 이상 맞힌 문제 id / canon: 별칭 → 대표 이름 */
@@ -115,7 +128,7 @@ export function conquestCells(items: { id: string; names: string[] }[], correct:
       by.set(raw, c);
     }
   }
-  return [...by.entries()].map(([name, c]) => ({ name, ...c, full: c.total > 0 && c.done >= c.total, rewardable: c.total >= CONQUEST_MIN }));
+  return [...by.entries()].map(([name, c]) => ({ name, ...c, full: c.total > 0 && c.done >= c.total, rewardable: c.total >= CONQUEST_MIN, rarity: conquestRarity(c.total) }));
 }
 
 // ---------------------------------------------------------------------

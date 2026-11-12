@@ -6,6 +6,16 @@ import { useState } from "react";
 import { Check, Gift } from "lucide-react";
 import type { Conquest, ConquestTile } from "@/lib/quiz/fun";
 import { quizApi } from "@/lib/quiz/client";
+import { CONQUEST_RARITY_NAME, CONQUEST_TIERS, type ConquestRarity } from "@/lib/quiz/fun-core";
+
+/** 보상 등급 색 (카드 등급 색과 같은 결) */
+const TIER_TONE: Record<ConquestRarity, string> = {
+  common: "text-[#5d6673] dark:text-[#a7b0bd]",
+  rare: "text-[#2a6fd6] dark:text-[#8fd0ff]",
+  epic: "text-[#7b3fe4] dark:text-[#d8b4ff]",
+  legendary: "text-[#b9780f] dark:text-[#ffe39a]",
+};
+const rName = (r: ConquestRarity | null) => (r ? CONQUEST_RARITY_NAME[r] : "");
 import { FeaturedCardOpener } from "@/components/game/FeaturedCardOpener";
 
 /** 진행 고리 + 초상 (정복하면 금빛) */
@@ -48,7 +58,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
     setMsg(null);
     try {
       await quizApi("/api/quiz/conquest", "POST", { philosopherId: t.id });
-      setMsg({ ok: true, text: `${t.name} 정복 보상: 영웅 카드를 받았습니다! 철학자 대난투 도감에서 확인하세요.` });
+      setMsg({ ok: true, text: `${t.name} 정복 보상: ${rName(t.rarity)} 등급 카드를 받았습니다! 철학자 대난투 도감에서 확인하세요.` });
       router.refresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -71,6 +81,17 @@ export function ConquestMap({ c }: { c: Conquest }) {
           );
         })}
       </div>
+      {/* 보상 등급 안내 */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-surface px-3 py-2 text-xs" data-conquest-tiers>
+        <span className="inline-flex items-center gap-1 font-bold">
+          <Gift className="h-3.5 w-3.5 text-[#c99a2e]" aria-hidden /> 정복 보상
+        </span>
+        {[...CONQUEST_TIERS].reverse().map((t) => (
+          <span key={t.rarity} className="whitespace-nowrap text-muted">
+            문제 {t.min}개↑ <b className={TIER_TONE[t.rarity]}>{CONQUEST_RARITY_NAME[t.rarity]}</b>
+          </span>
+        ))}
+      </div>
       {msg && <p className={`rounded-lg px-3 py-2 text-sm font-semibold ${msg.ok ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"}`}>{msg.text}</p>}
       <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6" aria-label={`${group?.tradition} 사상가`}>
         {group?.tiles.map((t) => (
@@ -87,7 +108,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
               );
               // 카드가 있으면 도감과 같은 카드 상세 창 (+ 퀴즈 진행), 없으면 그 사상가 문제 풀기
               return t.hasCard ? (
-                <FeaturedCardOpener philosopherId={t.id} label={`${t.name} 카드 상세 · 퀴즈 진행 ${t.done}/${t.total}`} quiz={{ done: t.done, total: t.total, rewardable: t.rewardable, reward: t.reward, min: c.min }} className="!w-auto !text-center">
+                <FeaturedCardOpener philosopherId={t.id} label={`${t.name} 카드 상세 · 퀴즈 진행 ${t.done}/${t.total}`} quiz={{ done: t.done, total: t.total, rewardable: t.rewardable, reward: t.reward, min: c.min, rarityName: rName(t.rarity) }} className="!w-auto !text-center">
                   {face}
                 </FeaturedCardOpener>
               ) : (
@@ -98,20 +119,20 @@ export function ConquestMap({ c }: { c: Conquest }) {
             })()}
             {t.reward === "claimable" ? (
               <button type="button" disabled={busy !== null} onClick={() => claim(t)} className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-[#ffd36b] px-2.5 py-1 text-[11px] font-black text-[#3a2600] disabled:opacity-60">
-                <Gift className="h-3 w-3" aria-hidden /> {busy === t.id ? "받는 중…" : "영웅 카드 받기"}
+                <Gift className="h-3 w-3" aria-hidden /> {busy === t.id ? "받는 중…" : `${rName(t.rarity)} 카드 받기`}
               </button>
             ) : t.reward === "claimed" ? (
               <span className="mt-1.5 text-[11px] font-semibold text-[#8a5a00] dark:text-[#ffd36b]">카드 받음</span>
             ) : t.reward === "locked" ? (
-              <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-faint" title={`다 채우면 ${t.name} 영웅 카드`}>
-                <Gift className="h-3 w-3" aria-hidden /> 카드 보상
+              <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-faint" title={`다 채우면 ${t.name} ${rName(t.rarity)} 등급 카드`}>
+                <Gift className="h-3 w-3" aria-hidden /> <b className={t.rarity ? TIER_TONE[t.rarity] : ""}>{rName(t.rarity)}</b> 카드
               </span>
             ) : null}
           </li>
         ))}
       </ul>
       <p className="text-[11px] text-faint">
-        고리는 그 사상가 문제 중 <b>한 번 이상 맞힌 문제</b>의 비율입니다 (지금 출제 범위 기준). 고리를 다 채우면 정복! 문제가 {c.min}개 이상인 사상가는 정복하면 <b>영웅 카드</b>를 한 장 받습니다. 사상가를 누르면 카드 상세와 퀴즈 진행이 열립니다 (카드가 아직 없는 사상가는 바로 문제 풀기).
+        고리는 그 사상가 문제 중 <b>한 번 이상 맞힌 문제</b>의 비율입니다 (지금 출제 범위 기준). 고리를 다 채우면 정복! 문제가 {c.min}개 이상인 사상가는 정복하면 그 사상가 카드를 한 장 받습니다. 문제가 많을수록 등급이 높습니다: <b>10개↑ 일반 · 20개↑ 희귀 · 30개↑ 영웅 · 40개↑ 전설</b> (보상은 사상가마다 한 번). 사상가를 누르면 카드 상세와 퀴즈 진행이 열립니다 (카드가 아직 없는 사상가는 바로 문제 풀기).
         {!c.ready && " (카드 보상은 관리자가 업데이트를 적용하면 받을 수 있습니다.)"}
       </p>
     </div>

@@ -4,7 +4,7 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
-import { baseName, clusterNames, CONQUEST_MIN, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { baseName, clusterNames, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 import { classifyPhilosopher } from "@/lib/traditions";
 
 /**
@@ -149,6 +149,8 @@ export interface ConquestTile {
   rewardable: boolean;
   /** 카드 보상: claimable 지금 받을 수 있음 · claimed 받음 · unavailable 카드가 아직 공개되지 않음 */
   reward: "none" | "claimable" | "claimed" | "locked" | "unavailable";
+  /** 정복 보상 카드 등급 (10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설) */
+  rarity: ConquestRarity | null;
   artUrl: string | null;
   /** 공개된 게임 카드가 있음 (누르면 카드 상세) */
   hasCard: boolean;
@@ -206,7 +208,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
       const p = byName.get(c.name)!;
       const card = cardOf.get(p.id);
       const reward: ConquestTile["reward"] = !c.rewardable ? "none" : claimed.has(p.id) ? "claimed" : !card ? "unavailable" : c.full ? "claimable" : "locked";
-      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, reward, artUrl: card?.artUrl ?? null, hasCard: Boolean(card), tradition: mapTradition(c.name, card?.tradition, p.tradition) };
+      return { id: p.id, name: c.name, total: c.total, done: c.done, full: c.full, rewardable: c.rewardable, rarity: c.rarity, reward, artUrl: card?.artUrl ?? null, hasCard: Boolean(card), tradition: mapTradition(c.name, card?.tradition, p.tradition) };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const order = [...TRADITIONS, OTHER];
@@ -226,7 +228,7 @@ export class FunError extends Error {
   }
 }
 
-/** 정복 보상: 서버가 정복 여부를 다시 확인한 뒤 영웅 카드 1장 */
+/** 정복 보상: 서버가 정복 여부를 다시 확인한 뒤 문제 수에 맞는 등급의 카드 1장 */
 export async function claimConquest(learner: string, philosopherId: string) {
   const c = await getConquest(learner);
   const tile = c.groups.flatMap((g) => g.tiles).find((t) => t.id === philosopherId);
@@ -236,11 +238,13 @@ export async function claimConquest(learner: string, philosopherId: string) {
   if (!tile.rewardable) throw new FunError(`문제가 ${CONQUEST_MIN}개 이상인 사상가만 카드 보상이 있습니다.`, 409);
   if (tile.reward === "unavailable") throw new FunError("이 사상가의 카드는 아직 공개되지 않았습니다.", 409);
   if (!tile.full) throw new FunError(`아직 정복하지 못했습니다 (${tile.done}/${tile.total}).`, 409);
-  const { data, error } = await getAdminClient().rpc("quiz_conquest_claim", { p_learner: learner, p_philosopher: philosopherId, p_rarity: "epic" });
+  const rarity = tile.rarity;
+  if (!rarity) throw new FunError(`문제가 ${CONQUEST_MIN}개 이상인 사상가만 카드 보상이 있습니다.`, 409);
+  const { data, error } = await getAdminClient().rpc("quiz_conquest_claim", { p_learner: learner, p_philosopher: philosopherId, p_rarity: rarity });
   if (error) throw /quiz_conquest|conquest|schema cache|does not exist/i.test(error.message) ? new FunError(QUIZ_021_HINT, 503) : new FunError(error.message, 500);
   const d = data as { ok: boolean; already?: boolean; cardId?: string };
   if (!d.ok) throw new FunError("이미 받은 보상입니다.", 409);
-  return { cardId: d.cardId!, name: tile.name, rarity: "epic" as const };
+  return { cardId: d.cardId!, name: tile.name, rarity, rarityName: CONQUEST_RARITY_NAME[rarity] };
 }
 
 // ---------------------------------------------------------------------

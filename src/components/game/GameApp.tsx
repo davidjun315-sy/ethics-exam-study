@@ -216,7 +216,7 @@ export function PhilosopherSheet({
   onLevelUp: (cardId: string) => void;
   onFuse: (cardId: string) => void;
   /** 윤리 퀴즈 정복 지도에서 열면: 이 사상가 문제 진행 */
-  quiz?: { done: number; total: number; rewardable: boolean; reward: string; min: number };
+  quiz?: { done: number; total: number; rewardable: boolean; reward: string; min: number; rarityName?: string };
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -286,8 +286,9 @@ export function PhilosopherSheet({
                   {quiz.done >= quiz.total
                     ? "정복 완료!"
                     : quiz.rewardable
-                      ? `남은 ${quiz.total - quiz.done}문제를 맞히면 정복 · 영웅 카드 보상`
+                      ? `남은 ${quiz.total - quiz.done}문제를 맞히면 정복 · ${quiz.rarityName || "카드"} 등급 카드 보상`
                       : `한 번 이상 맞힌 문제 기준 (카드 보상은 문제 ${quiz.min}개 이상인 사상가만)`}
+                  {quiz.rewardable && quiz.done >= quiz.total && quiz.rarityName && ` · ${quiz.rarityName} 등급 카드`}
                   {quiz.reward === "claimed" && " · 보상 받음"}
                   {quiz.reward === "claimable" && " · 지도에서 보상을 받으세요"}
                 </p>
