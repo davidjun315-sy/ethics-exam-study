@@ -214,8 +214,9 @@ export function BattleArena({
 
   useEffect(() => {
     if (done) return;
-    const ev = replay.events[idx];
-    const t = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 700 : DURATION[ev.t]) / speed);
+    // 지금 재생 중인 사건의 길이만큼 기다린 뒤 다음으로
+    const cur = idx > 0 ? replay.events[idx - 1] : null;
+    const t = setTimeout(() => setIdx((i) => i + 1), (cur ? DURATION[cur.t] : 700) / speed);
     return () => clearTimeout(t);
   }, [idx, done, speed, replay.events]);
 

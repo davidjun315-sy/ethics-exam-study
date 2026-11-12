@@ -89,7 +89,19 @@ function slotOf(key: string, foes: number): Slot {
   return team[i % team.length];
 }
 
-function Scene({ tradition, bgUrl }: { tradition: string; bgUrl?: string }) {
+/** 전장 날씨: 동양·한국 꽃잎 · 서양·사회 빛먼지 · 특수 보스 관은 어두운 하늘과 번개 (장식, 동작 줄이기면 끔) */
+function Weather({ kind }: { kind: "petals" | "dust" | "storm" }) {
+  return (
+    <div className={`weather weather-${kind} pointer-events-none absolute inset-0 z-[2] overflow-hidden`} aria-hidden>
+      {kind === "storm" && <span className="weather-flash absolute inset-0" />}
+      {Array.from({ length: kind === "storm" ? 0 : 9 }, (_, i) => (
+        <i key={i} style={{ left: `${(i * 37 + 7) % 100}%`, animationDelay: `${-((i * 1.7) % 9)}s`, animationDuration: `${8 + ((i * 3) % 6)}s` } as CSSProperties} />
+      ))}
+    </div>
+  );
+}
+
+function Scene({ tradition, bgUrl, weather }: { tradition: string; bgUrl?: string; weather?: "petals" | "dust" | "storm" }) {
   const east = tradition === "동양윤리" || tradition === "한국윤리";
   // 관리자가 올린 배경 그림 (분야별). 아래쪽을 기준으로 채우고, 글자가 잘 보이게 위·아래를 살짝 어둡게
   if (bgUrl)
@@ -257,8 +269,10 @@ function Motif({ theme, from, to, H, delay }: { theme: FxTheme; from: Box; to: B
 function CutIn({ u, theme, name, effect, boss }: { u: BattleCard; theme: FxTheme; name: string; effect: string; boss: boolean }) {
   const [c0, c1, c2] = theme.colors;
   return (
-    <div className="fx-cutin pointer-events-none absolute inset-0 z-[70] overflow-hidden" style={{ ["--c0" as string]: c0, ["--c1" as string]: c1, ["--c2" as string]: c2 } as CSSProperties}>
+    <div className={`fx-cutin fx-cutin-r-${u.rarity} pointer-events-none absolute inset-0 z-[70] overflow-hidden`} style={{ ["--c0" as string]: c0, ["--c1" as string]: c1, ["--c2" as string]: c2 } as CSSProperties}>
       <div className="fx-cutin-dim absolute inset-0" />
+      {/* 전설: 뒤에서 금빛 빛살 */}
+      {u.rarity === "legendary" && <div className="fx-cutin-rays absolute inset-0" aria-hidden />}
       <div className={`fx-cutin-band absolute inset-x-[-10%] top-[30%] h-[40%] ${boss ? "fx-from-r" : "fx-from-l"}`} />
       <span className="fx-cutin-glyph absolute inset-x-0 top-[22%] text-center font-black">{theme.glyph}</span>
       <div className={`fx-cutin-char absolute bottom-[18%] h-[78%] ${boss ? "right-[2%] fx-from-r" : "left-[2%] fx-from-l"}`}>
@@ -348,12 +362,21 @@ export function BattleStage({
   const current = idx > 0 ? replay.events[idx - 1] : null;
   // 배틀 전 논쟁: 다 넘기면(또는 건너뛰면) 배틀 시작
   const [introAt, setIntroAt] = useState(0);
+  // 보스 등장 컷인 (도장깨기만, 논쟁 전에)
+  const [entered, setEntered] = useState(!intro?.length);
   const [showResult, setShowResult] = useState(true);
-  const talking = Boolean(intro?.length) && introAt < (intro?.length ?? 0);
+  const talking = !entered || (Boolean(intro?.length) && introAt < (intro?.length ?? 0));
   // 도장깨기 기록이면 보스 특수 패턴
   const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
   const nFoes = replay.foe.length;
-  const t = 1 / speed; // 시간 배율
+  // 마지막 일격 (끝 직전의 공격·필살기): 느리게 · 살짝 확대 · K.O.
+  const finaleIdx = useMemo(() => {
+    for (let i = replay.events.length - 1; i >= 0; i--) if (replay.events[i].t === "attack" || replay.events[i].t === "skill") return i;
+    return -1;
+  }, [replay.events]);
+  const isFinale = idx - 1 === finaleIdx && finaleIdx >= 0;
+  const win = replay.winner === "me";
+  const t = (1 / speed) * (isFinale ? 1.8 : 1); // 시간 배율 (마지막 일격은 슬로모션)
 
   useLayoutEffect(() => {
     const el = fieldRef.current;
@@ -366,10 +389,17 @@ export function BattleStage({
   // 다음 사건으로 · 맞는 순간에 체력·피해 숫자 반영
   useEffect(() => {
     if (done || talking) return;
-    const ev = replay.events[idx];
-    const step = setTimeout(() => setIdx((i) => i + 1), (idx === 0 ? 900 : DUR[ev.t]) * t);
+    // 지금 재생 중인 사건(current)의 길이만큼 기다린 뒤 다음 사건으로
+    const cur = idx > 0 ? replay.events[idx - 1] : null;
+    const step = setTimeout(() => setIdx((i) => i + 1), (cur ? DUR[cur.t] : 900) * t);
     return () => clearTimeout(step);
   }, [idx, done, t, replay.events, talking]);
+  // 등장 컷인은 잠깐 보여 주고 저절로 (누르면 바로) 논쟁으로
+  useEffect(() => {
+    if (entered) return;
+    const h = setTimeout(() => setEntered(true), 2300);
+    return () => clearTimeout(h);
+  }, [entered]);
   // 대사는 자동으로 넘어가지 않음: 화면을 누르거나 '다음'을 눌러야 넘어감
 
   // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
@@ -402,13 +432,14 @@ export function BattleStage({
 
   const unit = (u: BattleCard, slot: { left?: number; right?: number; bottom: number; scale: number }, boss: boolean, i: number) => {
     const s = st[u.key];
+    const crit = current?.t === "attack" && current.crit === true && current.target === u.key;
     // 수하: 휴대폰에선 이름표를 짧게 (이름 · 체력만)
     const minion = boss && u.key !== "foe-0";
     const isActor = actor === u.key;
     const hit = targets.has(u.key) && impacted;
     const dmg = hit ? dmgOf(u.key) : undefined;
     const healed = impacted && healTarget?.target === u.key ? healTarget.amount : 0;
-    const anim = s.dead ? "bs-faint" : isActor ? (skill ? "bs-cast" : boss ? "bs-lunge-l" : "bs-lunge-r") : hit ? (skill ? "bs-hit bs-hit-big" : "bs-hit") : "";
+    const anim = s.dead ? "bs-faint" : done && win && !boss ? "bs-victory" : isActor ? (skill ? "bs-cast" : boss ? "bs-lunge-l" : "bs-lunge-r") : hit ? (skill ? "bs-hit bs-hit-big" : "bs-hit") : "";
     const h = 30 * slot.scale; // 전장 높이 대비 %
     const style: CSSProperties = { bottom: `${slot.bottom}%`, height: `${h}%`, zIndex: 10 + Math.round(30 - slot.bottom) };
     if (slot.left !== undefined) style.left = `${slot.left}%`;
@@ -485,7 +516,8 @@ export function BattleStage({
           </div>
         )}
         {dmg !== undefined && (
-          <span key={`d-${idx}`} className={`fx-dmg z-40 ${skill ? "fx-dmg-big" : ""}`} style={{ ["--c0" as string]: skill && theme ? theme.colors[2] : "#fff1e8" } as CSSProperties}>
+          <span key={`d-${idx}`} className={`fx-dmg z-40 ${skill ? "fx-dmg-big" : crit ? "fx-dmg-crit" : ""}`} style={{ ["--c0" as string]: skill && theme ? theme.colors[2] : crit ? "#ffd36b" : "#fff1e8" } as CSSProperties}>
+            {crit && <span className="fx-crit-tag">치명타!</span>}
             {dmg}
           </span>
         )}
@@ -534,7 +566,7 @@ export function BattleStage({
       </>
     );
   })();
-  const shake = current && impacted && (current.t === "skill" ? (skill && skill.hits.length ? "fx-shake-big" : "") : current.t === "attack" ? "fx-shake" : "");
+  const shake = current && impacted && (current.t === "skill" ? (skill && skill.hits.length ? "fx-shake-big" : "") : current.t === "attack" ? (current.crit ? "fx-shake-big" : "fx-shake") : "");
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-[#0c111b] text-white">
@@ -550,6 +582,7 @@ export function BattleStage({
             <button
               type="button"
               onClick={() => {
+                setEntered(true);
                 setIntroAt(intro?.length ?? 0);
                 setIdx(replay.events.length);
               }}
@@ -561,13 +594,19 @@ export function BattleStage({
         </span>
       </div>
       <div ref={fieldRef} className={`relative overflow-hidden transition-[height] duration-300 sm:h-[26rem] ${done && result && showResult ? "h-[23rem]" : "h-[19rem]"}`} aria-label="전장" style={{ ["--t" as string]: t } as CSSProperties}>
-        <div className={`absolute inset-0 ${shake || ""}`}>
-          <Scene tradition={tradition} bgUrl={bgUrl} />
+        <div className={`absolute inset-0 ${shake || ""} ${isFinale ? "fx-finale" : ""}`}>
+          <Scene tradition={tradition} bgUrl={bgUrl} weather={pattern ? "storm" : tradition === "동양윤리" || tradition === "한국윤리" ? "petals" : "dust"} />
           {replay.me.map((u, i) => unit(u, slotOf(u.key, nFoes), false, i))}
           {replay.foe.map((u, i) => unit(u, slotOf(u.key, nFoes), true, i + 3))}
-          {talking && intro && <DebateOverlay line={intro[introAt]} at={introAt} total={intro.length} byKey={byKey} onNext={() => setIntroAt((i) => i + 1)} onSkip={() => setIntroAt(intro.length)} />}
+          {!entered && <BossEntrance boss={replay.foe[0]} minions={replay.foe.length - 1} stageNo={(replay as BattleReplay & { stage?: { no?: number } }).stage?.no} pattern={pattern} onDone={() => setEntered(true)} />}
+          {entered && talking && intro && <DebateOverlay line={intro[introAt]} at={introAt} total={intro.length} byKey={byKey} onNext={() => setIntroAt((i) => i + 1)} onSkip={() => setIntroAt(intro.length)} />}
           <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
             {fx}
+            {isFinale && impacted && (
+              <div className={`fx-ko absolute inset-x-0 top-[30%] text-center ${win ? "fx-ko-win" : "fx-ko-lose"}`}>
+                <span>K.O.</span>
+              </div>
+            )}
             {current?.t === "phase" && (
               <div className={`fx-phase fx-phase-${current.pattern} absolute inset-x-0 top-[34%] text-center`}>
                 <div className="text-[11px] font-bold tracking-[0.35em] text-white/85 sm:text-xs">특수 패턴</div>

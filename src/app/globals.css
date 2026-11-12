@@ -628,6 +628,9 @@ body {
 /* 피해 숫자: 튀어 오르며 커졌다가 떠오름 */
 .fx-dmg { position: absolute; left: 50%; top: 12%; translate: -50% 0; font-size: 1.4rem; font-weight: 900; line-height: 1; color: var(--c0); -webkit-text-stroke: 1.5px #1a0a05; paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0,0,0,.45), 0 0 12px rgba(0,0,0,.35); pointer-events: none; animation: fx-dmg calc(var(--t, 1) * 900ms) cubic-bezier(.2,.8,.3,1) both; }
 .fx-dmg-big { font-size: 2.1rem; -webkit-text-stroke-width: 2px; }
+/* 치명타: 금빛 · 조금 크게 + 작은 꼬리표 */
+.fx-dmg-crit { font-size: 1.85rem; -webkit-text-stroke-width: 1.8px; text-shadow: 0 3px 0 rgba(0,0,0,.45), 0 0 14px rgba(255, 190, 60, .75); }
+.fx-crit-tag { display: block; margin-bottom: 1px; font-size: 0.42em; letter-spacing: .08em; color: #fff; -webkit-text-stroke: 0; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
 @keyframes fx-dmg { 0% { opacity: 0; scale: 0.3; translate: -50% 10px; } 18% { opacity: 1; scale: 1.45; translate: -50% -8px; } 32% { scale: 1; } 75% { opacity: 1; } 100% { opacity: 0; translate: -50% -42px; } }
 /* 컷인 */
 /* 배틀 결과: 전장 위에 떠오름 */
@@ -686,16 +689,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bs-idle, .bs-aura,
-  .bs-rar > img, .bs-rar > div:last-child, .bs-rar-floor, .bs-rar-motes i, .bs-rar-halo, .bs-gauge-label { animation: none !important; }
+  .bs-idle, .bs-aura { animation: none !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 카드의 느리고 작은 반짝임(테두리 빛 · 광택 · 빛가루)은 동작 줄이기에서도 그대로 — 화면이 움직이는 큰 동작만 끔 */
   .pcard, .flip-card { transition: none !important; }
-  .pcard-frame::before, .pcard-glow, .pcard-sparkles i, .pcard-foil, .pcard-framefx::before, .pcard-framefx::after { animation: none !important; }
-  .pcard-framefx { display: none; }
-  .pcard-sparkles { display: none; }
-  .pcard-glow { opacity: 0.8 !important; }
   .card-enter, .card-burst, .card-float, .level-pop, .upgrade-glow,
   .fuse-left, .fuse-right, .fuse-flash, .fuse-reveal { animation: none !important; }
 }

@@ -95,7 +95,8 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
             const fusable = c.copies.some(canFuse);
             return (
               <div key={c.philosopherId}>
-                <PhilosopherCard fx="lite"
+                {/* 보유 카드는 반짝임·테두리 빛까지 (화면 밖 카드는 PhilosopherCard 가 알아서 멈춤), 미획득은 가볍게 */}
+                <PhilosopherCard fx={b ? "full" : "lite"}
                   card={c}
                   rarity={b?.rarity ?? "common"}
                   level={b?.level ?? 1}

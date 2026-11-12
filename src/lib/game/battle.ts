@@ -37,7 +37,7 @@ const PHASE_AT = 0.5;
 export type Side = "me" | "foe";
 
 export type BattleEvent =
-  | { t: "attack"; actor: string; target: string; dmg: number; hp: number; shielded: boolean }
+  | { t: "attack"; actor: string; target: string; dmg: number; hp: number; shielded: boolean; crit?: boolean }
   | { t: "skill"; actor: string; name: string; effect: SkillEffect; hits: { target: string; dmg: number; hp: number; shielded: boolean }[]; heal?: { target: string; amount: number; hp: number }; guarded?: string[]; stunned?: string }
   | { t: "stunned"; actor: string }
   | { t: "phase"; actor: string; pattern: BossPattern; heal?: { amount: number; hp: number }; atk?: number }
@@ -175,7 +175,8 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
       faintCheck(enemies);
     } else {
       const h = hit(randomFoe, actor.atk * roll);
-      events.push({ t: "attack", actor: actor.key, ...h });
+      // 치명타: 피해 굴림(90~110%) 상위 10% 를 표시만 (결과·밸런스는 그대로)
+      events.push({ t: "attack", actor: actor.key, ...h, ...(roll >= 1.08 ? { crit: true } : {}) });
       faintCheck([randomFoe]);
     }
     phaseCheck();
