@@ -139,7 +139,12 @@ export interface Filters {
 
 type CandidateRow = { id: string; kind: QuizKind; origin: string; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
 
+/** 같은 사상가 묶기 표 (ETHOS 공통 · 실패하면 null) */
+const canonNow = () => import("@/lib/data/canon").then((m) => m.getCanon()).catch(() => null);
+
 async function approvedItems(f: Filters = {}) {
+  // 사상가로 고르면 같은 사상가의 다른 이름으로 저장된 문제도 함께
+  const phNames = f.philosopher ? ((await canonNow())?.namesOf(f.philosopher) ?? [f.philosopher]) : [];
   const build = () => {
     let q = getAdminClient()
       .from("quiz_items")
@@ -151,7 +156,7 @@ async function approvedItems(f: Filters = {}) {
     if (f.difficulty) q = q.eq("difficulty", f.difficulty);
     if (f.year) q = q.eq("exam_year", f.year);
     if (f.area) q = q.eq("area", f.area);
-    if (f.philosopher) q = q.contains("philosopher_names", [f.philosopher]);
+    if (f.philosopher) q = phNames.length > 1 ? q.overlaps("philosopher_names", phNames) : q.contains("philosopher_names", [f.philosopher]);
     return q.order("id");
   };
   const data = await fetchAll<CandidateRow>((from, to) => build().range(from, to)).catch((e: Error) => {
@@ -856,6 +861,7 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
   ]);
   const byArea = new Map<string, { seen: number; total: number; sum: number }>();
   const byPh = new Map<string, { seen: number; sum: number }>();
+  const canon = await canonNow();
   const levelStats: Dashboard["levelStats"] = { 1: { attempts: 0, correct: 0 }, 2: { attempts: 0, correct: 0 }, 3: { attempts: 0, correct: 0 } };
   const diffOf = new Map<string, 1 | 2 | 3>();
   let dueCount = 0;
@@ -888,7 +894,7 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     if (p?.lastResult) {
       a.seen++;
       a.sum += p.mastery / 5;
-      for (const n of it.philosopher_names ?? []) {
+      for (const n of new Set((it.philosopher_names ?? []).map((x) => canon?.byName(x)?.name ?? x))) {
         const ph = byPh.get(n) ?? { seen: 0, sum: 0 };
         ph.seen++;
         ph.sum += p.mastery / 5;
@@ -997,7 +1003,9 @@ export async function getFilterOptions() {
   };
   const rows = data ?? [];
   const areas = count(rows.map((r) => r.area ?? "미분류"));
-  const philosophers = count(rows.flatMap((r) => (r.philosopher_names ?? []) as string[]));
+  // 같은 사상가의 다른 이름은 대표 이름 하나로
+  const canon = await canonNow();
+  const philosophers = count(rows.flatMap((r) => [...new Set(((r.philosopher_names ?? []) as string[]).map((n) => canon?.byName(n)?.name ?? n))]));
   const years = count(rows.filter((r) => r.exam_year).map((r) => r.exam_year as number));
   return {
     areas: [...areas.entries()].sort((a, b) => b[1] - a[1]),

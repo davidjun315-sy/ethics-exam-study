@@ -1,3 +1,4 @@
+import { getCanon } from "@/lib/data/canon";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAdmin, jsonError } from "@/lib/admin-guard";
@@ -38,9 +39,13 @@ export async function POST(req: Request) {
     const b = ps?.find((p) => p.id === bId) as Philosopher | undefined;
     if (!a || !b) return NextResponse.json({ error: "사상가를 찾을 수 없습니다." }, { status: 404 });
 
-    const { data: links } = await read.from("question_philosophers").select("question_id, philosopher_id").in("philosopher_id", [aId, bId]);
+    // 같은 사상가(다른 이름 줄)의 기출도 함께
+    const canon = await getCanon().catch(() => null);
+    const side = (id: string) => (canon ? canon.repId(id) : id);
+    const ids = canon ? [...new Set([...canon.idsOf(aId), ...canon.idsOf(bId)])] : [aId, bId];
+    const { data: links } = await read.from("question_philosophers").select("question_id, philosopher_id").in("philosopher_id", ids);
     const byQ = new Map<string, Set<string>>();
-    for (const l of links ?? []) byQ.set(l.question_id, (byQ.get(l.question_id) ?? new Set()).add(l.philosopher_id));
+    for (const l of links ?? []) byQ.set(l.question_id, (byQ.get(l.question_id) ?? new Set()).add(side(l.philosopher_id)));
     const both = [...byQ.entries()].filter(([, s]) => s.size === 2).map(([q]) => q);
     const related = await listQuestionSummaries({ ids: both.slice(0, 10) });
 

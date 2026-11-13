@@ -1,4 +1,5 @@
 import "server-only";
+import { getCanon } from "./canon";
 import { createHash } from "node:crypto";
 import type { FutureExtension, QuestionFormat, StudyConcept } from "@/lib/ai/schemas";
 import { getAdminClient, getReadClient } from "@/lib/supabase/server";
@@ -33,7 +34,9 @@ export async function loadFacts(): Promise<{ facts: QuestionFacts[]; passages: P
   for (const r of [analysisRows, conceptLinks, sourceLinks, passages, conceptPhil]) if (r.error) throw new Error(r.error.message);
 
   const analysis = new Map((analysisRows.data ?? []).map((a: any) => [a.question_id as string, a]));
-  const conceptOwner = new Map((conceptLinks.data ?? []).map((r: any) => [`${r.question_id}:${r.concept_id}`, r.philosopher_id as string | null]));
+  // 같은 사상가(다른 이름 줄)는 대표 하나로
+  const canon = await getCanon().catch(() => null);
+  const conceptOwner = new Map((conceptLinks.data ?? []).map((r: any) => [`${r.question_id}:${r.concept_id}`, r.philosopher_id ? (canon?.repId(r.philosopher_id) ?? r.philosopher_id) : null]));
   const srcByQ = new Map<string, QuestionFacts["sources"]>();
   for (const r of (sourceLinks.data ?? []) as any[]) {
     const list = srcByQ.get(r.question_id) ?? [];
@@ -73,7 +76,8 @@ export async function loadFacts(): Promise<{ facts: QuestionFacts[]; passages: P
   const known = new Map<string, Set<string>>();
   const addKnown = (p: string | null | undefined, c: string) => {
     if (!p || !c) return;
-    known.set(p.trim(), (known.get(p.trim()) ?? new Set()).add(c.trim()));
+    const name = canon?.byName(p)?.name ?? p.trim(); // 같은 사상가는 대표 이름으로
+    known.set(name, (known.get(name) ?? new Set()).add(c.trim()));
   };
   for (const r of (conceptPhil.data ?? []) as any[]) addKnown(one<any>(r.philosophers)?.name, one<any>(r.concepts)?.name);
   for (const f of facts) {

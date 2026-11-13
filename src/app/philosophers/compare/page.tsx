@@ -1,3 +1,4 @@
+import { getCanon } from "@/lib/data/canon";
 import { DataError, load } from "@/components/DataError";
 import { PageTitle } from "@/components/ui";
 import { ComparePanel } from "@/components/study/ComparePanel";
@@ -21,7 +22,10 @@ export default async function ComparePage({ searchParams }: PageProps<"/philosop
     const { data: ps, error: e } = await db.from("philosophers").select("id, name, school").order("name");
     if (e) throw new Error(e.message);
     const all = await listQuestionSummaries();
-    return { philosophers: ps ?? [], all };
+    // 같은 사상가(다른 이름 줄)는 대표 하나만 고를 수 있게
+    const canon = await getCanon().catch(() => null);
+    const people = canon ? [...new Map((ps ?? []).map((p) => { const r = canon.rep(p.id); return [canon.repId(p.id), r ? { id: r.id, name: r.name, school: r.school } : p] as const; })).values()].sort((x, y) => x.name.localeCompare(y.name)) : (ps ?? []);
+    return { philosophers: people, all };
   });
   if (error || !data) return <DataError error={error} />;
 

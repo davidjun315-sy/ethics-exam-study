@@ -17,6 +17,10 @@ import type {
   SourcePassage,
 } from "@/lib/types";
 import { many, one, sanitizeSearch } from "./shape";
+import { canonPeople, getCanon, type Canon } from "./canon";
+
+/** 같은 사상가 묶기 표 (없거나 실패하면 묶지 않음) */
+const canonOrNull = (): Promise<Canon | null> => getCanon().catch(() => null);
 
 // ---------------------------------------------------------------------
 // 문항 요약 (카드 / 목록 / 통계 공용)
@@ -112,9 +116,11 @@ export async function listQuestionSummaries(filter?: { ids?: string[]; examId?: 
   let q = db.from("questions").select(SUMMARY_SELECT);
   if (filter?.ids) q = q.in("id", filter.ids);
   if (filter?.examId) q = q.eq("exam_id", filter.examId);
-  const { data, error } = await q.limit(5000);
+  const [{ data, error }, canon] = await Promise.all([q.limit(5000), canonOrNull()]);
   if (error) throw new Error(error.message);
-  return sortSummaries((data ?? []).map(toSummary));
+  // 같은 사상가(이름이 조금 다른 줄)는 대표 하나로
+  const list = (data ?? []).map(toSummary);
+  return sortSummaries(canon ? list.map((s) => ({ ...s, philosophers: canonPeople(s.philosophers, canon) })) : list);
 }
 
 // ---------------------------------------------------------------------
@@ -243,13 +249,20 @@ export async function getQuestionDetail(id: string): Promise<QuestionDetail | nu
   }
 
   const roleOrder: Record<string, number> = { main: 0, comparison: 1, distractor: 2, mentioned: 3 };
+  // 같은 사상가(이름이 조금 다른 줄)는 대표 하나로, 역할은 더 중요한 쪽
+  const canon = await canonOrNull();
+  const people = new Map<string, QuestionDetail["philosophers"][number]>();
+  for (const l of (phil.data ?? []) as QuestionDetail["philosophers"]) {
+    const rep = canon?.rep(l.philosopher_id);
+    const x = rep ? { ...l, philosopher_id: rep.id, philosophers: rep } : l;
+    const prev = people.get(x.philosopher_id);
+    if (!prev || (roleOrder[x.role] ?? 9) < (roleOrder[prev.role] ?? 9)) people.set(x.philosopher_id, x);
+  }
   return {
     question: question as Question,
     exam: exam.data as Exam,
     analysis: (analysis.data as QuestionAnalysis | null) ?? null,
-    philosophers: ((phil.data ?? []) as QuestionDetail["philosophers"]).sort(
-      (a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9),
-    ),
+    philosophers: [...people.values()].sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9)),
     concepts: (conc.data ?? []) as QuestionDetail["concepts"],
     sources: sourceLinks,
     passages,
@@ -264,13 +277,12 @@ export async function getQuestionDetail(id: string): Promise<QuestionDetail | nu
 
 export async function listPhilosophers() {
   const db = getReadClient();
-  const [{ data, error }, all] = await Promise.all([
-    db.from("philosophers").select("*").order("name"),
-    listQuestionSummaries(),
-  ]);
+  const [{ data, error }, all, canon] = await Promise.all([db.from("philosophers").select("*").order("name"), listQuestionSummaries(), canonOrNull()]);
   if (error) throw new Error(error.message);
   const stats = philosopherStats(all);
-  return ((data ?? []) as Philosopher[]).map((p) => ({
+  // 같은 사상가는 대표 한 줄 (다른 이름은 별칭으로 · 분야는 정리된 값)
+  const rows = canon ? [...new Map(((data ?? []) as Philosopher[]).map((p) => [canon.repId(p.id), canon.rep(p.id) ?? p])).values()].sort((a, b) => a.name.localeCompare(b.name)) : ((data ?? []) as Philosopher[]);
+  return rows.map((p) => ({
     ...p,
     count: stats.get(p.id)?.count ?? 0,
     lastYear: stats.get(p.id)?.lastYear ?? null,
@@ -290,16 +302,21 @@ function philosopherStats(all: QuestionSummary[]) {
   return m;
 }
 
-export async function getPhilosopher(id: string) {
+export async function getPhilosopher(id0: string) {
   const db = getReadClient();
-  const { data: philosopher } = await db.from("philosophers").select("*").eq("id", id).maybeSingle();
-  if (!philosopher) return null;
+  // 같은 사상가로 묶인 줄을 모두 모아 대표 하나로 (다른 이름의 id 로 들어오면 대표 id 를 알려 줌)
+  const canon = await canonOrNull();
+  const id = canon?.repId(id0) ?? id0;
+  const ids = canon?.idsOf(id) ?? [id];
+  const { data: raw } = await db.from("philosophers").select("*").eq("id", id).maybeSingle();
+  if (!raw) return null;
+  const philosopher = canon?.rep(id) ?? raw;
   const [links, sources, conceptLinks] = await Promise.all([
-    db.from("question_philosophers").select("question_id, role, reasoning").eq("philosopher_id", id),
-    db.from("sources").select("*").eq("philosopher_id", id).order("title"),
-    db.from("concept_philosophers").select("concepts(id, name)").eq("philosopher_id", id),
+    db.from("question_philosophers").select("question_id, role, reasoning").in("philosopher_id", ids),
+    db.from("sources").select("*").in("philosopher_id", ids).order("title"),
+    db.from("concept_philosophers").select("concepts(id, name)").in("philosopher_id", ids),
   ]);
-  const questionIds = (links.data ?? []).map((l) => l.question_id as string);
+  const questionIds = [...new Set((links.data ?? []).map((l) => l.question_id as string))];
   const questions = await listQuestionSummaries({ ids: questionIds });
 
   // 개념: 직접 연결 + 이 사상가가 main 으로 나온 문항의 개념
@@ -335,6 +352,8 @@ export async function getPhilosopher(id: string) {
 
   return {
     philosopher: philosopher as Philosopher,
+    /** 대표 사상가 id (다른 이름의 id 로 들어왔으면 이것으로 옮겨 감) */
+    canonicalId: id,
     questions,
     concepts: [...conceptCount.values()].sort((a, b) => b.count - a.count),
     sources: [...sourceCount.values()].sort((a, b) => b.count - a.count),
@@ -367,6 +386,7 @@ export async function listConcepts() {
 }
 
 export async function getConcept(id: string) {
+  const canonC = await canonOrNull();
   const db = getReadClient();
   const { data: concept } = await db.from("concepts").select("*").eq("id", id).maybeSingle();
   if (!concept) return null;
@@ -377,7 +397,9 @@ export async function getConcept(id: string) {
   const questions = await listQuestionSummaries({ ids: (links.data ?? []).map((l) => l.question_id as string) });
   const philosophers = new Map<string, { id: string; name: string; count: number }>();
   for (const d of direct.data ?? []) {
-    const p = one(d.philosophers as unknown as { id: string; name: string });
+    const p0 = one(d.philosophers as unknown as { id: string; name: string });
+    const r = p0 && canonC?.rep(p0.id);
+    const p = r ? { id: r.id, name: r.name } : p0;
     if (p) philosophers.set(p.id, { ...p, count: 0 });
   }
   const sources = new Map<string, { id: string; title: string; count: number }>();
@@ -482,8 +504,10 @@ export async function searchAll(raw: string) {
     ...(qText.data ?? []).map((r) => r.id as string),
     ...(qAnalysis.data ?? []).map((r) => r.question_id as string),
   ]);
-  // 검색어와 일치하는 사상가 / 개념의 기출도 함께 보여준다.
-  const pIds = (philosophers.data ?? []).map((p) => p.id);
+  // 검색어와 일치하는 사상가 / 개념의 기출도 함께 보여준다. 같은 사상가(다른 이름 줄)는 대표 하나로, 기출은 묶음 전체에서
+  const canon = await canonOrNull();
+  const foundPeople = canon ? [...new Map(((philosophers.data ?? []) as Philosopher[]).map((p) => [canon.repId(p.id), canon.rep(p.id) ?? p])).values()] : ((philosophers.data ?? []) as Philosopher[]);
+  const pIds = canon ? [...new Set(foundPeople.flatMap((p) => canon.idsOf(p.id)))] : foundPeople.map((p) => p.id);
   const cIds = (concepts.data ?? []).map((c) => c.id);
   const [pq, cq] = await Promise.all([
     pIds.length ? db.from("question_philosophers").select("question_id").in("philosopher_id", pIds) : { data: [] },
@@ -502,7 +526,7 @@ export async function searchAll(raw: string) {
 
   return {
     q,
-    philosophers: (philosophers.data ?? []) as Philosopher[],
+    philosophers: foundPeople,
     concepts: (concepts.data ?? []) as Concept[],
     sources: (sources.data ?? []) as Source[],
     questions,
@@ -593,10 +617,10 @@ export function computeTrends(all: QuestionSummary[]) {
 }
 
 export async function getTrends() {
-  const [all, { data: ps }] = await Promise.all([listQuestionSummaries(), getReadClient().from("philosophers").select("id, name, tradition")]);
+  const [all, { data: ps }, canon] = await Promise.all([listQuestionSummaries(), getReadClient().from("philosophers").select("id, name, tradition"), canonOrNull()]);
   const t = computeTrends(all);
-  // 사상가 분류 (동양윤리·서양윤리 …): 분야 값 → 이름 순으로
-  const chapterById = new Map(((ps ?? []) as Pick<Philosopher, "id" | "name" | "tradition">[]).map((p) => [p.id, classifyPhilosopher(p)]));
+  // 사상가 분류 (동양윤리·서양윤리 …): 같은 사상가 묶음 전체로 정리한 분야 → 없으면 분야 값 → 이름 순
+  const chapterById = new Map(((ps ?? []) as Pick<Philosopher, "id" | "name" | "tradition">[]).map((p) => [p.id, canon?.chapter[canon.repId(p.id)] ?? classifyPhilosopher(p)]));
   const philosopherGroups = groupByTradition(t.philosopherCounts.map((r) => ({ ...r, tradition: chapterById.get(r.id) ?? null }))).map((g) => ({
     chapter: g.chapter,
     rows: g.items, // 그룹 안에서도 출제 횟수 많은 순 (philosopherCounts 순서 유지)
@@ -617,11 +641,16 @@ const ROLE_ORDER: Record<PhilosopherRole, number> = { main: 0, comparison: 1, di
 /** 기출문제 → 사상가별 보기: 사상가마다 등장한 문항 (주요 → 비교 → 그 외, 최근 연도 먼저) */
 export async function listQuestionsByPhilosopher(): Promise<PhilosopherQuestions[]> {
   const db = getReadClient();
-  const [{ data, error }, all] = await Promise.all([db.from("philosophers").select("id, name, tradition, school"), listQuestionSummaries()]);
+  const [{ data, error }, all, canon] = await Promise.all([db.from("philosophers").select("id, name, tradition, school"), listQuestionSummaries(), canonOrNull()]);
   if (error) throw new Error(error.message);
   const byP = new Map<string, (QuestionSummary & { role: PhilosopherRole })[]>();
   for (const q of all) for (const p of q.philosophers) byP.set(p.id, [...(byP.get(p.id) ?? []), { ...q, role: p.role }]);
-  return ((data ?? []) as PhilosopherQuestions["philosopher"][])
+  // 같은 사상가는 대표 한 줄 (요약의 사상가가 이미 대표 id) · 분야는 정리된 값
+  const people = ((data ?? []) as PhilosopherQuestions["philosopher"][]).map((p) => {
+    const r = canon?.rep(p.id);
+    return r ? { id: r.id, name: r.name, tradition: r.tradition, school: r.school } : p;
+  });
+  return [...new Map(people.map((p) => [p.id, p])).values()]
     .filter((p) => byP.has(p.id))
     .map((p) => {
       const qs = byP.get(p.id)!.sort(

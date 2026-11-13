@@ -1,4 +1,5 @@
 import "server-only";
+import { getCanon } from "./canon";
 import { getReadClient } from "@/lib/supabase/server";
 import { listQuestionSummaries, type QuestionSummary } from "./queries";
 
@@ -17,7 +18,10 @@ export async function findRelatedQuestions(questionId: string, limit = 8): Promi
     db.from("question_concepts").select("concept_id, concepts(name)").eq("question_id", questionId),
     db.from("question_sources").select("source_id").eq("question_id", questionId).not("source_id", "is", null),
   ]);
-  const pIds = (p.data ?? []).map((x) => x.philosopher_id as string);
+  // 같은 사상가(다른 이름 줄)의 기출도 함께
+  const canon = await getCanon().catch(() => null);
+  const pIds0 = (p.data ?? []).map((x) => x.philosopher_id as string);
+  const pIds = canon ? [...new Set(pIds0.flatMap((id) => canon.idsOf(id)))] : pIds0;
   const cIds = (c.data ?? []).map((x) => x.concept_id as string);
   const sIds = (s.data ?? []).map((x) => x.source_id as string);
   if (!pIds.length && !cIds.length && !sIds.length) return [];
@@ -40,7 +44,7 @@ export async function findRelatedQuestions(questionId: string, limit = 8): Promi
   };
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const nameOf = (v: any, key: string) => (Array.isArray(v) ? v[0]?.[key] : v?.[key]) ?? "";
-  for (const r of (rp.data ?? []) as any[]) add(r.question_id, r.role === "main" ? 3 : 2, nameOf(r.philosophers, "name"));
+  for (const r of (rp.data ?? []) as any[]) add(r.question_id, r.role === "main" ? 3 : 2, canon?.rep(r.philosopher_id)?.name ?? nameOf(r.philosophers, "name"));
   for (const r of (rc.data ?? []) as any[]) add(r.question_id, 2, nameOf(r.concepts, "name"));
   for (const r of (rs.data ?? []) as any[]) add(r.question_id, 2, `『${nameOf(r.sources, "title")}』`);
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -75,15 +79,23 @@ export async function findQuestionsForTopics(
   const db = getReadClient();
   const conceptNames = [...new Set(topics.flatMap((t) => t.concepts.map((c) => c.trim())).filter(Boolean))];
   const philosopherNames = [...new Set(topics.flatMap((t) => t.philosophers.map((p) => p.trim())).filter(Boolean))];
-  const [cRows, pRows] = await Promise.all([
+  const [cRows, canon] = await Promise.all([
     conceptNames.length ? db.from("concepts").select("id, name").in("name", conceptNames) : { data: [] },
-    philosopherNames.length ? db.from("philosophers").select("id, name").in("name", philosopherNames) : { data: [] },
+    getCanon().catch(() => null),
   ]);
   const cId = new Map((cRows.data ?? []).map((r) => [r.name as string, r.id as string]));
-  const pId = new Map((pRows.data ?? []).map((r) => [r.name as string, r.id as string]));
+  // 사상가 이름 → 대표 (비슷한 이름 · 별칭도), 기출은 묶음 전체에서
+  let pId: Map<string, string>;
+  if (canon) {
+    pId = new Map(philosopherNames.map((n) => [n, canon.byName(n)?.id]).filter((x): x is [string, string] => Boolean(x[1])));
+  } else {
+    const { data: pRows } = philosopherNames.length ? await db.from("philosophers").select("id, name").in("name", philosopherNames) : { data: [] };
+    pId = new Map((pRows ?? []).map((r) => [r.name as string, r.id as string]));
+  }
+  const allPIds = canon ? [...new Set([...pId.values()].flatMap((id) => canon.idsOf(id)))] : [...pId.values()];
   const [qc, qp] = await Promise.all([
     cId.size ? db.from("question_concepts").select("question_id, concept_id").in("concept_id", [...cId.values()]) : { data: [] },
-    pId.size ? db.from("question_philosophers").select("question_id, philosopher_id").in("philosopher_id", [...pId.values()]) : { data: [] },
+    allPIds.length ? db.from("question_philosophers").select("question_id, philosopher_id").in("philosopher_id", allPIds) : { data: [] },
   ]);
   const byConcept = new Map<string, Set<string>>();
   for (const r of (qc.data ?? []) as { question_id: string; concept_id: string }[]) {
@@ -91,7 +103,8 @@ export async function findQuestionsForTopics(
   }
   const byPhil = new Map<string, Set<string>>();
   for (const r of (qp.data ?? []) as { question_id: string; philosopher_id: string }[]) {
-    byPhil.set(r.philosopher_id, (byPhil.get(r.philosopher_id) ?? new Set()).add(r.question_id));
+    const key = canon?.repId(r.philosopher_id) ?? r.philosopher_id;
+    byPhil.set(key, (byPhil.get(key) ?? new Set()).add(r.question_id));
   }
 
   const perTopic = topics.map((t) => {

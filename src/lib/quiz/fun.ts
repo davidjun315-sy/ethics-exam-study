@@ -42,9 +42,21 @@ const loadQuestionLinks = cached("quiz-fun-question-links", async () => {
   return by;
 });
 
+/**
+ * 이름 → 대표 사상가: ETHOS 전체가 쓰는 같은 사상가 묶기 표 (data/canon.ts).
+ * 표를 못 읽으면 예전처럼 여기서 묶는다.
+ */
+async function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()): Promise<(n: string) => PhRow | null> {
+  try {
+    const c = await (await import("@/lib/data/canon")).getCanon();
+    return (n: string) => c.byName(n);
+  } catch {
+    return canonLocal(phs, cardIds);
+  }
+}
 const solvedSet = (m: Map<string, { correct: boolean }>) => new Set([...m].filter(([, s]) => s.correct).map(([q]) => q));
 
-function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()) {
+function canonLocal(phs: PhRow[], cardIds: Set<string> = new Set()) {
   // 이름 · 별칭을 같은 사상가끼리 묶고(비슷한 이름 포함), 묶음마다 대표 한 줄:
   // 게임 카드가 있는 줄 → 괄호 없는 이름 → 짧은 이름 순
   const cl = clusterNames([...phs.map((p) => p.name), ...phs.flatMap((p) => p.aliases ?? [])]);
@@ -222,7 +234,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
     loadClaims(learner),
     import("@/lib/game/data").then((m) => m.publishedCards()).catch(() => []),
   ]);
-  const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((c) => c.philosopherId)));
+  const canon = await canonFor(phs, new Set((cards as { philosopherId: string }[]).map((c) => c.philosopherId)));
   const nameOf = (n: string) => canon(n)?.name ?? null;
   const whole = fullConquestEntries(items, links, correct, solvedSet(solves.map));
   const part = partConquestEntries(items, links, correct);
@@ -274,7 +286,7 @@ async function loadClaims(learner: string): Promise<{ ready: boolean; tracksRead
  */
 export async function conquestCounts(cardIds: string[]): Promise<Record<string, { full: number; part: number }>> {
   const [phs, items, links] = await Promise.all([loadPhilosophers(), loadItems(), loadQuestionLinks().catch(() => ({}) as Record<string, string[]>)]);
-  const canon = canonFor(phs, new Set(cardIds));
+  const canon = await canonFor(phs, new Set(cardIds));
   const nameOf = (n: string) => canon(n)?.name ?? null;
   const none = new Set<string>();
   const whole = fullConquestEntries(items, links, none, none);
@@ -363,7 +375,7 @@ export async function getConquestDetail(learner: string, philosopherId: string):
   // 카드가 있는 사상가가 묶음의 대표라 보통 id 로 찾히고, 아니면 비슷한 이름으로
   const tile = tiles.find((t) => t.id === philosopherId) ?? (self ? tiles.find((t) => sameName(t.name, self.name)) : undefined);
   if (!tile) return null;
-  const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((x) => x.philosopherId)));
+  const canon = await canonFor(phs, new Set((cards as { philosopherId: string }[]).map((x) => x.philosopherId)));
   // 이 사상가의 완전 기출 (연계 문항 포함)
   const qids = Object.entries(links)
     .filter(([, names]) => names.some((n) => canon(n)?.name === tile.name))
@@ -495,7 +507,7 @@ export async function getWeeklyReport(learner: string): Promise<WeekReport | nul
     const ids = [...new Set(rows.map((r) => r.item_id))];
     const items = await fetchIn<{ id: string; philosopher_names: string[] | null; area: string | null }>(ids, (part) => getAdminClient().from("quiz_items").select("id, philosopher_names, area").in("id", part));
     const meta = new Map(items.map((i) => [i.id, i]));
-    const canon = canonFor(phs);
+    const canon = await canonFor(phs);
     return weekReport(
       rows.map((r) => ({ day: r.day, result: r.result, names: [...new Set((meta.get(r.item_id)?.philosopher_names ?? []).map((n) => canon(n)?.name ?? n))], area: meta.get(r.item_id)?.area ?? null })),
       today,
@@ -529,7 +541,7 @@ export async function getQuizStats(learner: string): Promise<QuizStats> {
     ]);
     const p = prof.data as { total_answered?: number; best_streak?: number } | null;
     const [phs, links, solves] = await Promise.all([loadPhilosophers(), loadQuestionLinks().catch(() => ({}) as Record<string, string[]>), loadFullSolves(learner)]);
-    const canon = canonFor(phs);
+    const canon = await canonFor(phs);
     // 정복 업적: 완전 기출 또는 부분 기출 중 하나라도 다 채운 사상가
     const nameOf = (n: string) => canon(n)?.name ?? null;
     const w = fullConquestEntries(items, links, correct, solvedSet(solves.map));

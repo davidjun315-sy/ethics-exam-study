@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft, GitCompare } from "lucide-react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { DataError, load } from "@/components/DataError";
 import { EntityPattern } from "@/components/trends/EntityPattern";
 import { QuestionCard } from "@/components/QuestionCard";
@@ -25,11 +25,14 @@ export default async function PhilosopherPage({ params, searchParams }: PageProp
   const { data, error } = await load(async () => {
     const base = await getPhilosopher(id);
     if (!base) return null;
+    // 같은 사상가의 다른 이름 줄로 들어오면 대표 사상가 페이지로
+    if (base.canonicalId !== id) return { moved: base.canonicalId } as const;
     const [notebook, note, admin] = await Promise.all([getPhilosopherNotebook(base.philosopher), getPhilosopherNote(id), isAdmin()]);
     return { ...base, notebook, note, admin };
   });
   if (error) return <DataError error={error} />;
   if (!data) notFound();
+  if ("moved" in data) redirect(`/philosophers/${data.moved}`);
   const { philosopher: p, questions, concepts: taggedConcepts, sources, coPhilosophers, lastYear, notebook, note, admin } = data;
   // 개념 정리 노트가 있으면 그것이 메인, 없으면 기출 분석 모아보기부터 보여준다
   const tab: TabKey = TABS.find((t) => t.key === sp.tab)?.key ?? (note ? "note" : "notebook");
