@@ -1,6 +1,6 @@
 import "server-only";
 import { getAdminClient } from "@/lib/supabase/server";
-import { classifyPhilosopher, classifyTradition, UNCLASSIFIED } from "@/lib/traditions";
+import { areaOf } from "@/lib/traditions";
 import type { AnalysisDetails } from "@/lib/types";
 import { listQuestionSummaries, type QuestionSummary } from "@/lib/data/queries";
 import { seedAcceptedAnswers } from "./grade.ts";
@@ -82,10 +82,8 @@ const ANALYZED = ["analyzed", "needs_review", "verified"];
 
 /** 문항의 섹터: 분석 영역 → 주요 사상가 */
 export function sectorOf(area: string | null | undefined, philosophers: { name: string; role: string }[]): string {
-  const byArea = classifyTradition(area);
-  if (byArea !== UNCLASSIFIED) return byArea;
-  const main = philosophers.find((p) => p.role === "main") ?? philosophers[0];
-  return main ? classifyPhilosopher({ name: main.name, tradition: null }) : UNCLASSIFIED;
+  // 기출 영역과 같은 갈래 (동양윤리 · 한국윤리 · 서양윤리 · 사회사상 · 도덕교육론 · 응용윤리)
+  return areaOf(area, philosophers);
 }
 
 function meta(s: QuestionSummary) {

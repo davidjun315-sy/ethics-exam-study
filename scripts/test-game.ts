@@ -307,4 +307,23 @@ if (failed) {
   ]).map((x) => x.name);
   check(`도장깨기 관 순서: 적게 나온 사상가 → 많이 나온 사상가 (${order.join(" → ")})`, order.join(",") === "맹자,칸트,롤스,주희" && frequencyOf(undefined) === 0);
 }
+{
+  const { areaOf } = await import("../src/lib/traditions.ts");
+  const cases: [string | null, { name: string; role: string }[], string][] = [
+    ["동양 윤리", [], "동양윤리"],
+    ["서양윤리(근대)", [], "서양윤리"],
+    ["한국 윤리 사상", [], "한국윤리"],
+    ["유학 · 성리학", [], "동양윤리"],
+    ["정치 철학", [], "사회사상"],
+    ["도덕과 교육과정", [], "도덕교육론"],
+    ["생명 윤리", [], "응용윤리"],
+    ["정보 윤리", [], "응용윤리"],
+    ["윤리", [{ name: "칸트", role: "main" }], "서양윤리"],
+    ["윤리", [{ name: "이황", role: "main" }], "한국윤리"],
+    [null, [{ name: "콜버그", role: "main" }], "도덕교육론"],
+    ["윤리", [], "미분류"],
+  ];
+  const bad = cases.filter(([a, p, want]) => areaOf(a, p) !== want).map(([a, p, w]) => `${a}/${p[0]?.name ?? "-"}→${areaOf(a, p)}(기대 ${w})`);
+  check("기출 영역 정리: 비슷한 영역은 한 갈래로 · 모호하면 주요 사상가 분야로", bad.length === 0, bad.join(", "));
+}
 console.log("\n모두 통과");

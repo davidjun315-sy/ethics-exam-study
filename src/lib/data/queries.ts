@@ -1,5 +1,5 @@
 import "server-only";
-import { classifyPhilosopher, groupByTradition } from "@/lib/traditions";
+import { areaOf, classifyPhilosopher, groupByTradition, UNCLASSIFIED } from "@/lib/traditions";
 import { getReadClient } from "@/lib/supabase/server";
 import type {
   AnalysisStatus,
@@ -18,6 +18,12 @@ import type {
 } from "@/lib/types";
 import { many, one, sanitizeSearch } from "./shape";
 import { canonPeople, getCanon, type Canon } from "./canon";
+
+/** 영역 정리 (같은 사상가 묶기 표의 분야를 씀) — 정리할 수 없으면 원래 글 그대로 */
+function tidyArea(area: string | null, philosophers: { name: string; role?: string }[], canon: Canon | null): string | null {
+  const a = areaOf(area, philosophers, canon ? (n) => { const r = canon.byName(n); return r ? canon.chapter[r.id] : classifyPhilosopher({ name: n, tradition: null }); } : undefined);
+  return a === UNCLASSIFIED ? (area?.trim() ? "미분류" : null) : a;
+}
 
 /** 같은 사상가 묶기 표 (없거나 실패하면 묶지 않음) */
 const canonOrNull = (): Promise<Canon | null> => getCanon().catch(() => null);
@@ -120,7 +126,13 @@ export async function listQuestionSummaries(filter?: { ids?: string[]; examId?: 
   if (error) throw new Error(error.message);
   // 같은 사상가(이름이 조금 다른 줄)는 대표 하나로
   const list = (data ?? []).map(toSummary);
-  return sortSummaries(canon ? list.map((s) => ({ ...s, philosophers: canonPeople(s.philosophers, canon) })) : list);
+  // 같은 사상가는 대표 하나로 · 영역은 몇 갈래로 정리 (동양윤리 · 한국윤리 · 서양윤리 · 사회사상 · 도덕교육론 · 응용윤리)
+  return sortSummaries(
+    list.map((s) => {
+      const philosophers = canon ? canonPeople(s.philosophers, canon) : s.philosophers;
+      return { ...s, philosophers, analysis: s.analysis && { ...s.analysis, area: tidyArea(s.analysis.area, philosophers, canon) } };
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -213,6 +225,8 @@ export interface QuestionDetail {
   question: Question;
   exam: Exam;
   analysis: QuestionAnalysis | null;
+  /** 화면에 보일 영역 (정리한 갈래) */
+  areaLabel?: string | null;
   philosophers: (QuestionPhilosopherLink & { philosophers: Philosopher })[];
   concepts: (QuestionConceptLink & { concepts: Concept })[];
   sources: QuestionSourceLink[];
@@ -258,11 +272,14 @@ export async function getQuestionDetail(id: string): Promise<QuestionDetail | nu
     const prev = people.get(x.philosopher_id);
     if (!prev || (roleOrder[x.role] ?? 9) < (roleOrder[prev.role] ?? 9)) people.set(x.philosopher_id, x);
   }
+  const peopleList = [...people.values()];
   return {
     question: question as Question,
     exam: exam.data as Exam,
     analysis: (analysis.data as QuestionAnalysis | null) ?? null,
-    philosophers: [...people.values()].sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9)),
+    /** 화면에 보일 영역 (정리한 갈래, 관리자 편집은 analysis.area 원래 값) */
+    areaLabel: tidyArea((analysis.data as QuestionAnalysis | null)?.area ?? null, peopleList.map((l) => ({ name: l.philosophers?.name ?? "", role: l.role })), canon),
+    philosophers: peopleList.sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9)),
     concepts: (conc.data ?? []) as QuestionDetail["concepts"],
     sources: sourceLinks,
     passages,

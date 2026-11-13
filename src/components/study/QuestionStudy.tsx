@@ -132,7 +132,7 @@ export function QuestionStudy({
           <h1 className="text-2xl font-bold tracking-tight">{q.label}번</h1>
           {q.score !== null && <Badge>{q.score}점</Badge>}
           {q.question_type && <Badge>{q.question_type}</Badge>}
-          {showAnalysis && a?.area && <Badge tone="navy">{a.area}</Badge>}
+          {showAnalysis && (detail.areaLabel ?? a?.area) && <Badge tone="navy">{detail.areaLabel ?? a?.area}</Badge>}
           {showAnalysis && mainPhilosophers.length > 0 && (
             <span className="font-semibold text-navy">{mainPhilosophers.map((p) => p.philosophers.name).join(" · ")}</span>
           )}

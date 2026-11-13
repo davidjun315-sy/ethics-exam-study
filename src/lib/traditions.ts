@@ -72,3 +72,34 @@ export function groupByTradition<T extends { name: string; tradition: string | n
   for (const it of items) groups.get(classifyPhilosopher(it))!.push(it);
   return order.map((chapter) => ({ chapter, items: groups.get(chapter)! })).filter((g) => g.items.length > 0);
 }
+
+// ---------------------------------------------------------------------
+// 기출 '영역' 정리: AI 가 자유롭게 적은 값("동양 윤리", "서양윤리(근대)", "생명윤리", "윤리" …)을 몇 갈래로
+// ---------------------------------------------------------------------
+export const APPLIED = "응용윤리";
+/** 영역 갈래 (보여 주는 순서) */
+export const AREAS = [...TRADITIONS, APPLIED] as const;
+export type Area = (typeof AREAS)[number];
+// 생명 · 환경 · 정보 등 응용윤리 주제 (사상 분야로 분류되지 않을 때만)
+const APPLIED_RE = /생명|의료|환경|생태|동물|정보|사이버|인공지능|과학|기술|성윤리|사랑|가족|직업|경제윤리|소비|예술|문화|다문화|평화|통일|전쟁|세계시민|응용|실천윤리|생활과윤리/;
+
+/**
+ * 기출 영역을 갈래 하나로: 영역 글 → (응용윤리 주제) → 주요 사상가의 분야 → 미분류.
+ * chapterOf: 사상가 이름 → 분야 (서버에서는 같은 사상가 묶기 표, 없으면 이름으로)
+ */
+export function areaOf(
+  area: string | null | undefined,
+  philosophers: { name: string; role?: string }[] = [],
+  chapterOf: (name: string) => string = (name) => classifyPhilosopher({ name, tradition: null }),
+): Area | typeof UNCLASSIFIED {
+  const t = classifyTradition(area);
+  if (t !== UNCLASSIFIED) return t;
+  const s = (area ?? "").replace(/\s+/g, "");
+  if (s && APPLIED_RE.test(s)) return APPLIED;
+  const main = philosophers.filter((p) => p.role === "main" || p.role === "comparison");
+  for (const p of main.length ? main : philosophers) {
+    const c = chapterOf(p.name);
+    if ((AREAS as readonly string[]).includes(c)) return c as Area;
+  }
+  return UNCLASSIFIED;
+}

@@ -1,21 +1,18 @@
 import Link from "next/link";
 import { Empty } from "@/components/ui";
 import type { MemoWithQuestion } from "@/lib/data/memos";
-import { classifyPhilosopher, classifyTradition, TRADITIONS, UNCLASSIFIED } from "@/lib/traditions";
+import { areaOf, AREAS, UNCLASSIFIED } from "@/lib/traditions";
 import { questionRef } from "@/lib/format";
 import { MoveLocalMemos } from "./MoveLocalMemos";
 
 /** 문항의 섹터: 분석의 출제 영역 → 없으면 주요 사상가로 판단 */
 function sectorOf(m: MemoWithQuestion): string {
-  const byArea = classifyTradition(m.question.analysis?.area);
-  if (byArea !== UNCLASSIFIED) return byArea;
-  const main = m.question.philosophers.find((p) => p.role === "main") ?? m.question.philosophers[0];
-  return main ? classifyPhilosopher({ name: main.name, tradition: null }) : UNCLASSIFIED;
+  return areaOf(m.question.analysis?.area, m.question.philosophers);
 }
 
 /** 내 학습 → 메모: 섹터 → 사상가 → 메모 */
 export function MemoCollection({ memos }: { memos: MemoWithQuestion[] }) {
-  const order = [...TRADITIONS, UNCLASSIFIED] as string[];
+  const order = [...AREAS, UNCLASSIFIED] as string[];
   const sectors = new Map<string, Map<string, MemoWithQuestion[]>>(order.map((s) => [s, new Map()]));
   for (const m of memos) {
     const main = m.question.philosophers.find((p) => p.role === "main")?.name ?? m.question.philosophers[0]?.name ?? "사상가 미지정";
