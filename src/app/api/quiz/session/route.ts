@@ -16,6 +16,7 @@ const Body = z.object({
       format: z.enum(["fill", "essay"]).optional(),
       difficulty: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       which: z.enum(["any", "new", "review"]).optional(),
+      ids: z.array(z.string().uuid()).max(50).optional(),
     })
     .optional(),
   // 오늘의 실전 도전 (기존 공개 문제에서 고름)

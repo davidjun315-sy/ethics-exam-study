@@ -312,7 +312,7 @@ export function PhilosopherSheet({
                   {quiz.reward === "claimable" && " · 정복 지도에서 보상을 받으세요"}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Link href={`/quiz/play?mode=free&kind=exam&philosopher=${encodeURIComponent(card.name)}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
+                  <Link href={`/quiz/map/${card.philosopherId}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
                     이 사상가 기출문제 풀기 →
                   </Link>
                   <Link href="/quiz/map" className="text-xs font-semibold text-navy hover:underline">

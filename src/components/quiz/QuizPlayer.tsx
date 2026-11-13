@@ -39,7 +39,8 @@ function Passage({ text, label }: { text: string; label: string }) {
   );
 }
 
-export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: Filters; challenge?: ChallengeType }) {
+/** back: 다 풀거나 나갈 때 돌아갈 곳 (예: 정복 지도의 사상가 기출문제 목록) */
+export function QuizPlayer({ mode, filters, challenge, back }: { mode: Mode; filters: Filters; challenge?: ChallengeType; back?: { href: string; label: string } }) {
   const [session, setSession] = useState<Session | null>(null);
   const [index, setIndex] = useState(0);
   const [view, setView] = useState<ItemView | null>(null);
@@ -266,10 +267,10 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
               ? "출제 범위 안에 이 도전에 맞는 공개 문제가 아직 없습니다. 퀴즈 홈에서 출제 범위를 바꾸거나 관리자 화면에서 문제를 승인해 주세요."
               : "조건에 맞는 공개 문제가 없습니다."}
         </p>
-        <Link href="/quiz" className="btn mt-4 inline-block">퀴즈 홈</Link>
+        <Link href={back?.href ?? "/quiz"} className="btn mt-4 inline-block">{back?.label ?? "퀴즈 홈"}</Link>
       </div>
     );
-  if (index >= total) return <Finished mode={mode} challenge={challenge} session={session} tally={tally} finish={finish} log={log} />;
+  if (index >= total) return <Finished mode={mode} challenge={challenge} session={session} tally={tally} finish={finish} log={log} back={back} />;
 
   const isFill = view?.format === "fill";
   const auto = view?.grading === "auto";
@@ -523,13 +524,13 @@ export function QuizPlayer({ mode, filters, challenge }: { mode: Mode; filters: 
         </article>
       )}
       {celebrate && <Celebration title={celebrate.title} lines={celebrate.lines} onClose={() => setCelebrate(null)} />}
-      {exitOpen && <ExitDialog mode={mode} done={done} total={total} solved={log.length} onStay={() => setExitOpen(false)} />}
+      {exitOpen && <ExitDialog mode={mode} done={done} total={total} solved={log.length} onStay={() => setExitOpen(false)} back={back} />}
     </div>
   );
 }
 
 /** 그만 풀기: 진행이 저장되었음을 분명히 알려 준다 */
-function ExitDialog({ mode, done, total, solved, onStay }: { mode: Mode; done: number; total: number; solved: number; onStay: () => void }) {
+function ExitDialog({ mode, done, total, solved, onStay, back }: { mode: Mode; done: number; total: number; solved: number; onStay: () => void; back?: { href: string; label: string } }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="exit-title" onClick={onStay}>
       <div className="quiz-rise w-full max-w-sm rounded-2xl border border-line bg-surface p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -544,7 +545,7 @@ function ExitDialog({ mode, done, total, solved, onStay }: { mode: Mode; done: n
         {mode === "daily" && <div className="mt-4"><CheckpointTrack done={done} total={total} /></div>}
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button type="button" className="btn py-2.5" onClick={onStay}>계속 풀기</button>
-          <Link href="/quiz" className="btn-primary py-2.5">나가기</Link>
+          <Link href={back?.href ?? "/quiz"} className="btn-primary py-2.5">나가기</Link>
         </div>
       </div>
     </div>
@@ -644,6 +645,7 @@ function Finished({
   tally,
   finish,
   log,
+  back,
 }: {
   mode: Mode;
   challenge?: ChallengeType;
@@ -651,6 +653,7 @@ function Finished({
   tally: { correct: number; partial: number; wrong: number; xp: number };
   finish: AttemptResult | null;
   log: AttemptResult[];
+  back?: { href: string; label: string };
 }) {
   const results = Object.values(session.results);
   const count = (r: QuizResult) => results.filter((x) => x === r).length;
@@ -729,7 +732,8 @@ function Finished({
       )}
 
       <div className="flex flex-col gap-2">
-        <Link href="/quiz" className="btn-primary py-3">퀴즈 홈</Link>
+        {back && <Link href={back.href} className="btn-primary py-3">{back.label}</Link>}
+        <Link href="/quiz" className={back ? "btn py-3" : "btn-primary py-3"}>퀴즈 홈</Link>
         {count("wrong") + count("partial") > 0 && challenge !== "revenge" && <Link href="/quiz/play?challenge=revenge" className="btn py-3">오답 복수전으로 바로 재도전</Link>}
         <Link href="/quiz/free" className="btn py-3">자유 학습 더 하기</Link>
       </div>

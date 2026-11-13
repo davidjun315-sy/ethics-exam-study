@@ -119,6 +119,8 @@ export interface Filters {
   format?: QuizFormat;
   difficulty?: 1 | 2 | 3;
   which?: "any" | "new" | "review";
+  /** 이 문제들만 이 순서로 (정복 지도의 '남은 기출문제 풀기' 등, 최대 20개) */
+  ids?: string[];
 }
 
 type CandidateRow = { id: string; kind: QuizKind; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
@@ -303,6 +305,15 @@ export async function getPracticeSession(learner: string, mode: "free" | "review
   const profile = await getProfile(learner);
   const scope = scopeOf(profile);
   const base = mode === "review" ? {} : f;
+  // 고른 문제만 풀기: 공개된 문제만 그 순서대로
+  if (mode === "free" && f.ids?.length) {
+    const want = [...new Set(f.ids)].slice(0, 20);
+    const { data, error } = await getAdminClient().from("quiz_items").select("id").eq("status", "approved").in("id", want);
+    if (error) throw quizError(error.message);
+    const ok = new Set(((data ?? []) as { id: string }[]).map((r) => r.id));
+    const itemIds = want.filter((id) => ok.has(id));
+    return { mode, day, itemIds, slots: itemIds.map(() => "fill"), results: {}, completed: false, notice: itemIds.length < f.ids.length ? "공개되지 않았거나 한 번에 풀 수 있는 수(20문제)를 넘은 문제는 빠졌습니다." : null };
+  }
   const track = trackOf(profile);
   const [all, progress] = await Promise.all([approvedItems(base), progressMap(learner)]);
   // 종류를 고르면 그 종류만, 아니면 출제 범위·학습 단계 안에서

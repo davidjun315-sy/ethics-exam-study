@@ -6,6 +6,7 @@ import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
 import { baseName, clusterNames, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, type QuizProgress, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 import { classifyPhilosopher } from "@/lib/traditions";
+import { questionRef } from "@/lib/format";
 
 /**
  * 윤리 퀴즈 재미 요소 (서버)
@@ -229,6 +230,91 @@ export async function conquestFor(learner: string, philosopherId: string, name?:
   const t = tiles.find((x) => x.id === philosopherId) ?? (name ? tiles.find((x) => sameName(x.name, name)) : undefined);
   if (!t) return { done: 0, total: 0, rewardable: false, reward: "none", min: c.min };
   return { done: t.done, total: t.total, rewardable: t.rewardable, reward: t.reward, min: c.min, rarityName: t.rarity ? CONQUEST_RARITY_NAME[t.rarity] : undefined };
+}
+
+// ---------------------------------------------------------------------
+// 사상가 한 명의 기출문제 목록 (정복한 문제 / 아직인 문제)
+// ---------------------------------------------------------------------
+export interface ConquestQuestion {
+  id: string;
+  /** 예: 2018 A 1번 */
+  ref: string;
+  year: number | null;
+  format: string;
+  area: string | null;
+  /** 문제 첫머리 (정답은 넣지 않음) */
+  preview: string;
+  /** done: 한 번 이상 맞힘 · wrong: 풀었지만 아직 못 맞힘 · new: 아직 안 풂 */
+  status: "done" | "wrong" | "new";
+  attempts: number;
+  lastAt: string | null;
+}
+export interface ConquestDetail {
+  tile: ConquestTile;
+  min: number;
+  ready: boolean;
+  questions: ConquestQuestion[];
+}
+
+type ExamRef = Parameters<typeof questionRef>[0];
+const labelNum = (l: string) => Number((l.match(/\d+/) ?? ["999"])[0]);
+
+export async function getConquestDetail(learner: string, philosopherId: string): Promise<ConquestDetail | null> {
+  const db = getAdminClient();
+  const [c, phs, items, cards] = await Promise.all([
+    getConquest(learner),
+    loadPhilosophers(),
+    loadItems(),
+    import("@/lib/game/data").then((m) => m.publishedCards()).catch(() => []),
+  ]);
+  const tiles = c.groups.flatMap((g) => g.tiles);
+  const self = phs.find((p) => p.id === philosopherId);
+  // 카드가 있는 사상가가 묶음의 대표라 보통 id 로 찾히고, 아니면 비슷한 이름으로
+  const tile = tiles.find((t) => t.id === philosopherId) ?? (self ? tiles.find((t) => sameName(t.name, self.name)) : undefined);
+  if (!tile) return null;
+  const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((x) => x.philosopherId)));
+  const ids = conquestItems(items)
+    .filter((it) => (it.philosopher_names ?? []).some((n) => canon(n)?.name === tile.name))
+    .map((it) => it.id);
+  const [rows, progress] = await Promise.all([
+    fetchIn<{ id: string; label: string | null; exam_year: number | null; question_id: string | null; prompt: string | null; format: string; area: string | null }>(ids, (part) =>
+      db.from("quiz_items").select("id, label, exam_year, question_id, prompt, format, area").in("id", part),
+    ),
+    fetchIn<{ item_id: string; attempts: number; correct_count: number; last_at: string | null }>(ids, (part) =>
+      db.from("quiz_progress").select("item_id, attempts, correct_count, last_at").eq("learner", learner).in("item_id", part),
+    ),
+  ]);
+  const qids = [...new Set(rows.map((r) => r.question_id).filter((x): x is string => Boolean(x)))];
+  const qs = await fetchIn<{ id: string; label: string; exams: ExamRef | ExamRef[] | null }>(qids, (part) =>
+    db.from("questions").select("id, label, exams(exam_year, section)").in("id", part),
+  );
+  const refOf = new Map(
+    qs.map((q) => {
+      const e = Array.isArray(q.exams) ? q.exams[0] : q.exams;
+      return [q.id, e ? questionRef(e, q.label) : null] as const;
+    }),
+  );
+  const pg = new Map(progress.map((p) => [p.item_id, p]));
+  // 첫머리의 ○ · ◦ 같은 글머리표는 떼고 한 줄로
+  const clean = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim().replace(/^[○◦∘•·\-–\s]+/, "");
+  const questions: ConquestQuestion[] = rows
+    .map((r) => {
+      const p = pg.get(r.id);
+      const text = clean(r.prompt);
+      return {
+        id: r.id,
+        ref: (r.question_id && refOf.get(r.question_id)) || [r.exam_year, r.label && `${r.label}번`].filter(Boolean).join(" ") || "기출",
+        year: r.exam_year,
+        format: r.format,
+        area: r.area,
+        preview: text.length > 90 ? `${text.slice(0, 90)}…` : text,
+        status: p && p.correct_count > 0 ? ("done" as const) : p && p.attempts > 0 ? ("wrong" as const) : ("new" as const),
+        attempts: p?.attempts ?? 0,
+        lastAt: p?.last_at ?? null,
+      };
+    })
+    .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || a.ref.localeCompare(b.ref, "ko", { numeric: true }) || labelNum(a.ref) - labelNum(b.ref));
+  return { tile, min: c.min, ready: c.ready, questions };
 }
 
 export const QUIZ_021_HINT = "정복 보상 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/021_quiz_conquest.sql 을 실행하세요.";
