@@ -159,6 +159,42 @@ function Scene({ tradition, bgUrl, weather }: { tradition: string; bgUrl?: strin
 }
 
 /** 보스 등장 컷인: 관 번호 · 보스 · 등급 · 수하 · 특수 패턴 경고 (잠깐 보이고 저절로, 누르면 바로 넘어감) */
+/**
+ * 이미지를 미리 받아 두기: 전장 배경 · 캐릭터 그림이 다 준비되면 true.
+ * 컷인 · 배틀이 그림보다 먼저 시작해 글자만 보이던 문제를 막는다. 느리거나 실패해도 timeoutMs 뒤에는 진행.
+ */
+function useImagesReady(urls: (string | null | undefined)[], timeoutMs = 4000): boolean {
+  const list = useMemo(() => [...new Set(urls.filter((u): u is string => Boolean(u)))], [urls]);
+  const key = list.join("|");
+  const [readyKey, setReadyKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!list.length) return;
+    let alive = true;
+    const finish = () => alive && setReadyKey(key);
+    const timer = window.setTimeout(finish, timeoutMs);
+    Promise.all(
+      list.map(
+        (src) =>
+          new Promise<void>((resolve) => {
+            const img = new Image();
+            img.onload = () => (img.decode ? img.decode().catch(() => undefined) : Promise.resolve()).then(() => resolve());
+            img.onerror = () => resolve();
+            img.src = src;
+          }),
+      ),
+    ).then(() => {
+      window.clearTimeout(timer);
+      finish();
+    });
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, timeoutMs]);
+  return !list.length || readyKey === key;
+}
+
 function BossEntrance({ boss, minions, stageNo, pattern, onDone }: { boss?: BattleCard; minions: number; stageNo?: number; pattern: BossPattern | null; onDone: () => void }) {
   if (!boss) return null;
   return (
@@ -394,7 +430,9 @@ export function BattleStage({
   // 보스 등장 컷인 (도장깨기만, 논쟁 전에)
   const [entered, setEntered] = useState(!intro?.length);
   const [showResult, setShowResult] = useState(true);
-  const talking = !entered || (Boolean(intro?.length) && introAt < (intro?.length ?? 0));
+  // 그림을 먼저 받아 두고 시작 (배경 · 전투 캐릭터 · 논쟁 초상)
+  const imagesReady = useImagesReady(useMemo(() => [bgUrl, ...units.flatMap((u) => [u.battleArtUrl, u.artUrl])], [bgUrl, units]));
+  const talking = !imagesReady || !entered || (Boolean(intro?.length) && introAt < (intro?.length ?? 0));
   // 도장깨기 기록이면 보스 특수 패턴
   const pattern = (replay as BattleReplay & { stage?: { pattern?: BossPattern | null } }).stage?.pattern ?? null;
   const nFoes = replay.foe.length;
@@ -406,6 +444,15 @@ export function BattleStage({
   const isFinale = idx - 1 === finaleIdx && finaleIdx >= 0;
   const win = replay.winner === "me";
   const t = (1 / speed) * (isFinale ? 1.8 : 1); // 시간 배율 (마지막 일격은 슬로모션)
+
+  // 배틀이 열리면 화면 위쪽(고정 머리글 아래)에 맞춤: 대기실을 내려 본 채로 '도전'을 누르면 전장 위가 머리글에 가리던 문제
+  const rootRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    if (top < 72 || top > window.innerHeight * 0.4) el.scrollIntoView({ block: "start", behavior: "auto" });
+  }, []);
 
   useLayoutEffect(() => {
     const el = fieldRef.current;
@@ -423,12 +470,13 @@ export function BattleStage({
     const step = setTimeout(() => setIdx((i) => i + 1), (cur ? DUR[cur.t] : 900) * t);
     return () => clearTimeout(step);
   }, [idx, done, t, replay.events, talking]);
-  // 등장 컷인은 잠깐 보여 주고 저절로 (누르면 바로) 논쟁으로
+  // 등장 컷인은 잠깐 보여 주고 저절로 (누르면 바로) 논쟁으로.
+  // 시간은 그림이 준비되어 컷인이 실제로 보이기 시작한 때부터 잰다 (그림을 기다리는 동안 시간이 흘러 글자만 보이다 넘어가지 않게)
   useEffect(() => {
-    if (entered) return;
+    if (entered || !imagesReady) return;
     const h = setTimeout(() => setEntered(true), 2300);
     return () => clearTimeout(h);
-  }, [entered]);
+  }, [entered, imagesReady]);
   // 대사는 자동으로 넘어가지 않음: 화면을 누르거나 '다음'을 눌러야 넘어감
 
   // 맞는 순간(돌진이 닿을 때 · 필살기 효과가 터질 때)에 체력·피해 숫자 반영. 움직임 줄이기 설정이면 바로
@@ -473,10 +521,15 @@ export function BattleStage({
     const style: CSSProperties = { bottom: `${slot.bottom}%`, height: `${h}%`, zIndex: 10 + Math.round(30 - slot.bottom) };
     if (slot.left !== undefined) style.left = `${slot.left}%`;
     if (slot.right !== undefined) style.right = `${slot.right}%`;
+    // 전장 가장자리에 선 사상가는 이름표를 안쪽으로 맞춤 (휴대폰에서 체력 · 필살 게이지가 화면 밖으로 잘리지 않게)
+    const edge = slot.right !== undefined && slot.right < 10 ? "right" : slot.left !== undefined && slot.left < 4 ? "left" : null;
     return (
       <div key={u.key} className="absolute" style={style} data-unit={u.key} aria-label={`${u.name} 체력 ${s.hp}/${s.max}${s.dead ? " 쓰러짐" : ""}`}>
         {/* 이름 · 체력 */}
-        <div className={`absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-center ${minion ? "w-[104%] sm:w-[max(4.5rem,110%)]" : "w-[max(4.5rem,110%)]"}`} style={{ opacity: s.dead ? 0.35 : 1 }}>
+        <div
+          className={`absolute bottom-full mb-1 text-center ${edge === "right" ? "right-0" : edge === "left" ? "left-0" : "left-1/2 -translate-x-1/2"} ${minion ? "w-[104%] sm:w-[max(4.5rem,110%)]" : "w-[max(4.5rem,110%)]"}`}
+          style={{ opacity: s.dead ? 0.35 : 1 }}
+        >
           <div className="truncate text-[10px] font-bold text-white drop-shadow sm:text-xs">
             {boss && (u.key === "foe-0" ? <span className="mr-1 rounded bg-[#ef6a5a] px-1 text-[9px]">보스</span> : <span className="mr-1 rounded bg-white/20 px-1 text-[9px]">수하</span>)}
             <span className={minion ? "hidden sm:inline" : ""} style={{ color: RAR_TEXT[u.rarity] }}>{RARITY_LABEL[u.rarity]} </span>
@@ -598,7 +651,7 @@ export function BattleStage({
   const shake = current && impacted && (current.t === "skill" ? (skill && skill.hits.length ? "fx-shake-big" : "") : current.t === "attack" ? (current.crit ? "fx-shake-big" : "fx-shake") : "");
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-[#0c111b] text-white">
+    <section ref={rootRef} className="scroll-mt-[4.5rem] overflow-hidden rounded-2xl border border-line bg-[#0c111b] text-white">
       <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/70">
         {title}
         <span className="ml-auto flex gap-1">
@@ -627,8 +680,16 @@ export function BattleStage({
           <Scene tradition={tradition} bgUrl={bgUrl} weather={pattern ? "storm" : tradition === "동양윤리" || tradition === "한국윤리" ? "petals" : "dust"} />
           {replay.me.map((u, i) => unit(u, slotOf(u.key, nFoes), false, i))}
           {replay.foe.map((u, i) => unit(u, slotOf(u.key, nFoes), true, i + 3))}
-          {!entered && <BossEntrance boss={replay.foe[0]} minions={replay.foe.length - 1} stageNo={(replay as BattleReplay & { stage?: { no?: number } }).stage?.no} pattern={pattern} onDone={() => setEntered(true)} />}
-          {entered && talking && intro && <DebateOverlay line={intro[introAt]} at={introAt} total={intro.length} byKey={byKey} onNext={() => setIntroAt((i) => i + 1)} onSkip={() => setIntroAt(intro.length)} />}
+          {!imagesReady && (
+            <div className="absolute inset-0 z-[96] flex items-center justify-center bg-[#0b0f1a]/85" role="status" aria-live="polite" data-battle-loading>
+              <span className="flex items-center gap-2 text-xs font-semibold text-white/75">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white/80" aria-hidden />
+                전장 준비 중…
+              </span>
+            </div>
+          )}
+          {imagesReady && !entered && <BossEntrance boss={replay.foe[0]} minions={replay.foe.length - 1} stageNo={(replay as BattleReplay & { stage?: { no?: number } }).stage?.no} pattern={pattern} onDone={() => setEntered(true)} />}
+          {imagesReady && entered && talking && intro && <DebateOverlay line={intro[introAt]} at={introAt} total={intro.length} byKey={byKey} onNext={() => setIntroAt((i) => i + 1)} onSkip={() => setIntroAt(intro.length)} />}
           <div key={`fx-${idx}`} className="fx-layer pointer-events-none absolute inset-0 z-[60]">
             {fx}
             {isFinale && impacted && (

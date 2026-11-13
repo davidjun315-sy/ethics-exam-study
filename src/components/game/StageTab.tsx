@@ -33,16 +33,23 @@ function debateFor(replay: StageReplay, byId: Map<string, CardView>) {
 
 /** 생명력: 서버가 준 값에서 시간이 지나면 화면에서도 1개씩 채움 (실제 차감·충전은 서버가 계산) */
 function useLives(lives: GameState["lives"]) {
-  const [now, setNow] = useState(() => Date.now());
+  // 첫 화면은 서버가 준 값 그대로 (서버와 브라우저의 시각이 달라 글자가 어긋나지 않게), 화면에 붙은 뒤부터 매초 시계
+  const [now, setNow] = useState<number | null>(null);
   const full = lives.count >= lives.max || !lives.nextAt;
   useEffect(() => {
     if (full) return;
-    const h = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(h);
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const h = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(h);
+    };
   }, [full]);
   const regenMs = lives.regenSec * 1000;
   if (!lives.ready) return { ready: false, count: lives.max, max: lives.max, nextIn: 0, empty: false, regenMs };
   if (full) return { ready: true, count: lives.max, max: lives.max, nextIn: 0, empty: false, regenMs };
+  if (now === null) return { ready: true, count: lives.count, max: lives.max, nextIn: 0, empty: lives.count < 1, regenMs };
   const next = new Date(lives.nextAt!).getTime();
   const step = lives.regenSec * 1000;
   const gained = now >= next ? 1 + Math.floor((now - next) / step) : 0;
