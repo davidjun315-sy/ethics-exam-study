@@ -697,11 +697,19 @@ body {
 .weather-dust i { width: 3px; height: 3px; border-radius: 50%; background: #fff3cf; opacity: .55; box-shadow: 0 0 6px #ffe7a8; animation-name: w-float; }
 @keyframes w-fall { 0% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(-30px, 230px) rotate(160deg); } 100% { transform: translate(10px, 470px) rotate(320deg); } }
 @keyframes w-float { 0% { transform: translate(0, 430px); opacity: 0; } 15% { opacity: .55; } 85% { opacity: .55; } 100% { transform: translate(24px, 60px); opacity: 0; } }
-.weather-storm { background: linear-gradient(180deg, rgba(10, 8, 30, .55), rgba(10, 8, 30, .15) 55%, transparent 80%); }
-.weather-flash { background: radial-gradient(ellipse at 30% 0%, rgba(220, 230, 255, .75), transparent 60%); opacity: 0; animation: w-flash 6.5s linear infinite; }
-@keyframes w-flash { 0%, 60%, 64%, 100% { opacity: 0; } 61% { opacity: .9; } 62% { opacity: .2; } 63% { opacity: .7; } }
+/* 특수 보스: 먹구름 · 빗줄기 · 번개 (배경 그림 위에서도 보이게) */
+.weather-storm { background: linear-gradient(180deg, rgba(8, 8, 28, .72), rgba(12, 12, 34, .38) 50%, rgba(10, 10, 30, .22) 100%); }
+.weather-storm i { top: -20%; width: 1.5px; height: 16%; border-radius: 1px; background: linear-gradient(180deg, transparent, rgba(200, 215, 255, .85)); animation-name: w-rain; box-shadow: none; }
+@keyframes w-rain { 0% { transform: translate(0, 0) rotate(14deg); } 100% { transform: translate(-60px, 620px) rotate(14deg); } }
+.weather-flash { background: radial-gradient(ellipse at 30% 0%, rgba(225, 233, 255, .85), rgba(180, 195, 255, .25) 45%, transparent 70%); opacity: 0; animation: w-flash 4.2s linear infinite; }
+@keyframes w-flash { 0%, 54%, 60%, 100% { opacity: 0; } 55% { opacity: .95; } 56% { opacity: .25; } 57.5% { opacity: .8; } 59% { opacity: .1; } }
+.weather-bolt { opacity: 0; filter: drop-shadow(0 0 6px rgba(190, 210, 255, .95)) drop-shadow(0 0 14px rgba(140, 170, 255, .7)); }
+.weather-bolt path { fill: #f4f7ff; }
+.weather-bolt-a { animation: w-bolt 4.2s linear infinite; }
+.weather-bolt-b { animation: w-bolt 8.4s linear -2.1s infinite; }
+@keyframes w-bolt { 0%, 54%, 59%, 100% { opacity: 0; } 55% { opacity: 1; } 56% { opacity: .3; } 57.5% { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) {
-  .weather i, .weather-flash { display: none; }
+  .weather i, .weather-flash, .weather-bolt { display: none; }
   .ent-rays { animation: none; }
 }
 

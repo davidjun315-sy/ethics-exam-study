@@ -93,10 +93,26 @@ function slotOf(key: string, foes: number): Slot {
 function Weather({ kind }: { kind: "petals" | "dust" | "storm" }) {
   return (
     <div className={`weather weather-${kind} pointer-events-none absolute inset-0 z-[2] overflow-hidden`} aria-hidden>
-      {kind === "storm" && <span className="weather-flash absolute inset-0" />}
-      {Array.from({ length: kind === "storm" ? 0 : 9 }, (_, i) => (
-        <i key={i} style={{ left: `${(i * 37 + 7) % 100}%`, animationDelay: `${-((i * 1.7) % 9)}s`, animationDuration: `${8 + ((i * 3) % 6)}s` } as CSSProperties} />
-      ))}
+      {kind === "storm" && (
+        <>
+          {/* 번개: 하늘이 번쩍 + 번개 줄기 (두 군데 번갈아) */}
+          <span className="weather-flash absolute inset-0" />
+          <svg className="weather-bolt weather-bolt-a absolute left-[18%] top-0 h-[46%] w-[12%]" viewBox="0 0 40 120" preserveAspectRatio="none">
+            <path d="M24 0 L10 52 L22 52 L6 120 L34 44 L21 44 L32 0 Z" />
+          </svg>
+          <svg className="weather-bolt weather-bolt-b absolute right-[30%] top-0 h-[38%] w-[9%]" viewBox="0 0 40 120" preserveAspectRatio="none">
+            <path d="M22 0 L12 50 L24 50 L10 120 L32 40 L20 40 L30 0 Z" />
+          </svg>
+        </>
+      )}
+      {Array.from({ length: kind === "storm" ? 34 : 9 }, (_, i) =>
+        kind === "storm" ? (
+          // 빗줄기: 비스듬히 빠르게
+          <i key={i} style={{ left: `${(i * 29 + 3) % 104 - 2}%`, animationDelay: `${-((i * 0.137) % 0.8)}s`, animationDuration: `${0.55 + ((i * 7) % 5) * 0.06}s`, opacity: 0.35 + ((i * 13) % 4) * 0.1 } as CSSProperties} />
+        ) : (
+          <i key={i} style={{ left: `${(i * 37 + 7) % 100}%`, animationDelay: `${-((i * 1.7) % 9)}s`, animationDuration: `${8 + ((i * 3) % 6)}s` } as CSSProperties} />
+        ),
+      )}
     </div>
   );
 }
