@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   }
 }
 
-const Body = z.object({ philosopherId: z.string().uuid() });
+const Body = z.object({ philosopherId: z.string().uuid(), track: z.enum(["part", "full"]).optional() });
 
 /** 사상가 정복 보상 받기 (서버가 정복 여부를 다시 확인) */
 export async function POST(req: Request) {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const { data, error } = await parseBody(req, Body);
   if (error) return error;
   try {
-    return NextResponse.json(await claimConquest(learner, data.philosopherId));
+    return NextResponse.json(await claimConquest(learner, data.philosopherId, data.track ?? "part"));
   } catch (e) {
     if (e instanceof FunError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error("[quiz-conquest]", e);

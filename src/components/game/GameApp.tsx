@@ -199,6 +199,36 @@ function BattleCharacter({ card, rarity, owned, bgUrl }: { card: CardView; rarit
   );
 }
 
+/** 카드 상세 창의 퀴즈 진행 한 줄 (완전 기출 / 부분 기출) */
+function QuizProgressLine({ label, unit, r, min, note }: { label: string; unit: string; r: QuizProgress["whole"]; min: number; note: string }) {
+  const left = Math.max(0, r.total - r.done);
+  const done = r.total > 0 && left === 0;
+  return (
+    <div data-quiz-line={label}>
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-semibold">{label}</span>
+        <span className="tabular-nums text-muted">{r.total ? <>맞힌 <b className="text-ink">{r.done}</b>/{r.total} · 남은 {left}{unit}</> : `${label} 없음`}</span>
+      </div>
+      {r.total > 0 && (
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={r.total} aria-valuenow={r.done} aria-label={`${label} 정복 진행`}>
+          <div className={`h-full rounded-full ${done ? "bg-[#d9a520]" : "bg-gradient-to-r from-navy/70 to-navy"}`} style={{ width: `${(r.done / r.total) * 100}%` }} />
+        </div>
+      )}
+      <p className="mt-0.5 text-[11px] text-muted">
+        {r.total === 0
+          ? "이 사상가와 연결된 문제가 아직 없습니다"
+          : !r.rewardable
+            ? `카드 보상은 ${label} ${min}${unit} 이상인 사상가만 (${note})`
+            : r.reward === "claimed"
+              ? `정복 완료 · ${r.rarityName} 카드 받음`
+              : done
+                ? `정복 완료! 정복 지도에서 ${r.rarityName} 카드를 받으세요`
+                : `남은 ${left}${unit}${unit === "문제" ? "를" : "을"} 맞히면 ${r.rarityName} 카드`}
+      </p>
+    </div>
+  );
+}
+
 export function PhilosopherSheet({
   card,
   copies,
@@ -284,41 +314,21 @@ export function PhilosopherSheet({
               </div>
               <button type="button" onClick={onClose} className="text-2xl leading-none text-faint hover:text-ink" aria-label="닫기">×</button>
             </div>
-            {quiz && quiz.total === 0 && (
-              <div className="rounded-lg border border-line p-3 text-[11px] text-muted" data-quiz-progress>
-                <h3 className="mb-0.5 text-sm font-bold text-ink">윤리 퀴즈 진행</h3>
-                아직 이 사상가와 연결된 기출 문항이 없습니다 (정복 지도는 완전 기출만 셉니다).
-              </div>
-            )}
-            {quiz && quiz.total > 0 && (
+            {quiz && (
               <div className="rounded-lg border border-line p-3" data-quiz-progress>
-                <div className="mb-1 flex items-baseline justify-between gap-2">
+                <div className="mb-2 flex items-baseline justify-between gap-2">
                   <h3 className="text-sm font-bold">윤리 퀴즈 진행</h3>
-                  <span className="text-xs tabular-nums text-muted">
-                    맞힌 완전 기출 <b className="text-ink">{quiz.done}</b>/{quiz.total} · 남은 {Math.max(0, quiz.total - quiz.done)}문항
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={quiz.total} aria-valuenow={quiz.done} aria-label="정복 진행">
-                  <div className={`h-full rounded-full ${quiz.done >= quiz.total ? "bg-[#d9a520]" : "bg-gradient-to-r from-navy/70 to-navy"}`} style={{ width: `${quiz.total ? (quiz.done / quiz.total) * 100 : 0}%` }} />
-                </div>
-                <p className="mt-1.5 text-[11px] text-muted">
-                  {quiz.done >= quiz.total
-                    ? "정복 완료!"
-                    : quiz.rewardable
-                      ? `남은 ${quiz.total - quiz.done}문항을 맞히면 정복 · ${quiz.rarityName || "카드"} 등급 카드 보상`
-                      : `완전 기출(문항 전체) 기준 (카드 보상은 ${quiz.min}문항 이상인 사상가만)`}
-                  {quiz.rewardable && quiz.done >= quiz.total && quiz.rarityName && ` · ${quiz.rarityName} 등급 카드`}
-                  {quiz.reward === "claimed" && " · 보상 받음"}
-                  {quiz.reward === "claimable" && " · 정복 지도에서 보상을 받으세요"}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Link href={`/quiz/map/${card.philosopherId}`} className="btn-primary inline-flex !py-1.5 text-xs font-bold">
-                    이 사상가 기출문제 풀기 →
-                  </Link>
-                  <Link href="/quiz/map" className="text-xs font-semibold text-navy hover:underline">
+                  <Link href="/quiz/map" className="text-[11px] font-semibold text-navy hover:underline">
                     정복 지도
                   </Link>
                 </div>
+                <div className="space-y-2.5">
+                  <QuizProgressLine label="완전 기출" unit="문항" r={quiz.whole} min={quiz.min} note={`${quiz.min}문항↑ 전설`} />
+                  <QuizProgressLine label="부분 기출" unit="문제" r={quiz.part} min={quiz.min} note="10↑ 일반 · 20↑ 희귀 · 30↑ 영웅" />
+                </div>
+                <Link href={`/quiz/map/${quiz.id ?? card.philosopherId}`} className="btn-primary mt-2.5 inline-flex !py-1.5 text-xs font-bold">
+                  이 사상가 기출문제 풀기 →
+                </Link>
               </div>
             )}
             <div className="rounded-lg border border-line p-3">

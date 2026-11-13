@@ -64,28 +64,40 @@ export function clusterNames(names: string[]): Map<string, number> {
   return new Map(list.map((n, i) => [n, find(i)]));
 }
 
-/** 카드 상세 창의 '윤리 퀴즈 진행' (도감 · 홈 · 정복 지도 어디서 열어도 같은 내용) */
-export interface QuizProgress {
+/** 카드 상세 창의 '윤리 퀴즈 진행' 한 줄 */
+export interface QuizProgressRow {
   done: number;
   total: number;
   rewardable: boolean;
   reward: string;
-  min: number;
   rarityName?: string;
+}
+/** 카드 상세 창의 '윤리 퀴즈 진행' (도감 · 홈 · 정복 지도 어디서 열어도 같은 내용): 완전 기출 · 부분 기출 따로 */
+export interface QuizProgress {
+  whole: QuizProgressRow;
+  part: QuizProgressRow;
+  min: number;
+  /** 정복 지도의 사상가 id (기출문제 목록 링크) */
+  id?: string;
 }
 
 /** 정복 보상(카드)을 주는 사상가의 최소 문제 수: 문제가 이만큼 쌓인 사상가만 */
 export const CONQUEST_MIN = 10;
 
-/** 정복 보상 카드 등급: 문제가 많은 사상가일수록 높은 등급 (10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설) */
-export const CONQUEST_TIERS = [
-  { min: 40, rarity: "legendary" },
+export type ConquestRarity = "common" | "rare" | "epic" | "legendary";
+/** 부분 기출 정복 보상 등급: 문제가 많은 사상가일수록 높은 등급 (10↑ 일반 · 20↑ 희귀 · 30↑ 영웅) */
+export const CONQUEST_TIERS: readonly { min: number; rarity: ConquestRarity }[] = [
   { min: 30, rarity: "epic" },
   { min: 20, rarity: "rare" },
   { min: CONQUEST_MIN, rarity: "common" },
-] as const;
-export type ConquestRarity = (typeof CONQUEST_TIERS)[number]["rarity"];
+];
 export const conquestRarity = (total: number): ConquestRarity | null => CONQUEST_TIERS.find((t) => total >= t.min)?.rarity ?? null;
+/** 완전 기출 정복 보상: 완전 기출 10문항 이상인 사상가를 모두 맞히면 전설 */
+export const FULL_CONQUEST = { min: CONQUEST_MIN, rarity: "legendary" as ConquestRarity };
+export const fullConquestRarity = (total: number): ConquestRarity | null => (total >= FULL_CONQUEST.min ? FULL_CONQUEST.rarity : null);
+/** 정복 지도의 두 갈래 */
+export type ConquestTrack = "part" | "full";
+export const CONQUEST_TRACK_NAMES: Record<ConquestTrack, string> = { part: "부분 기출", full: "완전 기출" };
 export const CONQUEST_RARITY_NAME: Record<ConquestRarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
 
 // ---------------------------------------------------------------------
@@ -128,7 +140,12 @@ export interface ConquestCell {
 }
 
 /** items: 문제 id · 사상가 이름들 / correct: 한 번 이상 맞힌 문제 id / canon: 별칭 → 대표 이름 */
-export function conquestCells(items: { id: string; names: string[] }[], correct: Set<string>, canon: (n: string) => string | null): ConquestCell[] {
+export function conquestCells(
+  items: { id: string; names: string[] }[],
+  correct: Set<string>,
+  canon: (n: string) => string | null,
+  rarityOf: (total: number) => ConquestRarity | null = conquestRarity,
+): ConquestCell[] {
   const by = new Map<string, { total: number; done: number }>();
   for (const it of items) {
     for (const raw of new Set(it.names.map((n) => canon(n)).filter((n): n is string => Boolean(n)))) {
@@ -138,7 +155,7 @@ export function conquestCells(items: { id: string; names: string[] }[], correct:
       by.set(raw, c);
     }
   }
-  return [...by.entries()].map(([name, c]) => ({ name, ...c, full: c.total > 0 && c.done >= c.total, rewardable: c.total >= CONQUEST_MIN, rarity: conquestRarity(c.total) }));
+  return [...by.entries()].map(([name, c]) => ({ name, ...c, full: c.total > 0 && c.done >= c.total, rewardable: rarityOf(c.total) !== null, rarity: rarityOf(c.total) }));
 }
 
 /** 완전 기출문제 칸의 id (부분 문항 id 와 겹치지 않게) */
@@ -150,7 +167,7 @@ export const fullKey = (questionId: string) => `q:${questionId}`;
  *  - 맞힘: 기출문제 탭에서 맞힌 기록(solved) 또는 윤리 퀴즈의 완전 기출 문제(origin 'full')를 맞힘
  * items: 공개 문제 / links: 기출 문항 → 주요·비교 사상가 / correct: 퀴즈에서 맞힌 문제 / solved: 맞힌 완전 기출 문항
  */
-export function conquestEntries(
+export function fullConquestEntries(
   items: { id: string; origin?: string | null; question_id: string | null }[],
   links: Record<string, string[]>,
   correct: Set<string>,
@@ -161,6 +178,21 @@ export function conquestEntries(
   for (const q of solved) done.add(fullKey(q));
   for (const it of items) if (it.origin === "full" && it.question_id && correct.has(it.id)) done.add(fullKey(it.question_id));
   return { entries, done };
+}
+
+/**
+ * 부분 기출 칸: 윤리 퀴즈의 기출 세부 문제(origin 이 'full' 이 아닌 kind 'exam').
+ *  - 연계 문항: 원래 기출 문항의 주요 · 비교 사상가 모두에게 함께 센다
+ *  - 맞힘: 퀴즈에서 한 번 이상 맞힌 문제 (완전 기출과 따로 셈)
+ */
+export function partConquestEntries(
+  items: { id: string; kind: string; origin?: string | null; philosopher_names: string[] | null; question_id: string | null }[],
+  links: Record<string, string[]>,
+  correct: Set<string>,
+) {
+  const parts = items.filter((it) => it.kind === "exam" && it.origin !== "full");
+  const entries = parts.map((it) => ({ id: it.id, names: [...new Set([...(it.philosopher_names ?? []), ...((it.question_id && links[it.question_id]) || [])])] }));
+  return { entries, done: new Set(parts.filter((it) => correct.has(it.id)).map((it) => it.id)) };
 }
 
 // ---------------------------------------------------------------------

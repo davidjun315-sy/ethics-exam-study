@@ -262,7 +262,7 @@ if (failed) {
   process.exit(1);
 }
 {
-  const { conquestEntries } = await import("../src/lib/quiz/fun-core.ts");
+  const { fullConquestEntries: conquestEntries, partConquestEntries, fullConquestRarity } = await import("../src/lib/quiz/fun-core.ts");
   const items = [
     { id: "p1", origin: "analysis", question_id: "Q1" }, // 부분 기출 (안 셈)
     { id: "f2", origin: "full", question_id: "Q2" }, // 윤리 퀴즈의 완전 기출
@@ -275,8 +275,18 @@ if (failed) {
   const by = Object.fromEntries(cells.map((c) => [c.name, c]));
   check("정복 지도: 완전 기출만 셈 · 연계 문항은 두 사상가 모두", entries.length === 3 && by["칸트"].total === 2 && by["밀"].total === 1 && by["롤스"].total === 1);
   check("정복 지도: 기출문제 탭 기록 · 퀴즈 완전 기출 정답 모두 인정, 부분 기출 정답은 안 셈", by["밀"].full && by["롤스"].full && by["칸트"].done === 1);
+  // 부분 기출은 따로: 세부 문제만 · 연계 문항은 두 사상가 모두 · 완전 기출 정답은 안 셈
+  const parts = [
+    { id: "a1", kind: "exam", origin: "analysis", philosopher_names: ["칸트"], question_id: "Q1" },
+    { id: "a2", kind: "exam", origin: "analysis", philosopher_names: ["롤스"], question_id: "Q2" },
+    { id: "f2", kind: "exam", origin: "full", philosopher_names: ["롤스"], question_id: "Q2" },
+    { id: "pr", kind: "practice", origin: "practice", philosopher_names: ["칸트"], question_id: "Q1" },
+  ];
+  const pe = partConquestEntries(parts, links, new Set(["a1", "f2"]));
+  const pc = Object.fromEntries(conquestCells(pe.entries, pe.done, (n) => n).map((c) => [c.name, c]));
+  check("부분 기출 칸: 세부 문제만 · 연계는 모두에게 · 완전 기출 정답은 따로", pe.entries.length === 2 && pc["칸트"].full && pc["밀"].full && pc["롤스"].done === 0);
+  check("보상: 부분 10↑ 일반 · 20↑ 희귀 · 30↑ 영웅(전설 없음) · 완전 10↑ 전설", [9, 10, 20, 30, 99].map(conquestRarity).join(",") === ",common,rare,epic,epic" && fullConquestRarity(9) === null && fullConquestRarity(10) === "legendary");
 }
-check("정복 보상 등급: 10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설", [9, 10, 19, 20, 29, 30, 39, 40, 93].map(conquestRarity).join(",") === ",common,common,rare,rare,epic,epic,legendary,legendary");
 {
   const { classifyPhilosopher } = await import("../src/lib/traditions.ts");
   const k = (name: string, tradition: string | null) => classifyPhilosopher({ name, tradition });
