@@ -2,7 +2,7 @@ import "server-only";
 import { getAdminClient } from "@/lib/supabase/server";
 import { cached, invalidateContent } from "@/lib/cache";
 import { classifyPhilosopher } from "@/lib/traditions";
-import { prestigeOf, withPrestige, type Prestige } from "./prestige.ts";
+import { frequencyOf, prestigeOf, withPrestige, type Prestige } from "./prestige.ts";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type BossPattern, type Difficulty, type Fighter } from "./battle";
@@ -222,6 +222,9 @@ export interface CardView {
   battleArtUrl?: string | null;
   /** 빈출 보정 (정복 보상이 높은 사상가일수록 기본 능력치 ↑ · 도장깨기 관 순서) — baseAtk/baseHp 에 이미 반영 */
   prestige?: Prestige;
+  /** 빈출 순위 (1 = 기출에 가장 많이 나온 사상가, 같으면 같은 순위) · 순위를 매긴 사상가 수 */
+  freqRank?: number;
+  freqTotal?: number;
 }
 
 type CardRow = {
@@ -296,12 +299,15 @@ export async function loadPublishedCards(): Promise<CardView[]> {
   const views = cards.filter((c) => philosophers.has(c.philosopher_id)).map((c) => toView(c, philosophers.get(c.philosopher_id)!));
   // 빈출 보정: 정복 지도 문제 수 → 보상 등급 → 기본 능력치 (실패하면 보정 없이)
   const counts = await import("@/lib/quiz/fun").then((m) => m.conquestCounts(views.map((v) => v.philosopherId))).catch(() => ({}) as Record<string, { full: number; part: number }>);
-  return views.map((v) => {
+  const withP = views.map((v) => {
     const n = counts[v.philosopherId];
     const prestige = prestigeOf(n?.full ?? 0, n?.part ?? 0);
     const st = withPrestige({ atk: v.baseAtk, hp: v.baseHp }, prestige);
     return { ...v, baseAtk: st.atk, baseHp: st.hp, prestige };
   });
+  // 빈출 순위: 완전 기출 문항 → 부분 기출 문제 많은 순 (같으면 같은 순위)
+  const freqs = withP.map((v) => frequencyOf(v.prestige)).sort((a, b) => b - a);
+  return withP.map((v) => ({ ...v, freqRank: freqs.indexOf(frequencyOf(v.prestige)) + 1, freqTotal: withP.length }));
 }
 
 // ---------------------------------------------------------------------

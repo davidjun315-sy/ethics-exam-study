@@ -231,7 +231,19 @@ export function PhilosopherCard({
                 </span>
               )}
             </div>
-            <span className="rounded-full bg-black/45 px-[3cqw] py-[0.8cqw] text-[5cqw] font-medium leading-none text-white/85 ring-1 ring-white/10">{card.tradition}</span>
+            <div className="flex flex-col items-end gap-[1.5cqw]">
+              <span className="rounded-full bg-black/45 px-[3cqw] py-[0.8cqw] text-[5cqw] font-medium leading-none text-white/85 ring-1 ring-white/10">{card.tradition}</span>
+              {/* 빈출 순위 (기출에 많이 나온 순) */}
+              {card.freqRank !== undefined && (
+                <span
+                  className={`rounded-full px-[3cqw] py-[0.8cqw] text-[4.6cqw] font-bold leading-none ring-1 ${card.freqRank <= 3 ? "bg-[#ffd36b]/90 text-[#3a2600] ring-[#fff3c4]/60" : "bg-black/45 text-white/85 ring-white/10"}`}
+                  title={`기출에 많이 나온 순서 ${card.freqRank}위${card.freqTotal ? ` / ${card.freqTotal}명` : ""}`}
+                  data-freq-rank={card.freqRank}
+                >
+                  빈출 {card.freqRank}위
+                </span>
+              )}
+            </div>
           </div>
           {locked && (
             <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-[2cqw] text-white/80">

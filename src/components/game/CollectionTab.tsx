@@ -7,7 +7,7 @@ import { TRADITIONS } from "@/lib/traditions";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, gemStyle } from "./GameApp";
 
-type Sort = "rarity" | "level" | "name" | "count";
+type Sort = "rarity" | "level" | "name" | "count" | "freq";
 
 /** 카드 도감: 사상가별로 묶어 가장 강한 카드를 대표로 보여 준다. 누르면 그 사상가의 보유 카드 전체 */
 export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (philosopherId: string) => void }) {
@@ -33,6 +33,8 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
     .filter((c) => role === "all" || c.skillEffect === role)
     .filter((c) => (show === "owned" ? c.copies.length : show === "locked" ? !c.copies.length : true))
     .sort((a, b) => {
+      // 빈출순: 보유 여부와 상관없이 기출에 많이 나온 순 (1위부터)
+      if (sort === "freq") return (a.freqRank ?? 999) - (b.freqRank ?? 999) || a.name.localeCompare(b.name);
       if (Boolean(b.copies.length) !== Boolean(a.copies.length)) return b.copies.length ? 1 : -1;
       if (sort === "level") return (best(b)?.level ?? 0) - (best(a)?.level ?? 0) || rank(b) - rank(a) || a.name.localeCompare(b.name);
       if (sort === "count") return b.copies.length - a.copies.length || rank(b) - rank(a) || a.name.localeCompare(b.name);
@@ -76,6 +78,7 @@ export function CollectionTab({ state, onOpen }: { state: GameState; onOpen: (ph
           </select>
           <select className="input !w-auto !py-1 text-xs" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="정렬">
             <option value="rarity">등급순</option>
+            <option value="freq">빈출순</option>
             <option value="level">레벨순</option>
             <option value="count">보유 수량순</option>
             <option value="name">이름순</option>
