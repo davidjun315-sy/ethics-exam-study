@@ -326,4 +326,12 @@ if (failed) {
   const bad = cases.filter(([a, p, want]) => areaOf(a, p) !== want).map(([a, p, w]) => `${a}/${p[0]?.name ?? "-"}→${areaOf(a, p)}(기대 ${w})`);
   check("기출 영역 정리: 비슷한 영역은 한 갈래로 · 모호하면 주요 사상가 분야로", bad.length === 0, bad.join(", "));
 }
+{
+  const { battleBgFor } = await import("../src/lib/game/battle-bg.ts");
+  const all = { 동양윤리: "e", 한국윤리: "k", 서양윤리: "w", 사회사상: "s" };
+  check("전장 배경: 분야 그대로 · 도덕교육론/미분류는 서양 · 없는 갈래는 가까운 갈래 → 아무 배경",
+    battleBgFor("한국윤리", all) === "k" && battleBgFor("도덕교육론", all) === "w" && battleBgFor("미분류", all) === "w" &&
+    battleBgFor("한국윤리", { 동양윤리: "e" }) === "e" && battleBgFor("사회사상", { 서양윤리: "w" }) === "w" &&
+    battleBgFor("도덕교육론", { 동양윤리: "e" }) === "e" && battleBgFor("서양윤리", {}) === undefined && battleBgFor("서양윤리", null) === undefined);
+}
 console.log("\n모두 통과");

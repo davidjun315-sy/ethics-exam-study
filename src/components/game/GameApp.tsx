@@ -8,6 +8,7 @@ import { quizApi } from "@/lib/quiz/client";
 import type { QuizProgress } from "@/lib/quiz/fun-core";
 import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { PhilosopherCard } from "./PhilosopherCard";
+import { battleBgFor } from "@/lib/game/battle-bg";
 import { DrawTab } from "./DrawTab";
 import { CollectionTab } from "./CollectionTab";
 import { UpgradeTab } from "./UpgradeTab";
@@ -297,7 +298,7 @@ export function PhilosopherSheet({
             {card.battleArtUrl && <SideCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} />}
             {card.battleArtUrl && (
               <div className="hidden sm:block">
-                <BattleCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} bgUrl={state.settings.battleBg?.[card.tradition]} />
+                <BattleCharacter card={card} rarity={top?.rarity ?? "common"} owned={Boolean(top)} bgUrl={battleBgFor(card.tradition, state.settings.battleBg)} />
               </div>
             )}
             {card.artBasis === "reconstruction" && <p className="mt-2 text-center text-[11px] text-faint">역사적 도상을 바탕으로 재구성한 일러스트{card.artNote ? ` · ${card.artNote}` : ""}</p>}

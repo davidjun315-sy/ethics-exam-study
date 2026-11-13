@@ -9,6 +9,7 @@ import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { initialTeam, TeamPicker } from "./BattleTab";
 import { BattleStage } from "./BattleStage";
+import { battleBgFor } from "@/lib/game/battle-bg";
 import { buildDialogue } from "@/lib/game/dialogue";
 import { clock } from "@/lib/game/lives";
 import { SynergyChips } from "./SynergyChips";
@@ -183,7 +184,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
         key={replay.id}
         replay={replay}
         tradition={boss?.tradition ?? ""}
-        bgUrl={boss ? state.settings.battleBg?.[boss.tradition] : undefined}
+        bgUrl={boss ? battleBgFor(boss.tradition, state.settings.battleBg) : undefined}
         intro={debateFor(replay, byId)}
         title={
           <span className="font-semibold text-[#ffd36b]">
