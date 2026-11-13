@@ -41,7 +41,7 @@ export function geminiModels(): string[] {
 
 type Attempt = { kind: "ok"; text: string } | { kind: "timeout" } | { kind: "retry-thinking" };
 
-async function attempt(model: string, key: string, system: string, prompt: string, thinkingConfig: Record<string, unknown> | null, ms: number, started: number): Promise<Attempt> {
+async function attempt(model: string, key: string, system: string, prompt: string, thinkingConfig: Record<string, unknown> | null, ms: number, started: number, maxOutputTokens = 4096): Promise<Attempt> {
   let res: Response;
   try {
     res = await fetch(`${serverEnv.geminiBaseUrl()}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -53,7 +53,7 @@ async function attempt(model: string, key: string, system: string, prompt: strin
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.2,
-          maxOutputTokens: 4096,
+          maxOutputTokens,
           ...(thinkingConfig ? { thinkingConfig } : {}),
         },
       }),
@@ -90,7 +90,8 @@ async function attempt(model: string, key: string, system: string, prompt: strin
   return { kind: "ok", text };
 }
 
-export async function geminiJson<S extends z.ZodType>(schema: S, system: string, prompt: string): Promise<{ data: z.infer<S>; model: string; ms: number }> {
+/** opts.maxOutputTokens: 긴 결과(예: 개념 정리 노트)는 더 크게 */
+export async function geminiJson<S extends z.ZodType>(schema: S, system: string, prompt: string, opts: { maxOutputTokens?: number } = {}): Promise<{ data: z.infer<S>; model: string; ms: number }> {
   const key = serverEnv.geminiApiKey();
   if (!key) throw new GeminiError("GEMINI_API_KEY 가 설정되지 않았습니다.", 503);
   const models = geminiModels();
@@ -104,7 +105,7 @@ export async function geminiJson<S extends z.ZodType>(schema: S, system: string,
     for (let i = thinkingPick.get(model) ?? 0; i < THINKING.length; i++) {
       const left = until - Date.now();
       if (left < 3000) break;
-      const r = await attempt(model, key, system, prompt, THINKING[i], left, started);
+      const r = await attempt(model, key, system, prompt, THINKING[i], left, started, opts.maxOutputTokens);
       if (r.kind === "retry-thinking" && i < THINKING.length - 1) continue;
       if (r.kind !== "ok") break; // 시간 초과·과부하 → 다음 모델
       thinkingPick.set(model, i);

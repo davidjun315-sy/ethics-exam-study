@@ -34,6 +34,25 @@ async function loadPhilosopher(id: string): Promise<Philosopher> {
   return data as Philosopher;
 }
 
+async function noteInputFor(philosopherId: string) {
+  const p = await loadPhilosopher(philosopherId);
+  const nb = await getPhilosopherNotebook(p);
+  if (nb.timeline.length === 0) throw new Error("이 사상가가 나온 분석 완료 문항이 없습니다. 먼저 기출 문항을 분석하세요.");
+  return buildNoteInput(
+    { name: p.name, aliases: p.aliases, originalName: p.original_name, tradition: p.tradition, school: p.school, era: p.era, coreIdeas: p.core_ideas ?? p.description },
+    nb,
+  );
+}
+
+/** 무료 AI(Gemini)로 바로 개념 정리 → 저장 (채팅 AI 붙여넣기와 같은 지시 · 같은 양식) */
+export async function generatePhilosopherNote(philosopherId: string) {
+  const { geminiJson } = await import("@/lib/ai/gemini");
+  const input = await noteInputFor(philosopherId);
+  const prompt = [buildNotePrompt(input), "", "출력 형식: 아래 JSON Schema 를 만족하는 JSON 하나만 출력하세요.", "<json_schema>", JSON.stringify(z.toJSONSchema(PhilosopherStudyNoteSchema)), "</json_schema>"].join("\n");
+  const { data, model } = await geminiJson(PhilosopherStudyNoteSchema, NOTE_SYSTEM, prompt, { maxOutputTokens: 32768 });
+  return { ...(await save(philosopherId, data, { source: `Gemini (${model})`, edited: false, promptVersion: NOTE_PROMPT_VERSION, refresh: true })), model };
+}
+
 /** 채팅 AI 에 붙여넣을 개념 정리 프롬프트 */
 export async function buildNoteManualPrompt(philosopherId: string): Promise<string> {
   const p = await loadPhilosopher(philosopherId);

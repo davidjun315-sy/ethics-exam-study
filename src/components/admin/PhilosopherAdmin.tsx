@@ -1,11 +1,90 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { api } from "@/lib/admin-client";
 import { TRADITIONS, UNCLASSIFIED } from "@/lib/traditions";
 import type { Philosopher } from "@/lib/types";
 import { AiPasteBox } from "./AiPasteBox";
+
+/** 무료 AI(Gemini)로 바로 개념 정리 → 저장 */
+export function NoteGenerate({ philosopherId, hasNote }: { philosopherId: string; hasNote: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+  async function run() {
+    if (hasNote && !confirm("지금 노트를 새 정리로 바꿉니다. (직접 수정한 내용도 바뀝니다) 진행할까요?")) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api<{ concepts: number; dropped: string[]; model: string }>(`/api/admin/philosophers/${philosopherId}/note/generate`, "POST");
+      startTransition(() => router.refresh());
+      setMsg({ ok: true, text: `정리했습니다 (개념 ${r.concepts}개 · ${r.model}). 사상가 페이지의 '개념 정리' 탭에 보입니다.` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <button type="button" className="btn-primary" disabled={busy || pending} onClick={run}>
+        {busy ? "AI가 정리하는 중… (1~2분)" : hasNote ? "무료 AI로 다시 정리" : "무료 AI로 바로 정리"}
+      </button>
+      {msg && <p className={`text-sm ${msg.ok ? "text-ok" : "text-danger"}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/** 여러 사상가의 노트를 차례로 무료 AI 로 다시 정리 (한 번에 하나씩 · 중간에 멈출 수 있음) */
+export function NoteBulkGenerate({ targets }: { targets: { id: string; name: string }[] }) {
+  const router = useRouter();
+  const [running, setRunning] = useState(false);
+  const [log, setLog] = useState<{ name: string; ok: boolean; text: string }[]>([]);
+  const stop = useRef(false);
+  async function run() {
+    if (!confirm(`${targets.length}명의 개념 정리 노트를 새 방식으로 다시 정리합니다. 한 명에 1~2분 걸리고, 직접 수정한 내용도 바뀝니다. 진행할까요?`)) return;
+    stop.current = false;
+    setRunning(true);
+    setLog([]);
+    for (const t of targets) {
+      if (stop.current) break;
+      try {
+        const r = await api<{ concepts: number }>(`/api/admin/philosophers/${t.id}/note/generate`, "POST");
+        setLog((l) => [...l, { name: t.name, ok: true, text: `개념 ${r.concepts}개` }]);
+      } catch (e) {
+        setLog((l) => [...l, { name: t.name, ok: false, text: e instanceof Error ? e.message : String(e) }]);
+      }
+    }
+    setRunning(false);
+    router.refresh();
+  }
+  if (!targets.length) return <p className="text-sm text-muted">모든 개념 정리 노트가 새 방식입니다.</p>;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-primary" disabled={running} onClick={run}>
+          {running ? `정리하는 중… ${log.length}/${targets.length}` : `예전 방식 노트 ${targets.length}개 모두 다시 정리 (무료 AI)`}
+        </button>
+        {running && (
+          <button type="button" className="btn" onClick={() => (stop.current = true)}>
+            이번 사상가까지만 하고 멈추기
+          </button>
+        )}
+      </div>
+      {log.length > 0 && (
+        <ul className="max-h-48 space-y-0.5 overflow-y-auto text-xs">
+          {log.map((x, i) => (
+            <li key={i} className={x.ok ? "text-ok" : "text-danger"}>
+              {x.ok ? "✓" : "✗"} {x.name} · {x.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /** 채팅 AI 로 개념 정리: 프롬프트 복사 → 결과 붙여넣기 */
 export function NotePaste({ philosopherId, hasNote }: { philosopherId: string; hasNote: boolean }) {

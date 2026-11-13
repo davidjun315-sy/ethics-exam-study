@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { TraditionSelect } from "@/components/admin/PhilosopherAdmin";
+import { NoteBulkGenerate, TraditionSelect } from "@/components/admin/PhilosopherAdmin";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
+import { NOTE_PROMPT_VERSION } from "@prompts/philosopher-notes";
 import { DataError, load } from "@/components/DataError";
 import { Badge, Empty, PageTitle } from "@/components/ui";
 import { formatDate } from "@/lib/format";
@@ -14,7 +16,7 @@ export default async function AdminPhilosophersPage() {
     const [p, links, notes] = await Promise.all([
       db.from("philosophers").select("id, name, tradition, school").order("name"),
       db.from("question_philosophers").select("philosopher_id, role").limit(20000),
-      db.from("philosopher_notes").select("philosopher_id, source, updated_at, edited"),
+      db.from("philosopher_notes").select("philosopher_id, source, updated_at, edited, prompt_version"),
     ]);
     if (p.error) throw new Error(p.error.message);
     const count = new Map<string, number>();
@@ -23,7 +25,9 @@ export default async function AdminPhilosophersPage() {
     const rows = (p.data ?? [])
       .map((x) => ({ ...x, count: count.get(x.id) ?? 0, note: noteBy.get(x.id) ?? null }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-    return { groups: groupByTradition(rows), total: rows.length, notesMissing: Boolean(notes.error) };
+    // 새 정리 방식(맨 앞 등장 배경 · 핵심어 설명)이 아닌 노트 → 출제 많은 순으로 다시 정리 대상
+    const outdated = rows.filter((r) => r.note && r.count > 0 && (r.note as { prompt_version?: string | null }).prompt_version !== NOTE_PROMPT_VERSION).map((r) => ({ id: r.id, name: r.name }));
+    return { groups: groupByTradition(rows), total: rows.length, notesMissing: Boolean(notes.error), outdated };
   });
   if (error || !data) return <DataError error={error} />;
   return (
@@ -37,6 +41,13 @@ export default async function AdminPhilosophersPage() {
         <p className="rounded bg-danger-soft p-3 text-sm text-danger">
           philosopher_notes 테이블이 없습니다. Supabase SQL Editor 에서 supabase/migrations/003_philosopher_notes.sql 을 실행하세요.
         </p>
+      )}
+      {!data.notesMissing && isGeminiConfigured() && (
+        <section className="card space-y-2 p-4">
+          <h2 className="text-[15px] font-bold">개념 정리 새 방식으로 다시 정리</h2>
+          <p className="text-xs text-muted">새 방식: 맨 앞에 사상가 등장 배경 · 핵심어를 풀어 바꾸지 않고 그대로 쓰며 쉽게 설명. 노트는 사상가마다 무료 AI 로 다시 만들 수 있습니다.</p>
+          <NoteBulkGenerate targets={data.outdated} />
+        </section>
       )}
       {data.total === 0 ? (
         <Empty>등록된 사상가가 없습니다.</Empty>

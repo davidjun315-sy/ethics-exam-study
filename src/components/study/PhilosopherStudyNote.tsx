@@ -50,7 +50,10 @@ export function PhilosopherStudyNote({ name, note, refMap }: { name: string; not
   // 구조도 키워드 → 본문 개념 위치
   const anchor = new Map<string, string>();
   note.sections.forEach((s, si) => s.concepts.forEach((c, ci) => anchor.set(normalizeText(c.name), `note-c${si + 1}-${ci + 1}`)));
+  // 등장 배경 (새 노트부터 · 예전 노트에는 없을 수 있음)
+  const bg = note.background ?? null;
   const nav = [
+    bg && { id: "note-background", label: "등장 배경" },
     { id: "note-map", label: "구조도" },
     (note.overview.summary || note.studyOrder.length > 0) && { id: "note-overview", label: "큰 그림" },
     ...note.sections.map((s, i) => ({ id: `note-s${i + 1}`, label: s.title })),
@@ -69,6 +72,35 @@ export function PhilosopherStudyNote({ name, note, refMap }: { name: string; not
           </a>
         ))}
       </nav>
+
+      {bg && (
+        <section id="note-background" className="card scroll-mt-20 p-4" data-note-background>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-base font-bold">등장 배경</h2>
+            {bg.era && <span className="text-xs text-muted">{bg.era}</span>}
+          </div>
+          <div className="mt-2 grid gap-3 md:grid-cols-2">
+            <div>
+              <div className="text-xs font-semibold text-muted">시대 · 사회 상황</div>
+              <p className="prose-study mt-0.5">{bg.context}</p>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-muted">문제의식</div>
+              <p className="prose-study mt-0.5">{bg.problem}</p>
+            </div>
+          </div>
+          {bg.influences.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs font-semibold text-muted">이어받거나 맞선 사상</div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {bg.influences.map((x) => (
+                  <Badge key={x}>{x}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section id="note-map" className="card scroll-mt-20 border-navy/30 p-4">
         <p className="text-lg font-bold leading-8 text-navy">{note.overview.oneLine}</p>

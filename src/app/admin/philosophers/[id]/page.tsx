@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NoteEditor } from "@/components/admin/NoteEditor";
-import { NotePaste, PhilosopherInfoForm } from "@/components/admin/PhilosopherAdmin";
+import { NoteGenerate, NotePaste, PhilosopherInfoForm } from "@/components/admin/PhilosopherAdmin";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
+import { NOTE_PROMPT_VERSION } from "@prompts/philosopher-notes";
 import { DataError, load } from "@/components/DataError";
 import { Badge, PageTitle } from "@/components/ui";
 import { getPhilosopherNote } from "@/lib/data/notes";
@@ -53,7 +55,13 @@ export default async function AdminPhilosopherPage({ params }: PageProps<"/admin
         {notebook.timeline.length === 0 ? (
           <p className="text-sm text-warn">이 사상가가 나온 분석 완료 문항이 없습니다. 먼저 기출 문항을 분석하세요. (아래에서 직접 작성은 가능합니다)</p>
         ) : (
-          <NotePaste philosopherId={p.id} hasNote={Boolean(note)} />
+          <>
+            {note && note.prompt_version !== NOTE_PROMPT_VERSION && (
+              <p className="rounded bg-navy-soft/60 p-2 text-sm text-navy">정리 방식이 바뀌었습니다 (맨 앞 등장 배경 · 핵심어를 그대로 쓰는 설명). 다시 정리하면 새 방식으로 바뀝니다.</p>
+            )}
+            {isGeminiConfigured() && <NoteGenerate philosopherId={p.id} hasNote={Boolean(note)} />}
+            <NotePaste philosopherId={p.id} hasNote={Boolean(note)} />
+          </>
         )}
       </section>
 

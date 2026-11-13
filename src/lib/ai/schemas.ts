@@ -341,8 +341,8 @@ const refs = z.array(z.string()).describe("입력의 <questions> 에 있는 기�
 export const NoteConceptSchema = z.object({
   name: z.string().describe("개념명"),
   originalTerm: z.string().nullable().describe("한자/원어. 모르면 null"),
-  definition: z.string().describe("한두 문장의 핵심 정의"),
-  explanation: z.string().describe("수험생이 이해할 수 있게 풀어 쓴 설명 (앞 개념과의 연결을 포함)"),
+  definition: z.string().describe("한두 문장의 핵심 정의. 핵심어(개념어·원어)를 그대로 주어로 써서"),
+  explanation: z.string().describe("이해하기 쉬운 설명. 핵심어를 다른 말로 바꾸지 말고 그대로 쓰며, 핵심어끼리의 관계(→ · 대비)와 앞 개념과의 연결을 보여 줌"),
   keyPoints: z.array(z.string()).describe("반드시 기억할 요점"),
   examPoints: z.array(z.string()).describe("기출에서 이 개념을 어떻게 물었는지 / 답안에 들어가야 할 표현"),
   confusions: z
@@ -351,7 +351,16 @@ export const NoteConceptSchema = z.object({
   relatedQuestionRefs: refs,
 });
 
+/** 사상가 등장 배경 (노트 맨 앞). 예전 노트에는 없을 수 있음 */
+export const NoteBackgroundSchema = z.object({
+  era: z.string().nullable().describe("시대 · 지역 한 줄 (예: 명나라 중기 · 중국). 모르면 null"),
+  context: z.string().describe("이 사상이 나온 시대 · 사회 상황 (2~4문장, 핵심어 사용)"),
+  problem: z.string().describe("이 사상가가 풀려고 한 문제의식 · 비판 대상 (1~3문장, 핵심어 사용)"),
+  influences: z.array(z.string()).describe("이어받거나 맞선 사상 · 인물 (예: '주희 성즉리 비판', '맹자 성선설 계승') 0~5개"),
+});
+
 export const PhilosopherStudyNoteSchema = z.object({
+  background: NoteBackgroundSchema.nullable().optional().describe("등장 배경: 노트 맨 앞에 보여 줌"),
   overview: z.object({
     oneLine: z.string().describe("이 사상가를 한 문장으로"),
     summary: z.string().describe("사상 전체의 큰 그림 (3~6문장)"),
