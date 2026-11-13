@@ -8,6 +8,7 @@
  */
 import type { BossPattern, Fighter } from "./battle.ts";
 import { DEFAULT_RARITY_MULT, RARITIES, type Rarity, type SkillEffect } from "./rules.ts";
+import { frequencyOf, type Prestige } from "./prestige.ts";
 
 export interface StageCard {
   philosopherId: string;
@@ -97,13 +98,18 @@ export function bornYear(name: string): number {
   return key ? BORN[key] : 9999;
 }
 
-/** 관 순서대로 정렬 */
-export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "name" | "tradition">>(cards: T[]): T[] {
+/**
+ * 관 순서: 빈출 순 (기출에 적게 나온 사상가 → 많이 나온 사상가 = 정복 보상이 높을수록 뒤 · 강함).
+ * 빈출 정도가 같으면 분야 → 태어난 해 순. 빈출 정보가 없으면 예전처럼 분야 · 태어난 해 순.
+ */
+export function orderStageCards<T extends Pick<StageCard, "philosopherId" | "name" | "tradition"> & { prestige?: Prestige }>(cards: T[]): T[] {
   const ti = (t: string) => {
     const i = TRADITION_ORDER.indexOf(t);
     return i < 0 ? TRADITION_ORDER.length : i;
   };
-  return [...cards].sort((a, b) => ti(a.tradition) - ti(b.tradition) || bornYear(a.name) - bornYear(b.name) || a.name.localeCompare(b.name) || a.philosopherId.localeCompare(b.philosopherId));
+  return [...cards].sort(
+    (a, b) => frequencyOf(a.prestige) - frequencyOf(b.prestige) || ti(a.tradition) - ti(b.tradition) || bornYear(a.name) - bornYear(b.name) || a.name.localeCompare(b.name) || a.philosopherId.localeCompare(b.philosopherId),
+  );
 }
 
 /**
@@ -118,7 +124,7 @@ const rarityAt = (t: number): Rarity => (t < 0.12 ? "common" : t < 0.42 ? "rare"
 const lerp = ([a, b]: [number, number], t: number) => Math.round((a + (b - a) * t) * 100) / 100;
 
 /** 모든 관 */
-export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition"> & Partial<Pick<StageCard, "baseAtk" | "baseHp">>>(cards: T[], maxLevel: number, tune = BOSS_TUNE): CampaignStage[] {
+export function buildCampaign<T extends Pick<StageCard, "philosopherId" | "name" | "tradition"> & Partial<Pick<StageCard, "baseAtk" | "baseHp">> & { prestige?: Prestige }>(cards: T[], maxLevel: number, tune = BOSS_TUNE): CampaignStage[] {
   const ordered = orderStageCards(cards);
   const n = ordered.length;
   const withBase = cards.filter((c) => c.baseAtk && c.baseHp);

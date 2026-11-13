@@ -331,6 +331,14 @@ export function PhilosopherSheet({
                 </Link>
               </div>
             )}
+            {card.prestige && card.prestige.bonus > 0 && (
+              <p className="rounded-lg bg-[#ffd36b]/[0.12] px-3 py-2 text-[11px] text-muted" data-prestige>
+                <b className="text-[#8a5a00] dark:text-[#ffd36b]">빈출 사상가 · 기본 능력치 +{Math.round(card.prestige.bonus * 100)}%</b>
+                <span className="ml-1">
+                  (완전 기출 {card.prestige.full}문항 · 부분 기출 {card.prestige.part}문제 — 정복 보상이 높은 사상가일수록 강함)
+                </span>
+              </p>
+            )}
             <div className="rounded-lg border border-line p-3">
               <div className="text-xs text-muted">필살기 · {SKILL_EFFECTS[card.skillEffect].name}</div>
               <div className="font-bold">✦ {card.skillName}</div>

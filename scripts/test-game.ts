@@ -293,4 +293,18 @@ if (failed) {
   check("한국 사상가는 분야 값이 동양이어도 한국윤리 (이황 · 이이 · 원효 · 정약용(다산))", k("이황", "동양윤리") === "한국윤리" && k("이이", "성리학") === "한국윤리" && k("원효", "불교") === "한국윤리" && k("정약용(다산)", "동양윤리") === "한국윤리" && k("율곡 이이", null) !== "동양윤리");
   check("중국 · 서양 사상가는 그대로 (주희 · 왕수인 · 칸트)", k("주희", "동양윤리") === "동양윤리" && k("왕수인", null) === "동양윤리" && k("칸트", null) === "서양윤리");
 }
+{
+  const { prestigeOf, withPrestige, frequencyOf } = await import("../src/lib/game/prestige.ts");
+  const { orderStageCards } = await import("../src/lib/game/campaign.ts");
+  const a = prestigeOf(0, 5), b = prestigeOf(0, 12), c = prestigeOf(3, 25), d = prestigeOf(2, 31), e = prestigeOf(10, 0), f = prestigeOf(30, 40);
+  check("빈출 보정: 정복 보상 등급이 높을수록 ↑ (없음 0~2.7% · 일반 3% · 희귀 6% · 영웅 10% · 전설 15%~20%)", a.bonus === 0 && prestigeOf(7, 0).bonus === 0.021 && prestigeOf(9, 9).bonus < 0.03 && b.bonus === 0.03 && c.bonus === 0.06 && d.bonus === 0.1 && e.bonus === 0.15 && f.bonus === 0.2 && f.rarity === "legendary");
+  check("빈출 보정: 기본 능력치에 적용", withPrestige({ atk: 40, hp: 300 }, e).atk === 46 && withPrestige({ atk: 40, hp: 300 }, e).hp === 345 && withPrestige({ atk: 40, hp: 300 }, a).atk === 40);
+  const order = orderStageCards([
+    { philosopherId: "1", name: "주희", tradition: "동양윤리", prestige: prestigeOf(17, 13) },
+    { philosopherId: "2", name: "칸트", tradition: "서양윤리", prestige: prestigeOf(5, 0) },
+    { philosopherId: "3", name: "맹자", tradition: "동양윤리", prestige: prestigeOf(3, 0) },
+    { philosopherId: "4", name: "롤스", tradition: "사회사상", prestige: prestigeOf(5, 2) },
+  ]).map((x) => x.name);
+  check(`도장깨기 관 순서: 적게 나온 사상가 → 많이 나온 사상가 (${order.join(" → ")})`, order.join(",") === "맹자,칸트,롤스,주희" && frequencyOf(undefined) === 0);
+}
 console.log("\n모두 통과");

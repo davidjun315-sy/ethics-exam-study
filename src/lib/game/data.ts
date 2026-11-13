@@ -2,6 +2,7 @@ import "server-only";
 import { getAdminClient } from "@/lib/supabase/server";
 import { cached, invalidateContent } from "@/lib/cache";
 import { classifyPhilosopher } from "@/lib/traditions";
+import { prestigeOf, withPrestige, type Prestige } from "./prestige.ts";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll } from "@/lib/quiz/paged";
 import { opponentLevel, runBattle, seededRandom as seededRandomFor, type BattleEvent, type BossPattern, type Difficulty, type Fighter } from "./battle";
@@ -219,6 +220,8 @@ export interface CardView {
   role?: string;
   /** 전투 캐릭터 (투명 배경 전신, 오른쪽을 봄). 015 전이거나 없으면 null */
   battleArtUrl?: string | null;
+  /** 빈출 보정 (정복 보상이 높은 사상가일수록 기본 능력치 ↑ · 도장깨기 관 순서) — baseAtk/baseHp 에 이미 반영 */
+  prestige?: Prestige;
 }
 
 type CardRow = {
@@ -290,7 +293,15 @@ export async function loadPublishedCards(): Promise<CardView[]> {
   if (error) throw gameError(error.message);
   const ids = ((data ?? []) as { philosopher_id: string }[]).map((r) => r.philosopher_id);
   const { cards, philosophers } = await loadCards(ids);
-  return cards.filter((c) => philosophers.has(c.philosopher_id)).map((c) => toView(c, philosophers.get(c.philosopher_id)!));
+  const views = cards.filter((c) => philosophers.has(c.philosopher_id)).map((c) => toView(c, philosophers.get(c.philosopher_id)!));
+  // 빈출 보정: 정복 지도 문제 수 → 보상 등급 → 기본 능력치 (실패하면 보정 없이)
+  const counts = await import("@/lib/quiz/fun").then((m) => m.conquestCounts(views.map((v) => v.philosopherId))).catch(() => ({}) as Record<string, { full: number; part: number }>);
+  return views.map((v) => {
+    const n = counts[v.philosopherId];
+    const prestige = prestigeOf(n?.full ?? 0, n?.part ?? 0);
+    const st = withPrestige({ atk: v.baseAtk, hp: v.baseHp }, prestige);
+    return { ...v, baseAtk: st.atk, baseHp: st.hp, prestige };
+  });
 }
 
 // ---------------------------------------------------------------------

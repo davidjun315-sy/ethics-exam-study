@@ -268,6 +268,29 @@ async function loadClaims(learner: string): Promise<{ ready: boolean; tracksRead
   return { ready: true, tracksReady: false, claimed: new Set(((old.data ?? []) as { philosopher_id: string }[]).map((c) => `${c.philosopher_id}:part`)) };
 }
 
+/**
+ * 카드 사상가마다 정복 지도의 문제 수 (빈출 정도): 완전 기출 문항 · 부분 기출 문제.
+ * 게임 카드 목록을 만들 때 부르므로 cardIds 를 받는다 (publishedCards 를 다시 부르지 않음).
+ */
+export async function conquestCounts(cardIds: string[]): Promise<Record<string, { full: number; part: number }>> {
+  const [phs, items, links] = await Promise.all([loadPhilosophers(), loadItems(), loadQuestionLinks().catch(() => ({}) as Record<string, string[]>)]);
+  const canon = canonFor(phs, new Set(cardIds));
+  const nameOf = (n: string) => canon(n)?.name ?? null;
+  const none = new Set<string>();
+  const whole = fullConquestEntries(items, links, none, none);
+  const part = partConquestEntries(items, links, none);
+  const byName = new Map(phs.map((p) => [p.name, p.id]));
+  const out: Record<string, { full: number; part: number }> = {};
+  for (const [track, e] of [["full", whole], ["part", part]] as const) {
+    for (const c of conquestCells(e.entries, none, nameOf)) {
+      const id = byName.get(c.name);
+      if (!id) continue;
+      (out[id] ??= { full: 0, part: 0 })[track] = c.total;
+    }
+  }
+  return out;
+}
+
 /** 사상가 한 명의 퀴즈 진행 (카드 상세 창용): 완전 기출 · 부분 기출 따로 */
 export async function conquestFor(learner: string, philosopherId: string, name?: string): Promise<QuizProgress> {
   const c = await getConquest(learner);
