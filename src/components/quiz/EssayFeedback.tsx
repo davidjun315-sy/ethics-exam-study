@@ -64,7 +64,9 @@ export function EssayFeedback({ g }: { g: EssayGrading }) {
 /**
  * 키 없이 무료로: 첨삭 프롬프트를 복사해 채팅 AI(Claude·ChatGPT·Gemini)에 붙여넣고, 받은 답을 다시 붙여넣는다.
  */
-export function ChatGrader({ itemId, answer, onGraded }: { itemId: string; answer: string; onGraded: (g: EssayGrading) => Promise<void> }) {
+/** endpoint: 첨삭 API (기본: 윤리 퀴즈 문제, 기출문제 탭은 /api/questions/<id>/grade) */
+export function ChatGrader({ itemId, answer, onGraded, endpoint }: { itemId: string; answer: string; onGraded: (g: EssayGrading) => Promise<void> | void; endpoint?: string }) {
+  const url = endpoint ?? `/api/quiz/items/${itemId}/grade`;
   const [pasted, setPasted] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +86,7 @@ export function ChatGrader({ itemId, answer, onGraded }: { itemId: string; answe
         onClick={async () => {
           setError(null);
           try {
-            const { prompt } = await quizApi<{ prompt: string }>(`/api/quiz/items/${itemId}/grade`, "POST", { action: "prompt", answer });
+            const { prompt } = await quizApi<{ prompt: string }>(url, "POST", { action: "prompt", answer });
             await navigator.clipboard.writeText(prompt);
             setCopied(true);
             setTimeout(() => setCopied(false), 3000);
@@ -104,7 +106,7 @@ export function ChatGrader({ itemId, answer, onGraded }: { itemId: string; answe
           setBusy(true);
           setError(null);
           try {
-            const { grading } = await quizApi<{ grading: EssayGrading }>(`/api/quiz/items/${itemId}/grade`, "POST", { action: "paste", pasted });
+            const { grading } = await quizApi<{ grading: EssayGrading }>(url, "POST", { action: "paste", pasted });
             await onGraded(grading);
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

@@ -2,37 +2,47 @@
 
 import { useState } from "react";
 import { useQuestionRecord } from "@/lib/local-study";
-import { Badge } from "@/components/ui";
-import { FULL_SOLVE_EVENT } from "./FullSolveBox";
+import { quizApi } from "@/lib/quiz/client";
+import type { EssayGrading } from "@/lib/quiz/essay";
+import { ChatGrader, EssayFeedback } from "@/components/quiz/EssayFeedback";
+import { FULL_SOLVE_EVENT, type FullSolveState } from "./FullSolveBox";
 
-/** 내 답안 작성 + AI 채점. 답안과 채점 결과는 이 브라우저의 localStorage 에만 저장된다. */
-export function AnswerWriter({ questionId, refLabel }: { questionId: string; refLabel: string }) {
+/**
+ * 내 답안 작성 + AI 첨삭 (윤리 퀴즈 서술형 · 완전 기출과 같은 방식):
+ *  - 'AI 채점 받기 (무료)': 서버의 무료 AI (설정돼 있을 때)
+ *  - '채팅 AI로 채점받기': 프롬프트를 Claude · ChatGPT · Gemini 에 붙여넣고 답을 다시 붙여넣기 (키 없이)
+ * 답안과 첨삭 결과는 이 브라우저에만, 맞힌 기록은 로그인했으면 계정(사상가 정복 지도)에.
+ */
+export function AnswerWriter({ questionId, refLabel, aiGrading = false }: { questionId: string; refLabel: string; aiGrading?: boolean }) {
   const { record, update } = useQuestionRecord(questionId);
   const [draft, setDraft] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const value = draft ?? record.answer ?? "";
-  const g = record.grading;
+  const ready = value.trim().length >= 5;
+  const g = record.essay;
+  const endpoint = `/api/questions/${questionId}/grade`;
 
-  async function grade() {
-    setLoading(true);
+  function saveGrading(grading: EssayGrading) {
+    update({ answer: value, solved: true, ref: refLabel, essay: { ...grading, gradedAt: new Date().toISOString() } });
+    setChatOpen(false);
+  }
+
+  async function gradeWithAi() {
+    setBusy(true);
     setError(null);
     update({ answer: value, solved: true, ref: refLabel });
     try {
-      const res = await fetch("/api/grade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, answer: value }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "채점 실패");
-      update({ grading: { ...json.grading, gradedAt: new Date().toISOString() } });
+      const r = await quizApi<{ grading: EssayGrading; solve: FullSolveState | null }>(endpoint, "POST", { action: "ai", answer: value });
+      saveGrading(r.grading);
       // 로그인 상태면 서버가 정복 지도 기록을 남겼다 → 상태 상자에 알림
-      if (json.solve) window.dispatchEvent(new CustomEvent(FULL_SOLVE_EVENT, { detail: json.solve }));
+      if (r.solve) window.dispatchEvent(new CustomEvent(FULL_SOLVE_EVENT, { detail: r.solve }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setChatOpen(true); // 무료 한도 초과 등 → 채팅 AI 로 이어서
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
@@ -49,85 +59,33 @@ export function AnswerWriter({ questionId, refLabel }: { questionId: string; ref
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => draft !== null && update({ answer: draft, ref: refLabel })}
       />
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button className="btn" onClick={() => update({ answer: value, solved: true, ref: refLabel })} disabled={!value.trim()}>
-          저장
-        </button>
-        <button className="btn-primary" onClick={grade} disabled={loading || value.trim().length < 5}>
-          {loading ? "AI 채점 중…" : "AI 채점"}
-        </button>
-        <span className="text-xs text-muted">{value.length}자</span>
-        {error && <span className="text-sm text-danger">{error}</span>}
+      <div className="mt-2 space-y-2">
+        {aiGrading && (
+          <button className="btn-primary w-full py-2.5 font-semibold" onClick={gradeWithAi} disabled={busy || !ready}>
+            {busy ? "AI가 첨삭하는 중… (길면 1~2분)" : "AI 채점 받기 (무료)"}
+          </button>
+        )}
+        {chatOpen ? (
+          <ChatGrader itemId={questionId} endpoint={endpoint} answer={value} onGraded={saveGrading} />
+        ) : (
+          <button type="button" className={`${aiGrading ? "btn" : "btn-primary font-semibold"} w-full py-2.5`} disabled={busy || !ready} onClick={() => setChatOpen(true)}>
+            채팅 AI로 채점받기 (Claude · ChatGPT · Gemini)
+          </button>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn !min-h-8 !py-1 text-xs" onClick={() => update({ answer: value, solved: true, ref: refLabel })} disabled={!value.trim()}>
+            저장
+          </button>
+          <span className="text-xs text-muted">{value.length}자</span>
+          {value.trim().length > 0 && !ready && <span className="text-xs text-faint">AI 첨삭은 5자 이상 쓰면 받을 수 있습니다.</span>}
+        </div>
+        {error && <p className="text-sm text-danger">{error}</p>}
       </div>
 
       {g && (
-        <div className="mt-4 space-y-3 border-t border-line pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-2xl font-bold text-navy">{Math.round(g.overallScore)}점</span>
-            <Badge>개념 정확성 {Math.round(g.conceptAccuracy.score)}</Badge>
-            <Badge>완성도 {Math.round(g.completeness.score)}</Badge>
-            <span className="text-xs text-faint">{new Date(g.gradedAt).toLocaleString("ko-KR")}</span>
-          </div>
-          <p className="prose-study">{g.overallComment}</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <div className="text-xs font-semibold text-muted">핵심 개념 정확성</div>
-              <p className="text-[15px]">{g.conceptAccuracy.comment}</p>
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-muted">답안 완성도</div>
-              <p className="text-[15px]">{g.completeness.comment}</p>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-muted">필수 키워드</div>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {g.keywordCoverage.included.map((k) => (
-                <Badge key={`i-${k}`} tone="ok">✓ {k}</Badge>
-              ))}
-              {g.keywordCoverage.missing.map((k) => (
-                <Badge key={`m-${k}`} tone="danger">✗ {k}</Badge>
-              ))}
-            </div>
-          </div>
-          {g.wrongExpressions.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-muted">틀린 표현</div>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-[15px]">
-                {g.wrongExpressions.map((w, i) => (
-                  <li key={i}>
-                    “{w.text}” — {w.reason}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {g.missingContent.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-muted">빠진 내용</div>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-[15px]">
-                {g.missingContent.map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {g.suggestedRevisions.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-muted">수정할 표현</div>
-              <ul className="mt-1 space-y-1 text-[15px]">
-                {g.suggestedRevisions.map((s, i) => (
-                  <li key={i}>
-                    <span className="text-danger line-through">{s.original}</span> → <span className="text-ok">{s.revised}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div>
-            <div className="text-xs font-semibold text-muted">예상 답안</div>
-            <p className="prose-study">{g.expectedAnswer}</p>
-          </div>
+        <div className="mt-4 space-y-1 border-t border-line pt-4">
+          <EssayFeedback g={g} />
+          <p className="text-right text-[11px] text-faint">{new Date(g.gradedAt).toLocaleString("ko-KR")}</p>
         </div>
       )}
     </section>

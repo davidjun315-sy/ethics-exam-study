@@ -63,7 +63,7 @@ export function buildEssayPrompt(c: EssayContext, studentAnswer: string): string
     c.answer && `정답: ${c.answer}`,
     c.accepted.length > 1 && `정답으로 인정하는 표현: ${c.accepted.join(", ")}`,
     ...c.explanations.map((e) => `해설: ${e}`),
-    c.modelAnswer && `예상 답안: ${c.modelAnswer}`,
+    c.modelAnswer && `${c.kind === "exam" ? "모범답안" : "예상 답안"}: ${c.modelAnswer}`,
   ].filter(Boolean);
   return [
     `[${head.trim()}]`,

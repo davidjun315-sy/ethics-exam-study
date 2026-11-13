@@ -3,6 +3,7 @@ import { DataError, load } from "@/components/DataError";
 import { QuestionStudy } from "@/components/study/QuestionStudy";
 import { isAdmin } from "@/lib/admin-guard";
 import { currentLearner } from "@/lib/quiz/learn";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { getMemo } from "@/lib/data/memos";
 import { cachedQuestionDetail as getQuestionDetail, cachedQuestionsForTopics as findQuestionsForTopics, cachedRelatedQuestions as findRelatedQuestions } from "@/lib/data/cached";
 
@@ -18,9 +19,9 @@ export default async function QuestionPage({ params }: PageProps<"/questions/[id
     // 내 메모는 로그인한 학습자(회원 / 관리자) 것만 서버에서 읽는다
     const learner = await currentLearner();
     const memo = learner ? await getMemo(learner, id) : null;
-    return { detail, related, admin, extensionMatches, memo, signedIn: Boolean(learner) };
+    return { detail, related, admin, extensionMatches, memo, signedIn: Boolean(learner), aiGrading: isGeminiConfigured() };
   });
   if (error || !data) return <DataError error={error} />;
   if (!data.detail) notFound();
-  return <QuestionStudy detail={data.detail} related={data.related} isAdmin={data.admin} extensionMatches={data.extensionMatches} memo={data.memo} signedIn={data.signedIn} />;
+  return <QuestionStudy detail={data.detail} related={data.related} isAdmin={data.admin} extensionMatches={data.extensionMatches} memo={data.memo} signedIn={data.signedIn} aiGrading={data.aiGrading} />;
 }

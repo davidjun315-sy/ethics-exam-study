@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Map as MapIcon } from "lucide-react";
+import { useQuestionRecord } from "@/lib/local-study";
 
 export interface FullSolveState {
   ready: boolean;
@@ -18,9 +19,12 @@ export const FULL_SOLVE_EVENT = "ethos:full-solve";
 
 /**
  * 기출문제 탭 ↔ 윤리 퀴즈 사상가 정복 지도 연동 상태.
- * AI 채점 80점 이상이면 자동으로 정복, 모범답안을 본 뒤에는 스스로 채점도 가능.
+ * 서버 AI 첨삭이 '완벽하게 맞힘'(또는 80점 이상)이면 자동으로 정복, AI 첨삭이나 모범답안을 본 뒤에는 스스로 채점도 가능.
  */
-export function FullSolveBox({ questionId, signedIn, revealed, philosophers }: { questionId: string; signedIn: boolean; revealed: boolean; philosophers: { id: string; name: string }[] }) {
+export function FullSolveBox({ questionId, signedIn, revealed: shown, philosophers }: { questionId: string; signedIn: boolean; revealed: boolean; philosophers: { id: string; name: string }[] }) {
+  // 모범답안을 봤거나 AI 첨삭(채팅 AI 포함)을 받았으면 스스로 채점 가능
+  const { record } = useQuestionRecord(questionId);
+  const revealed = shown || Boolean(record.essay);
   const [s, setS] = useState<FullSolveState | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -85,7 +89,7 @@ export function FullSolveBox({ questionId, signedIn, revealed, philosophers }: {
         </p>
       ) : (
         <p className="mt-1 text-xs text-muted">
-          AI 채점 <b className="text-ink">{pass}점 이상</b>이면 정복으로 기록됩니다{revealed ? ", 모범답안과 비교해 스스로 채점할 수도 있어요" : ""}.
+          AI 채점에서 <b className="text-ink">완벽하게 맞힘</b>(또는 {pass}점 이상)이면 정복으로 기록됩니다{revealed ? ". AI 첨삭이나 모범답안과 비교해 스스로 채점할 수도 있어요" : ""}.
           {names && (
             <>
               {" "}
@@ -96,7 +100,7 @@ export function FullSolveBox({ questionId, signedIn, revealed, philosophers }: {
       )}
       {signedIn && s?.ready !== false && !s?.correct && revealed && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted">모범답안과 비교해 보니</span>
+          <span className="text-xs text-muted">첨삭 · 모범답안과 비교해 보니</span>
           <button type="button" className="btn !min-h-8 !py-1 text-xs font-bold" disabled={busy} onClick={() => selfCheck("correct")}>
             다 맞혔어요
           </button>

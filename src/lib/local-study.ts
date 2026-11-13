@@ -6,6 +6,7 @@
  */
 import { useCallback, useSyncExternalStore } from "react";
 import type { Grading } from "@/lib/ai/schemas";
+import type { EssayGrading } from "@/lib/quiz/essay";
 
 export interface QuestionRecord {
   ref?: string; // 표시용 (예: "2026 A 3번")
@@ -16,7 +17,8 @@ export interface QuestionRecord {
   review?: boolean; // 다시 볼 문제
   answer?: string; // 내 답안
   memo?: string; // 내 메모
-  grading?: Grading & { gradedAt: string };
+  grading?: Grading & { gradedAt: string }; // 예전 AI 채점 (기록 보존)
+  essay?: EssayGrading & { gradedAt: string }; // 윤리 퀴즈와 같은 AI 첨삭
   updatedAt?: string;
 }
 

@@ -27,6 +27,7 @@ export function QuestionStudy({
   extensionMatches,
   memo,
   signedIn,
+  aiGrading = false,
 }: {
   detail: QuestionDetail;
   related: (QuestionSummary & { score: number; reasons: string[] })[];
@@ -36,6 +37,8 @@ export function QuestionStudy({
   memo: ServerMemo | null;
   /** 회원 또는 관리자로 로그인 → 메모를 서버에 저장 */
   signedIn: boolean;
+  /** 윤리 퀴즈와 같은 무료 AI 첨삭(Gemini)을 서버에서 바로 할 수 있는지 */
+  aiGrading?: boolean;
 }) {
   const { question: q, exam, analysis: a } = detail;
   const refLabel = questionRef(exam, q.label);
@@ -75,7 +78,7 @@ export function QuestionStudy({
       case "답안":
         return (
           <div className="space-y-3">
-            <AnswerWriter questionId={q.id} refLabel={refLabel} />
+            <AnswerWriter questionId={q.id} refLabel={refLabel} aiGrading={aiGrading} />
             {/* 윤리 퀴즈 사상가 정복 지도 연동 (연계 문제는 주요 · 비교 사상가 모두) */}
             <FullSolveBox
               questionId={q.id}

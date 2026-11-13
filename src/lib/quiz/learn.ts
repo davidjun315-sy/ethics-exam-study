@@ -508,8 +508,32 @@ export async function getEssayContext(id: string): Promise<EssayContext> {
     passage: view.passage,
     answer: s.answer,
     explanations: view.kind === "exam" ? s.itemExplanations.map((x) => (s.itemExplanations.length > 1 ? `${x.label} ${x.explanation}` : x.explanation)) : s.expectedExplanation ? [s.expectedExplanation] : [],
-    modelAnswer: view.kind === "expected" ? s.modelAnswer : null,
+    // 완전 기출(문항 전체)은 모범답안도 기준으로
+    modelAnswer: view.kind === "expected" || view.full ? s.modelAnswer : null,
     accepted: s.accepted,
+  };
+}
+
+/**
+ * 기출문제 탭의 문항 전체 AI 첨삭 기준 (윤리 퀴즈 완전 기출과 같은 기준):
+ * 원문 전체 · 정답 · 요구 사항별 해설 · 모범답안 (기존 분석 그대로, 퀴즈 문제가 없어도 됨)
+ */
+export async function getQuestionEssayContext(questionId: string): Promise<EssayContext> {
+  const db = getAdminClient();
+  const [src, { data: a }] = await Promise.all([loadSource(questionId), db.from("question_analysis").select("answer, details").eq("question_id", questionId).maybeSingle()]);
+  if (!src) throw new Error("문항을 찾을 수 없습니다.");
+  const d = ((a?.details ?? {}) as AnalysisDetails) || {};
+  const ies = d.itemExplanations ?? [];
+  return {
+    kind: "exam",
+    ref: questionRef(src.exam, src.label),
+    label: "",
+    prompt: "문항 전체를 <작성 방법>(조건)에 따라 서술하는 답안",
+    passage: src.text,
+    answer: (a?.answer as string | null) ?? null,
+    explanations: ies.map((x) => `${x.label} ${x.answer ? `(정답: ${x.answer}) ` : ""}${x.explanation}`),
+    modelAnswer: d.modelAnswer ?? null,
+    accepted: [],
   };
 }
 

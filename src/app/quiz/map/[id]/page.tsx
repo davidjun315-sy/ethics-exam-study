@@ -71,7 +71,7 @@ export default async function ConquestDetailPage({ params }: PageProps<"/quiz/ma
       </section>
 
       <p className="-mt-1 text-[11px] leading-relaxed text-faint">
-        정복 지도는 <b>완전 기출</b>(문항 전체)만 셉니다. 윤리 퀴즈 &lsquo;실전만 · 완전 기출&rsquo;에서 맞히거나, 기출문제 탭에서 AI 채점 80점 이상 또는 모범답안과 비교해 &lsquo;다 맞혔어요&rsquo;를 누르면 정복입니다. 두 사상가 이상이 함께 나온 연계 문항은 모두에게 함께 셉니다.
+        정복 지도는 <b>완전 기출</b>(문항 전체)만 셉니다. 윤리 퀴즈 &lsquo;실전만 · 완전 기출&rsquo;에서 맞히거나, 기출문제 탭에서 AI 채점 &lsquo;완벽하게 맞힘&rsquo; 또는 첨삭 · 모범답안과 비교해 &lsquo;다 맞혔어요&rsquo;를 누르면 정복입니다. 두 사상가 이상이 함께 나온 연계 문항은 모두에게 함께 셉니다.
         {!d.fullReady && " (기출문제 탭 기록은 관리자가 업데이트(SQL 022)를 적용하면 남습니다.)"}
       </p>
 
