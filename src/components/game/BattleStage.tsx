@@ -512,7 +512,7 @@ export function BattleStage({
     : current.t === "attack"
       ? `${byKey.get(current.actor)?.name}의 공격 → ${byKey.get(current.target)?.name}${impacted ? ` ${current.dmg}${current.crit ? " · 치명타!" : ""}${current.shielded ? " (수호막으로 반감)" : ""}` : ""}`
       : current.t === "skill"
-        ? `${byKey.get(current.actor)?.name}의 필살기 「${current.name}」`
+        ? `${byKey.get(current.actor)?.name}의 필살기 「${current.name}」${impacted && current.stunned ? ` → ${byKey.get(current.stunned)?.name} 기절!` : ""}`
         : current.t === "stunned"
           ? `${byKey.get(current.actor)?.name}이(가) 기절해 한 번 쉽니다`
           : current.t === "faint"

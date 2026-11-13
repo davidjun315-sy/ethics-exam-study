@@ -421,14 +421,21 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
         check("재생: 최대 체력 15% 회복", e.t === "phase" && !!e.heal && e.heal.amount > 0 && e.heal.amount <= Math.round(max * 0.15) + 1);
       }
     }
-    // 수하 포함 실제 관 구성으로, 반반쯤 이기는 팀(영웅 Lv.3)과 비교
-    const full = (p: "fortress" | null, seed: string) => runBattle(team("epic", 4, 2), stageFoes({ ...st[5], pattern: p }, byId), seed);
-    let wPlain = 0, wPat = 0;
-    for (let g = 0; g < 120; g++) {
-      if (full(null, `pp${g}`).winner === "me") wPlain++;
-      if (full("fortress", `pp${g}`).winner === "me") wPat++;
+    // 수하 포함 실제 관 구성으로, 보통 보스를 적당히(20~85%) 이기는 팀을 골라 비교 (거의 다 지거나 다 이기면 차이가 안 보임)
+    const full = (rar: "epic" | "legendary", lv: number, p: "fortress" | null, seed: string) => runBattle(team(rar, lv, 2), stageFoes({ ...st[5], pattern: p }, byId), seed);
+    const N = 160;
+    let pick: { rar: "epic" | "legendary"; lv: number; plain: number } | null = null;
+    for (const [rar, lv] of [["epic", 4], ["epic", 5], ["legendary", 3], ["legendary", 4], ["legendary", 5]] as const) {
+      let w = 0;
+      for (let g = 0; g < N; g++) if (full(rar, lv, null, `pp${g}`).winner === "me") w++;
+      if (w >= N * 0.2 && w <= N * 0.85) {
+        pick = { rar, lv, plain: w };
+        break;
+      }
     }
-    check("특수 보스는 같은 관 보통 보스보다 어려움", wPat < wPlain, `보통 ${wPlain} · 철벽 ${wPat} /120`);
+    let wPat = 0;
+    if (pick) for (let g = 0; g < N; g++) if (full(pick.rar, pick.lv, "fortress", `pp${g}`).winner === "me") wPat++;
+    check("특수 보스는 같은 관 보통 보스보다 어려움", Boolean(pick) && wPat < pick!.plain, pick ? `${pick.rar} Lv.${pick.lv} 팀: 보통 ${pick.plain} · 철벽 ${wPat} /${N}` : "적당히 이기는 팀 없음");
   }
   // 수하: 희귀 관 1명 · 영웅·전설 관 2명, 한 단계 아래 등급, 바로 앞 관의 사상가
   {

@@ -27,7 +27,7 @@ export const SKILL_EFFECTS: Record<SkillEffect, { name: string; desc: string }> 
   sweep: { name: "광역", desc: "적 전체에게 공격력의 100% 피해" },
   heal: { name: "회복", desc: "체력이 가장 낮은 아군의 최대 체력 35% 회복" },
   guard: { name: "수호", desc: "아군 전체가 다음 피해를 절반만 받음" },
-  stun: { name: "기절", desc: "적 하나에게 140% 피해 + 다음 행동 1회 봉쇄" },
+  stun: { name: "기절", desc: "가장 위협적인 적(보스 등)에게 140% 피해 + 다음 행동 1회 봉쇄" },
 };
 
 /**

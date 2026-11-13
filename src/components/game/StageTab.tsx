@@ -178,7 +178,9 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
   if (replay) {
     const boss = byId.get(replay.stage.bossId);
     const win = replay.winner === "me";
-    const nextStage = win && current && current.bossId !== replay.stage.bossId ? current : null;
+    // 이긴 관까지 깬 것으로 보고 다음 관을 바로 정함 (서버에서 진행을 다시 받기 전에도)
+    const clearedNow = win ? new Set([...clearedIds, replay.stage.bossId]) : clearedIds;
+    const nextStage = win ? (stages.find((s) => !clearedNow.has(s.bossId)) ?? null) : null;
     return (
       <BattleStage
         key={replay.id}
@@ -230,7 +232,15 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20" onClick={() => setReplay(null)}>
+              <button
+                type="button"
+                className="rounded-xl bg-white/10 py-2.5 text-sm font-semibold hover:bg-white/20"
+                onClick={() => {
+                  // 이겼으면 지도에서 다음 관이 골라진 채로 (직접 골랐던 관에 머물지 않게)
+                  if (win) setPicked(nextStage?.bossId ?? null);
+                  setReplay(null);
+                }}
+              >
                 지도로
               </button>
               {nextStage ? (

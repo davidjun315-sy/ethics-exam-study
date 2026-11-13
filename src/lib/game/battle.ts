@@ -5,7 +5,7 @@
  * - 행동 순서: 내1 → 적1 → 내2 → 적2 → 내3 → 적3 → … (선공은 시드로 정한 동전 던지기, 쓰러진 카드는 건너뜀)
  * - 일반 공격: 살아 있는 적 중 하나(시드 난수)에게 공격력 90~110% 피해
  * - 필살기: 게이지 0 에서 시작, 세 번째 행동마다 (strike · sweep · heal · guard · stun)
- *   단일 대상 필살기(strike · stun)는 체력이 가장 낮은 적을 노린다
+ *   일격(strike)은 체력이 가장 낮은 적, 제압(stun)은 가장 위협적인(공격력 × 남은 체력이 가장 큰) 적을 노린다
  * - 수호막: 다음 피해 1회를 절반으로 / 기절: 다음 행동 1회를 쉼
  * - 행동이 90회를 넘으면 남은 체력 비율이 높은 쪽 승리
  */
@@ -155,10 +155,14 @@ export function runBattle(me: Fighter[], foe: Fighter[], seed: string): BattleRe
       if (actor.skillEffect === "strike") ev.hits.push(hit(weakest, actor.atk * 2.2 * roll));
       else if (actor.skillEffect === "sweep") for (const e of enemies) ev.hits.push(hit(e, actor.atk * roll));
       else if (actor.skillEffect === "stun") {
-        ev.hits.push(hit(weakest, actor.atk * 1.4 * roll));
-        if (weakest.cur > 0) {
-          weakest.stun = true;
-          ev.stunned = weakest.key;
+        // 제압: 가장 위협적인 적을 묶는다 = 앞으로 줄 피해가 가장 큰 적(공격력 × 남은 체력 → 도장깨기에선 대개 보스).
+        // 이미 다음 행동이 막힌 적은 건너뜀
+        const free = enemies.filter((x) => !x.stun);
+        const threat = (free.length ? free : enemies).reduce((m, x) => (x.atk * x.cur > m.atk * m.cur ? x : m));
+        ev.hits.push(hit(threat, actor.atk * 1.4 * roll));
+        if (threat.cur > 0) {
+          threat.stun = true;
+          ev.stunned = threat.key;
         }
       } else if (actor.skillEffect === "heal") {
         const allies = alive(actor.side);

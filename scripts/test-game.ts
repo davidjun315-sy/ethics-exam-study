@@ -334,4 +334,17 @@ if (failed) {
     battleBgFor("한국윤리", { 동양윤리: "e" }) === "e" && battleBgFor("사회사상", { 서양윤리: "w" }) === "w" &&
     battleBgFor("도덕교육론", { 동양윤리: "e" }) === "e" && battleBgFor("서양윤리", {}) === undefined && battleBgFor("서양윤리", null) === undefined);
 }
+{
+  const { runBattle } = await import("../src/lib/game/battle.ts");
+  // 제압형: 공격 × 남은 체력이 가장 큰 적(보스)을 묶고, 묶인 적은 다음 차례를 쉰다
+  const me = [0, 1, 2].map((i) => ({ key: `me-${i}`, philosopherId: `m${i}`, name: `m${i}`, atk: 40, hp: 900, skillName: "제압", skillEffect: "stun" as const }));
+  const foes = [
+    { key: "foe-0", philosopherId: "b", name: "보스", atk: 30, hp: 3000, skillName: "s", skillEffect: "strike" as const },
+    { key: "foe-1", philosopherId: "n", name: "수하", atk: 45, hp: 120, skillName: "s", skillEffect: "strike" as const },
+  ];
+  const r = runBattle(me, foes, "stun-test");
+  const stuns = r.events.filter((e) => e.t === "skill" && e.effect === "stun") as { stunned?: string }[];
+  const skipped = r.events.filter((e) => e.t === "stunned").map((e) => (e as { actor: string }).actor);
+  check("제압형: 기절은 보스(가장 위협적인 적)에게 · 기절한 적은 다음 차례를 쉼", stuns.length > 0 && stuns.filter((x) => x.stunned).every((x) => x.stunned === "foe-0" || x.stunned === "foe-1") && stuns[0].stunned === "foe-0" && skipped.includes("foe-0"));
+}
 console.log("\n모두 통과");
