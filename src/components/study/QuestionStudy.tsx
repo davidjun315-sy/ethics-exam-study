@@ -9,6 +9,7 @@ import { useBoolPref, useQuestionRecord } from "@/lib/local-study";
 import { Badge, ConfidenceBadge, Empty, StatusBadge } from "@/components/ui";
 import { AnswerSection, PassageTab, RelatedTab, SourcesTab } from "./AnalysisSections";
 import { AnswerWriter } from "./AnswerWriter";
+import { FullSolveBox } from "./FullSolveBox";
 import { ConceptsTab, FutureTab, IntentTab } from "./DeepSections";
 import { MemoBox, type ServerMemo } from "./MemoBox";
 import type { MatchedQuestion } from "@/lib/data/related";
@@ -75,6 +76,13 @@ export function QuestionStudy({
         return (
           <div className="space-y-3">
             <AnswerWriter questionId={q.id} refLabel={refLabel} />
+            {/* 윤리 퀴즈 사상가 정복 지도 연동 (연계 문제는 주요 · 비교 사상가 모두) */}
+            <FullSolveBox
+              questionId={q.id}
+              signedIn={signedIn}
+              revealed={showAnswer}
+              philosophers={detail.philosophers.filter((p) => p.role === "main" || p.role === "comparison").map((p) => ({ id: p.philosophers.id, name: p.philosophers.name }))}
+            />
             {showAnswer ? <AnswerSection d={detail} /> : locked("모범답안 · 해설 보기", "answer")}
           </div>
         );

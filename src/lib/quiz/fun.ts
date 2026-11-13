@@ -4,9 +4,10 @@ import { getAdminClient } from "@/lib/supabase/server";
 import { cached } from "@/lib/cache";
 import { kstDay } from "@/lib/quiz/srs";
 import { fetchAll, fetchIn } from "@/lib/quiz/paged";
-import { baseName, clusterNames, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, type QuizProgress, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
+import { baseName, clusterNames, conquestEntries, fullKey, CONQUEST_MIN, CONQUEST_RARITY_NAME, type ConquestRarity, type QuizProgress, conquestCells, mainTradition, OTHER, rankDaily, sameName, weekReport, type DailyRow, type WeekReport } from "./fun-core";
 import { classifyPhilosopher } from "@/lib/traditions";
 import { questionRef } from "@/lib/format";
+import { loadFullSolves } from "@/lib/quiz/full";
 
 /**
  * 윤리 퀴즈 재미 요소 (서버)
@@ -22,13 +23,27 @@ const loadPhilosophers = cached("quiz-fun-philosophers", async () => {
   if (error) throw new Error(error.message);
   return (data ?? []) as PhRow[];
 });
-type ItemRow = { id: string; kind: string; format: string; philosopher_names: string[] | null; area: string | null };
-const loadItems = cached("quiz-fun-items", () =>
-  fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, format, philosopher_names, area").eq("status", "approved").order("id").range(from, to)),
+type ItemRow = { id: string; kind: string; format: string; philosopher_names: string[] | null; area: string | null; question_id: string | null };
+const loadItems = cached("quiz-fun-items-v2", () =>
+  fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, format, philosopher_names, area, question_id").eq("status", "approved").order("id").range(from, to)),
 );
+/** 기출 문항 → 그 문항의 주요 · 비교 사상가 (연계 문제는 여러 명) */
+const loadQuestionLinks = cached("quiz-fun-question-links", async () => {
+  const rows = await fetchAll<{ question_id: string; role: string; philosophers: { name: string } | { name: string }[] | null }>((from, to) =>
+    getAdminClient().from("question_philosophers").select("question_id, role, philosophers(name)").in("role", ["main", "comparison"]).order("question_id").range(from, to),
+  );
+  const by: Record<string, string[]> = {};
+  for (const r of rows) {
+    const ph = Array.isArray(r.philosophers) ? r.philosophers[0] : r.philosophers;
+    if (!ph?.name) continue;
+    (by[r.question_id] ??= []).includes(ph.name) || by[r.question_id].push(ph.name);
+  }
+  return by;
+});
 
 /** 정복 지도에서 세는 문제: 기출 실전 문제만 (개념 다지기 연습문제 · 예상 문제 제외, 출제 범위 설정과 무관) */
 const conquestItems = (items: ItemRow[]) => items.filter((it) => it.kind === "exam");
+const solvedSet = (m: Map<string, { correct: boolean }>) => new Set([...m].filter(([, s]) => s.correct).map(([q]) => q));
 
 function canonFor(phs: PhRow[], cardIds: Set<string> = new Set()) {
   // 이름 · 별칭을 같은 사상가끼리 묶고(비슷한 이름 포함), 묶음마다 대표 한 줄:
@@ -188,20 +203,18 @@ function mapTradition(name: string, cardTradition: string | undefined, phTraditi
 
 export async function getConquest(learner: string): Promise<Conquest> {
   const db = getAdminClient();
-  const [phs, items, correct, claims, cards] = await Promise.all([
+  const [phs, items, links, correct, solves, claims, cards] = await Promise.all([
     loadPhilosophers(),
     loadItems(),
+    loadQuestionLinks().catch(() => ({}) as Record<string, string[]>),
     correctIds(learner),
+    loadFullSolves(learner),
     db.from("quiz_conquest").select("philosopher_id").eq("learner", learner),
     import("@/lib/game/data").then((m) => m.publishedCards()).catch(() => []),
   ]);
-  const inScope = conquestItems(items);
+  const { entries, done } = conquestEntries(items, links, correct, solvedSet(solves.map));
   const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((c) => c.philosopherId)));
-  const cells = conquestCells(
-    inScope.map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
-    correct,
-    (n) => canon(n)?.name ?? null,
-  );
+  const cells = conquestCells(entries, done, (n) => canon(n)?.name ?? null);
   const byName = new Map(phs.map((p) => [p.name, p]));
   const claimed = new Set(((claims.data ?? []) as { philosopher_id: string }[]).map((c) => c.philosopher_id));
   const cardOf = new Map((cards as { philosopherId: string; artUrl: string | null; tradition?: string }[]).map((c) => [c.philosopherId, c]));
@@ -216,7 +229,7 @@ export async function getConquest(learner: string): Promise<Conquest> {
   const order = [...TRADITIONS, OTHER];
   return {
     groups: order.map((tradition) => ({ tradition, tiles: tiles.filter((t) => t.tradition === tradition) })).filter((g) => g.tiles.length),
-    totals: { philosophers: tiles.length, full: tiles.filter((t) => t.full).length, items: inScope.length, done: inScope.filter((it) => correct.has(it.id)).length },
+    totals: { philosophers: tiles.length, full: tiles.filter((t) => t.full).length, items: entries.length, done: entries.filter((e) => done.has(e.id)).length },
     ready: !claims.error,
     min: CONQUEST_MIN,
   };
@@ -248,12 +261,24 @@ export interface ConquestQuestion {
   status: "done" | "wrong" | "new";
   attempts: number;
   lastAt: string | null;
+  /** part: 윤리 퀴즈 부분 문항 · full: 완전 기출문제 (기출문제 탭에서 문항 전체) */
+  kind: "part" | "full";
+  questionId: string | null;
+  /** 완전 기출문제의 가장 높은 AI 점수 */
+  bestScore: number | null;
+  /** 완전 기출문제를 맞혀서 함께 정복된 부분 문항 */
+  viaFull: boolean;
 }
 export interface ConquestDetail {
   tile: ConquestTile;
   min: number;
   ready: boolean;
+  /** 완전 기출문제 기록(022) 준비 여부 */
+  fullReady: boolean;
+  /** 부분 문항 (윤리 퀴즈) */
   questions: ConquestQuestion[];
+  /** 완전 기출문제 */
+  full: ConquestQuestion[];
 }
 
 type ExamRef = Parameters<typeof questionRef>[0];
@@ -261,10 +286,12 @@ const labelNum = (l: string) => Number((l.match(/\d+/) ?? ["999"])[0]);
 
 export async function getConquestDetail(learner: string, philosopherId: string): Promise<ConquestDetail | null> {
   const db = getAdminClient();
-  const [c, phs, items, cards] = await Promise.all([
+  const [c, phs, items, links, solves, cards] = await Promise.all([
     getConquest(learner),
     loadPhilosophers(),
     loadItems(),
+    loadQuestionLinks().catch(() => ({}) as Record<string, string[]>),
+    loadFullSolves(learner),
     import("@/lib/game/data").then((m) => m.publishedCards()).catch(() => []),
   ]);
   const tiles = c.groups.flatMap((g) => g.tiles);
@@ -273,9 +300,14 @@ export async function getConquestDetail(learner: string, philosopherId: string):
   const tile = tiles.find((t) => t.id === philosopherId) ?? (self ? tiles.find((t) => sameName(t.name, self.name)) : undefined);
   if (!tile) return null;
   const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((x) => x.philosopherId)));
+  const mine = (names: string[]) => names.some((n) => canon(n)?.name === tile.name);
+  // 부분 문항: 그 문항 자체의 사상가 + 원래 기출 문항의 사상가 (연계 문제)
   const ids = conquestItems(items)
-    .filter((it) => (it.philosopher_names ?? []).some((n) => canon(n)?.name === tile.name))
+    .filter((it) => mine([...(it.philosopher_names ?? []), ...((it.question_id && links[it.question_id]) || [])]))
     .map((it) => it.id);
+  const fullIds = Object.entries(links)
+    .filter(([, names]) => mine(names))
+    .map(([q]) => q);
   const [rows, progress] = await Promise.all([
     fetchIn<{ id: string; label: string | null; exam_year: number | null; question_id: string | null; prompt: string | null; format: string; area: string | null }>(ids, (part) =>
       db.from("quiz_items").select("id, label, exam_year, question_id, prompt, format, area").in("id", part),
@@ -284,37 +316,71 @@ export async function getConquestDetail(learner: string, philosopherId: string):
       db.from("quiz_progress").select("item_id, attempts, correct_count, last_at").eq("learner", learner).in("item_id", part),
     ),
   ]);
-  const qids = [...new Set(rows.map((r) => r.question_id).filter((x): x is string => Boolean(x)))];
-  const qs = await fetchIn<{ id: string; label: string; exams: ExamRef | ExamRef[] | null }>(qids, (part) =>
-    db.from("questions").select("id, label, exams(exam_year, section)").in("id", part),
+  const qids = [...new Set([...rows.map((r) => r.question_id).filter((x): x is string => Boolean(x)), ...fullIds])];
+  const qs = await fetchIn<{ id: string; label: string; score: number | null; question_text: string | null; exams: ExamRef | ExamRef[] | null }>(qids, (part) =>
+    db.from("questions").select("id, label, score, question_text, exams(exam_year, section)").in("id", part),
   );
-  const refOf = new Map(
-    qs.map((q) => {
-      const e = Array.isArray(q.exams) ? q.exams[0] : q.exams;
-      return [q.id, e ? questionRef(e, q.label) : null] as const;
-    }),
-  );
+  const qOf = new Map(qs.map((q) => [q.id, q]));
+  const refOf = (qid: string | null) => {
+    const q = qid ? qOf.get(qid) : undefined;
+    const e = q && (Array.isArray(q.exams) ? q.exams[0] : q.exams);
+    return q && e ? questionRef(e, q.label) : null;
+  };
+  const yearOf = (qid: string) => {
+    const q = qOf.get(qid);
+    const e = q && (Array.isArray(q.exams) ? q.exams[0] : q.exams);
+    return e?.exam_year ?? null;
+  };
   const pg = new Map(progress.map((p) => [p.item_id, p]));
   // 첫머리의 ○ · ◦ 같은 글머리표는 떼고 한 줄로
   const clean = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim().replace(/^[○◦∘•·\-–\s]+/, "");
-  const questions: ConquestQuestion[] = rows
+  const cut = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n)}…` : s);
+  const byRef = (a: ConquestQuestion, b: ConquestQuestion) => (b.year ?? 0) - (a.year ?? 0) || a.ref.localeCompare(b.ref, "ko", { numeric: true }) || labelNum(a.ref) - labelNum(b.ref);
+  const parts: ConquestQuestion[] = rows
     .map((r) => {
       const p = pg.get(r.id);
-      const text = clean(r.prompt);
+      // 완전 기출문제로 맞히면 그 문항의 부분 문항도 정복
+      const viaFull = Boolean(r.question_id && solves.map.get(r.question_id)?.correct);
       return {
         id: r.id,
-        ref: (r.question_id && refOf.get(r.question_id)) || [r.exam_year, r.label && `${r.label}번`].filter(Boolean).join(" ") || "기출",
+        kind: "part" as const,
+        questionId: r.question_id,
+        ref: refOf(r.question_id) || [r.exam_year, r.label && `${r.label}번`].filter(Boolean).join(" ") || "기출",
         year: r.exam_year,
         format: r.format,
         area: r.area,
-        preview: text.length > 90 ? `${text.slice(0, 90)}…` : text,
-        status: p && p.correct_count > 0 ? ("done" as const) : p && p.attempts > 0 ? ("wrong" as const) : ("new" as const),
+        preview: cut(clean(r.prompt)),
+        status: (p && p.correct_count > 0) || viaFull ? ("done" as const) : p && p.attempts > 0 ? ("wrong" as const) : ("new" as const),
         attempts: p?.attempts ?? 0,
         lastAt: p?.last_at ?? null,
+        bestScore: null,
+        viaFull,
       };
     })
-    .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || a.ref.localeCompare(b.ref, "ko", { numeric: true }) || labelNum(a.ref) - labelNum(b.ref));
-  return { tile, min: c.min, ready: c.ready, questions };
+    .sort(byRef);
+  const full: ConquestQuestion[] = fullIds
+    .filter((q) => qOf.has(q))
+    .map((q) => {
+      const s = solves.map.get(q);
+      const row = qOf.get(q)!;
+      return {
+        id: fullKey(q),
+        kind: "full" as const,
+        questionId: q,
+        ref: refOf(q) ?? "기출",
+        year: yearOf(q),
+        format: row.score !== null ? `${row.score}점` : "전체 문항",
+        area: null,
+        preview: cut(clean(row.question_text), 100),
+        status: s?.correct ? ("done" as const) : s && s.attempts > 0 ? ("wrong" as const) : ("new" as const),
+        attempts: s?.attempts ?? 0,
+        lastAt: null,
+        bestScore: s?.bestScore ?? null,
+        viaFull: false,
+      };
+    })
+    .sort(byRef);
+  return { tile, min: c.min, ready: c.ready, fullReady: solves.ready, questions: parts, full };
 }
 
 export const QUIZ_021_HINT = "정복 보상 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/021_quiz_conquest.sql 을 실행하세요.";
@@ -395,13 +461,10 @@ export async function getQuizStats(learner: string): Promise<QuizStats> {
       correctIds(learner),
     ]);
     const p = prof.data as { total_answered?: number; best_streak?: number } | null;
-    const phs = await loadPhilosophers();
+    const [phs, links, solves] = await Promise.all([loadPhilosophers(), loadQuestionLinks().catch(() => ({}) as Record<string, string[]>), loadFullSolves(learner)]);
     const canon = canonFor(phs);
-    const cells = conquestCells(
-      conquestItems(items).map((it) => ({ id: it.id, names: it.philosopher_names ?? [] })),
-      correct,
-      (n) => canon(n)?.name ?? null,
-    );
+    const { entries, done } = conquestEntries(items, links, correct, solvedSet(solves.map));
+    const cells = conquestCells(entries, done, (n) => canon(n)?.name ?? null);
     return { answered: p?.total_answered ?? 0, bestStreak: p?.best_streak ?? 0, missions: missions.count ?? 0, essayCorrect: essays.count ?? 0, conquered: cells.filter((c) => c.full).length };
   } catch (e) {
     console.error("[quiz-stats]", e);

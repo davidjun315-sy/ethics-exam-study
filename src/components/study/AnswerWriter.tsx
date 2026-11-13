@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuestionRecord } from "@/lib/local-study";
 import { Badge } from "@/components/ui";
+import { FULL_SOLVE_EVENT } from "./FullSolveBox";
 
 /** 내 답안 작성 + AI 채점. 답안과 채점 결과는 이 브라우저의 localStorage 에만 저장된다. */
 export function AnswerWriter({ questionId, refLabel }: { questionId: string; refLabel: string }) {
@@ -26,6 +27,8 @@ export function AnswerWriter({ questionId, refLabel }: { questionId: string; ref
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "채점 실패");
       update({ grading: { ...json.grading, gradedAt: new Date().toISOString() } });
+      // 로그인 상태면 서버가 정복 지도 기록을 남겼다 → 상태 상자에 알림
+      if (json.solve) window.dispatchEvent(new CustomEvent(FULL_SOLVE_EVENT, { detail: json.solve }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -37,7 +40,7 @@ export function AnswerWriter({ questionId, refLabel }: { questionId: string; ref
     <section className="rounded-lg border border-line bg-surface p-4">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-bold text-navy">내 답안 작성</h3>
-        <span className="text-xs text-faint">이 브라우저에만 저장됩니다</span>
+        <span className="text-xs text-faint">답안은 이 브라우저에만 저장됩니다</span>
       </div>
       <textarea
         className="input min-h-40 font-[inherit] text-[15px] leading-7"

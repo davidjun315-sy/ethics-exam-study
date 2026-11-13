@@ -7,6 +7,8 @@ import { examFullLabel } from "@/lib/format";
 import { clientKey, parseBody, rateLimit } from "@/lib/http";
 import { getReadClient } from "@/lib/supabase/server";
 import type { Exam, Question, QuestionAnalysis } from "@/lib/types";
+import { currentLearner } from "@/lib/quiz/learn";
+import { FULL_PASS, recordFullSolve } from "@/lib/quiz/full";
 
 export const maxDuration = 120;
 
@@ -52,7 +54,11 @@ export async function POST(req: Request) {
         : null,
       data.answer,
     );
-    return NextResponse.json({ grading: res.data, model: res.model });
+    // 로그인했으면 완전 기출문제 기록 (점수는 이 서버의 AI 채점 결과만 사용) → 사상가 정복 지도
+    const learner = await currentLearner().catch(() => null);
+    const score = Number((res.data as { overallScore?: number }).overallScore);
+    const solve = learner && Number.isFinite(score) ? await recordFullSolve(learner, data.questionId, score, score >= FULL_PASS, "ai").catch(() => null) : null;
+    return NextResponse.json({ grading: res.data, model: res.model, solve: solve && { ...solve, pass: FULL_PASS } });
   } catch (e) {
     if (e instanceof AIConfigError) return NextResponse.json({ error: e.message }, { status: 503 });
     return jsonError(e);
