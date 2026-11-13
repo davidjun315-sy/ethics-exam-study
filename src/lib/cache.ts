@@ -11,8 +11,14 @@ import { revalidateTag, unstable_cache } from "next/cache";
  */
 export const CONTENT_TAG = "content";
 
+/**
+ * 배포마다 새로: Vercel 의 저장분은 배포가 바뀌어도 남으므로, 배포(커밋) 표시를 키에 넣어
+ * 새 코드가 예전 모양의 저장분(예: 새로 더한 값이 없는 카드 목록)을 읽지 않게 한다.
+ */
+const BUILD = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_DEPLOYMENT_ID ?? "local";
+
 export function cached<A extends unknown[], R>(name: string, fn: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
-  return unstable_cache(fn, ["content", name], { tags: [CONTENT_TAG], revalidate: 3600 });
+  return unstable_cache(fn, ["content", BUILD, name], { tags: [CONTENT_TAG], revalidate: 3600 });
 }
 
 /** 공개 페이지 저장분을 비운다. 다음 요청은 DB 에서 새로 읽는다 (오래된 내용을 보여 주지 않음) */
