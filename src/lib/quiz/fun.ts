@@ -23,9 +23,9 @@ const loadPhilosophers = cached("quiz-fun-philosophers", async () => {
   if (error) throw new Error(error.message);
   return (data ?? []) as PhRow[];
 });
-type ItemRow = { id: string; kind: string; format: string; philosopher_names: string[] | null; area: string | null; question_id: string | null };
-const loadItems = cached("quiz-fun-items-v2", () =>
-  fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, format, philosopher_names, area, question_id").eq("status", "approved").order("id").range(from, to)),
+type ItemRow = { id: string; kind: string; origin: string; format: string; philosopher_names: string[] | null; area: string | null; question_id: string | null };
+const loadItems = cached("quiz-fun-items-v3", () =>
+  fetchAll<ItemRow>((from, to) => getAdminClient().from("quiz_items").select("id, kind, origin, format, philosopher_names, area, question_id").eq("status", "approved").order("id").range(from, to)),
 );
 /** 기출 문항 → 그 문항의 주요 · 비교 사상가 (연계 문제는 여러 명) */
 const loadQuestionLinks = cached("quiz-fun-question-links", async () => {
@@ -249,36 +249,32 @@ export async function conquestFor(learner: string, philosopherId: string, name?:
 // 사상가 한 명의 기출문제 목록 (정복한 문제 / 아직인 문제)
 // ---------------------------------------------------------------------
 export interface ConquestQuestion {
+  /** q:<문항 id> */
   id: string;
+  questionId: string;
+  /** 윤리 퀴즈의 완전 기출 문제 id (023 동기화 전이면 null) */
+  quizItemId: string | null;
   /** 예: 2018 A 1번 */
   ref: string;
   year: number | null;
-  format: string;
-  area: string | null;
-  /** 문제 첫머리 (정답은 넣지 않음) */
+  /** 배점 */
+  score: number | null;
+  /** 문항 첫머리 (정답은 넣지 않음) */
   preview: string;
-  /** done: 한 번 이상 맞힘 · wrong: 풀었지만 아직 못 맞힘 · new: 아직 안 풂 */
+  /** done: 맞힘 · wrong: 풀었지만 아직 못 맞힘 · new: 아직 안 풂 */
   status: "done" | "wrong" | "new";
   attempts: number;
-  lastAt: string | null;
-  /** part: 윤리 퀴즈 부분 문항 · full: 완전 기출문제 (기출문제 탭에서 문항 전체) */
-  kind: "part" | "full";
-  questionId: string | null;
-  /** 완전 기출문제의 가장 높은 AI 점수 */
+  /** 기출문제 탭의 가장 높은 AI 점수 */
   bestScore: number | null;
-  /** 완전 기출문제를 맞혀서 함께 정복된 부분 문항 */
-  viaFull: boolean;
 }
 export interface ConquestDetail {
   tile: ConquestTile;
   min: number;
   ready: boolean;
-  /** 완전 기출문제 기록(022) 준비 여부 */
+  /** 완전 기출 기록(022) 준비 여부 */
   fullReady: boolean;
-  /** 부분 문항 (윤리 퀴즈) */
+  /** 이 사상가의 완전 기출문제 */
   questions: ConquestQuestion[];
-  /** 완전 기출문제 */
-  full: ConquestQuestion[];
 }
 
 type ExamRef = Parameters<typeof questionRef>[0];
@@ -300,87 +296,47 @@ export async function getConquestDetail(learner: string, philosopherId: string):
   const tile = tiles.find((t) => t.id === philosopherId) ?? (self ? tiles.find((t) => sameName(t.name, self.name)) : undefined);
   if (!tile) return null;
   const canon = canonFor(phs, new Set((cards as { philosopherId: string }[]).map((x) => x.philosopherId)));
-  const mine = (names: string[]) => names.some((n) => canon(n)?.name === tile.name);
-  // 부분 문항: 그 문항 자체의 사상가 + 원래 기출 문항의 사상가 (연계 문제)
-  const ids = conquestItems(items)
-    .filter((it) => mine([...(it.philosopher_names ?? []), ...((it.question_id && links[it.question_id]) || [])]))
-    .map((it) => it.id);
-  const fullIds = Object.entries(links)
-    .filter(([, names]) => mine(names))
+  // 이 사상가의 완전 기출 (연계 문항 포함)
+  const qids = Object.entries(links)
+    .filter(([, names]) => names.some((n) => canon(n)?.name === tile.name))
     .map(([q]) => q);
-  const [rows, progress] = await Promise.all([
-    fetchIn<{ id: string; label: string | null; exam_year: number | null; question_id: string | null; prompt: string | null; format: string; area: string | null }>(ids, (part) =>
-      db.from("quiz_items").select("id, label, exam_year, question_id, prompt, format, area").in("id", part),
+  // 윤리 퀴즈의 완전 기출 문제 (023 · 동기화 뒤): 문항 → 퀴즈 문제 id
+  const quizItemOf = new Map(items.filter((it) => it.origin === "full" && it.question_id).map((it) => [it.question_id!, it.id]));
+  const quizIds = qids.map((q) => quizItemOf.get(q)).filter((x): x is string => Boolean(x));
+  const [qs, progress] = await Promise.all([
+    fetchIn<{ id: string; label: string; score: number | null; question_text: string | null; exams: ExamRef | ExamRef[] | null }>(qids, (part) =>
+      db.from("questions").select("id, label, score, question_text, exams(exam_year, section)").in("id", part),
     ),
-    fetchIn<{ item_id: string; attempts: number; correct_count: number; last_at: string | null }>(ids, (part) =>
-      db.from("quiz_progress").select("item_id, attempts, correct_count, last_at").eq("learner", learner).in("item_id", part),
+    fetchIn<{ item_id: string; attempts: number; correct_count: number }>(quizIds, (part) =>
+      db.from("quiz_progress").select("item_id, attempts, correct_count").eq("learner", learner).in("item_id", part),
     ),
   ]);
-  const qids = [...new Set([...rows.map((r) => r.question_id).filter((x): x is string => Boolean(x)), ...fullIds])];
-  const qs = await fetchIn<{ id: string; label: string; score: number | null; question_text: string | null; exams: ExamRef | ExamRef[] | null }>(qids, (part) =>
-    db.from("questions").select("id, label, score, question_text, exams(exam_year, section)").in("id", part),
-  );
-  const qOf = new Map(qs.map((q) => [q.id, q]));
-  const refOf = (qid: string | null) => {
-    const q = qid ? qOf.get(qid) : undefined;
-    const e = q && (Array.isArray(q.exams) ? q.exams[0] : q.exams);
-    return q && e ? questionRef(e, q.label) : null;
-  };
-  const yearOf = (qid: string) => {
-    const q = qOf.get(qid);
-    const e = q && (Array.isArray(q.exams) ? q.exams[0] : q.exams);
-    return e?.exam_year ?? null;
-  };
   const pg = new Map(progress.map((p) => [p.item_id, p]));
   // 첫머리의 ○ · ◦ 같은 글머리표는 떼고 한 줄로
   const clean = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim().replace(/^[○◦∘•·\-–\s]+/, "");
-  const cut = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n)}…` : s);
-  const byRef = (a: ConquestQuestion, b: ConquestQuestion) => (b.year ?? 0) - (a.year ?? 0) || a.ref.localeCompare(b.ref, "ko", { numeric: true }) || labelNum(a.ref) - labelNum(b.ref);
-  const parts: ConquestQuestion[] = rows
-    .map((r) => {
-      const p = pg.get(r.id);
-      // 완전 기출문제로 맞히면 그 문항의 부분 문항도 정복
-      const viaFull = Boolean(r.question_id && solves.map.get(r.question_id)?.correct);
-      return {
-        id: r.id,
-        kind: "part" as const,
-        questionId: r.question_id,
-        ref: refOf(r.question_id) || [r.exam_year, r.label && `${r.label}번`].filter(Boolean).join(" ") || "기출",
-        year: r.exam_year,
-        format: r.format,
-        area: r.area,
-        preview: cut(clean(r.prompt)),
-        status: (p && p.correct_count > 0) || viaFull ? ("done" as const) : p && p.attempts > 0 ? ("wrong" as const) : ("new" as const),
-        attempts: p?.attempts ?? 0,
-        lastAt: p?.last_at ?? null,
-        bestScore: null,
-        viaFull,
-      };
-    })
-    .sort(byRef);
-  const full: ConquestQuestion[] = fullIds
-    .filter((q) => qOf.has(q))
+  const cut = (s: string, n = 100) => (s.length > n ? `${s.slice(0, n)}…` : s);
+  const questions: ConquestQuestion[] = qs
     .map((q) => {
-      const s = solves.map.get(q);
-      const row = qOf.get(q)!;
+      const e = Array.isArray(q.exams) ? q.exams[0] : q.exams;
+      const s = solves.map.get(q.id);
+      const quizItemId = quizItemOf.get(q.id) ?? null;
+      const p = quizItemId ? pg.get(quizItemId) : undefined;
+      const attempts = (s?.attempts ?? 0) + (p?.attempts ?? 0);
       return {
-        id: fullKey(q),
-        kind: "full" as const,
-        questionId: q,
-        ref: refOf(q) ?? "기출",
-        year: yearOf(q),
-        format: row.score !== null ? `${row.score}점` : "전체 문항",
-        area: null,
-        preview: cut(clean(row.question_text), 100),
-        status: s?.correct ? ("done" as const) : s && s.attempts > 0 ? ("wrong" as const) : ("new" as const),
-        attempts: s?.attempts ?? 0,
-        lastAt: null,
+        id: fullKey(q.id),
+        questionId: q.id,
+        quizItemId,
+        ref: e ? questionRef(e, q.label) : `${q.label}번`,
+        year: e?.exam_year ?? null,
+        score: q.score,
+        preview: cut(clean(q.question_text)),
+        status: s?.correct || (p && p.correct_count > 0) ? ("done" as const) : attempts > 0 ? ("wrong" as const) : ("new" as const),
+        attempts,
         bestScore: s?.bestScore ?? null,
-        viaFull: false,
       };
     })
-    .sort(byRef);
-  return { tile, min: c.min, ready: c.ready, fullReady: solves.ready, questions: parts, full };
+    .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || a.ref.localeCompare(b.ref, "ko", { numeric: true }) || labelNum(a.ref) - labelNum(b.ref));
+  return { tile, min: c.min, ready: c.ready, fullReady: solves.ready, questions };
 }
 
 export const QUIZ_021_HINT = "정복 보상 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/021_quiz_conquest.sql 을 실행하세요.";

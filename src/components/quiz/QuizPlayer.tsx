@@ -325,7 +325,7 @@ export function QuizPlayer({ mode, filters, challenge, back }: { mode: Mode; fil
             <span
               className={`rounded px-2 py-0.5 font-semibold ${view.kind === "exam" ? "bg-navy text-on-accent" : view.kind === "practice" ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`}
             >
-              {view.kind === "exam" ? "실제 기출" : view.kind === "practice" ? "기출 기반 연습" : "AI 예상 문제"}
+              {view.full ? "완전 기출 · 문항 전체" : view.kind === "exam" ? "실제 기출" : view.kind === "practice" ? "기출 기반 연습" : "AI 예상 문제"}
             </span>
             {view.kind === "exam" && view.ref && <span className="text-muted">{view.ref}{view.score ? ` · ${view.score}점` : ""}</span>}
             {view.kind === "practice" && view.ref && <span className="text-muted">{view.ref} 원문</span>}

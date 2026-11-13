@@ -264,17 +264,17 @@ if (failed) {
 {
   const { conquestEntries } = await import("../src/lib/quiz/fun-core.ts");
   const items = [
-    { id: "p1", kind: "exam", philosopher_names: ["칸트"], question_id: "Q1" }, // 연계 문항(칸트 · 밀)의 부분 문항
-    { id: "p2", kind: "exam", philosopher_names: ["밀"], question_id: "Q1" },
-    { id: "p3", kind: "practice", philosopher_names: ["칸트"], question_id: "Q1" }, // 연습문제는 안 셈
-    { id: "p4", kind: "exam", philosopher_names: ["롤스"], question_id: "Q2" },
+    { id: "p1", origin: "analysis", question_id: "Q1" }, // 부분 기출 (안 셈)
+    { id: "f2", origin: "full", question_id: "Q2" }, // 윤리 퀴즈의 완전 기출
+    { id: "f3", origin: "full", question_id: "Q3" },
   ];
-  const links = { Q1: ["칸트", "밀"], Q2: ["롤스"] };
-  const { entries, done } = conquestEntries(items, links, new Set(["p4"]), new Set(["Q1"]));
+  const links = { Q1: ["칸트", "밀"], Q2: ["롤스"], Q3: ["칸트"] };
+  // Q1: 기출문제 탭에서 맞힘 · Q2: 퀴즈 완전 기출로 맞힘 · Q3: 부분 기출만 맞힘 → 아님
+  const { entries, done } = conquestEntries(items, links, new Set(["p1", "f2"]), new Set(["Q1"]));
   const cells = conquestCells(entries, done, (n) => n);
   const by = Object.fromEntries(cells.map((c) => [c.name, c]));
-  check("정복 지도: 완전 기출 칸 추가 · 연계 문항은 두 사상가 모두 · 연습문제 제외", entries.length === 5 && by["칸트"].total === 3 && by["밀"].total === 3 && by["롤스"].total === 2);
-  check("정복 지도: 완전 기출을 맞히면 그 문항 · 부분 문항 모두 정복", by["칸트"].done === 3 && by["밀"].full && by["롤스"].done === 1);
+  check("정복 지도: 완전 기출만 셈 · 연계 문항은 두 사상가 모두", entries.length === 3 && by["칸트"].total === 2 && by["밀"].total === 1 && by["롤스"].total === 1);
+  check("정복 지도: 기출문제 탭 기록 · 퀴즈 완전 기출 정답 모두 인정, 부분 기출 정답은 안 셈", by["밀"].full && by["롤스"].full && by["칸트"].done === 1);
 }
 check("정복 보상 등급: 10↑ 일반 · 20↑ 희귀 · 30↑ 영웅 · 40↑ 전설", [9, 10, 19, 20, 29, 30, 39, 40, 93].map(conquestRarity).join(",") === ",common,common,rare,rare,epic,epic,legendary,legendary");
 {

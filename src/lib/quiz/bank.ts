@@ -5,7 +5,7 @@ import type { AnalysisDetails } from "@/lib/types";
 import { listQuestionSummaries, type QuestionSummary } from "@/lib/data/queries";
 import { seedAcceptedAnswers } from "./grade.ts";
 import { chunks, fetchAll, fetchIn } from "./paged.ts";
-import { dedupeKey, expectedFromAnalysis, splitQuestion, type ExpectedItem, type SplitItem } from "./split.ts";
+import { dedupeKey, expectedFromAnalysis, hashText, splitQuestion, type ExpectedItem, type SplitItem } from "./split.ts";
 import { buildPracticeItems, type PracticePayload } from "./practice.ts";
 import { buildPracticeAiPrompt, PracticeAiSchema, toAiPracticeItems } from "./practice-ai.ts";
 import { validatePasted } from "@/lib/ai/lenient";
@@ -23,7 +23,7 @@ export interface QuizItemRow {
   id: string;
   key: string;
   kind: QuizKind;
-  origin: "analysis" | "practice" | "manual";
+  origin: "analysis" | "practice" | "manual" | "full";
   question_id: string | null;
   practice_question_id: string | null;
   label: string;
@@ -181,6 +181,47 @@ function planExam(s: QuestionSummary, a: { answer: string | null; difficulty: "�
   }));
 }
 
+/**
+ * 완전 기출 (023): 기출 문항 전체를 한 문제로 (서술형 · 스스로 채점, 모범답안 · 모든 해설).
+ * 정답이 분석에 있을 때만. 풀이 화면은 문항 원문 전체를 보여 준다.
+ */
+function planFull(s: QuestionSummary, a: { answer: string | null; difficulty: "상" | "중" | "하" | null; area: string | null; details: AnalysisDetails }): Planned | null {
+  const answer = a.answer?.trim();
+  if (!answer || !s.question_text?.trim()) return null;
+  const m = meta(s);
+  const key = `full:${s.id}`;
+  const prompt = "문항 전체를 <작성 방법>(조건)에 따라 시험 답안처럼 서술하시오.";
+  return {
+    key,
+    hash: hashText(`full|${answer}|${a.details?.modelAnswer ?? ""}|${s.question_text}`),
+    reasons: [],
+    kind: "exam",
+    questionId: s.id,
+    row: {
+      key,
+      kind: "exam",
+      origin: "full",
+      question_id: s.id,
+      label: "전체",
+      format: "essay",
+      grading: "self",
+      prompt,
+      answer,
+      model_answer: a.details?.modelAnswer ?? null,
+      accepted_answers: [],
+      difficulty: a.difficulty === "상" ? 3 : a.difficulty === "하" ? 1 : 2,
+      sort_order: -1,
+      ...m,
+    },
+  };
+}
+
+/** 완전 기출을 저장할 수 있나 (023: real_unit 열과 함께 origin 'full' 이 허용됨) */
+export async function fullItemsReady(): Promise<boolean> {
+  const { error } = await getAdminClient().from("quiz_profiles").select("real_unit").limit(1);
+  return !error;
+}
+
 function planExpected(s: QuestionSummary | null, x: ExpectedItem, extra: Record<string, unknown>): Planned {
   return {
     key: x.key,
@@ -271,10 +312,12 @@ export interface SyncResult {
 export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promise<SyncResult> {
   const db = getAdminClient();
   const settings = await getQuizSettings();
-  const [rows, withPractice] = await Promise.all([loadAnalyzed(opts.questionIds), practiceReady()]);
+  const [rows, withPractice, withFull] = await Promise.all([loadAnalyzed(opts.questionIds), practiceReady(), fullItemsReady()]);
   const planned: Planned[] = [];
   for (const { a, s } of rows) {
     planned.push(...planExam(s, a));
+    const f = withFull ? planFull(s, a) : null;
+    if (f) planned.push(f);
     if (withPractice) planned.push(...planPractice(s, a));
     for (const ext of a.details?.futureExtensions ?? []) {
       const x = expectedFromAnalysis(s.id, ext);
@@ -364,7 +407,7 @@ export async function syncQuizBank(opts: { questionIds?: string[] } = {}): Promi
   const synced = new Set(rows.map((r) => r.s.id));
   const keySet = new Set(planned.map((p) => p.key));
   const gone = current
-    .filter((r) => r.origin === "analysis" && r.question_id && synced.has(r.question_id) && !keySet.has(r.key) && r.status !== "stale" && !r.edited)
+    .filter((r) => (r.origin === "analysis" || (withFull && r.origin === "full")) && r.question_id && synced.has(r.question_id) && !keySet.has(r.key) && r.status !== "stale" && !r.edited)
     .map((r) => r.id);
   for (const part of chunks(gone)) {
     const { error } = await db.from("quiz_items").update({ status: "stale", updated_at: now }).in("id", part);

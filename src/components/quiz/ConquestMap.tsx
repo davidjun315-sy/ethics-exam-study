@@ -88,7 +88,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
         </span>
         {[...CONQUEST_TIERS].reverse().map((t) => (
           <span key={t.rarity} className="whitespace-nowrap text-muted">
-            문제 {t.min}개↑ <b className={TIER_TONE[t.rarity]}>{CONQUEST_RARITY_NAME[t.rarity]}</b>
+            완전 기출 {t.min}문항↑ <b className={TIER_TONE[t.rarity]}>{CONQUEST_RARITY_NAME[t.rarity]}</b>
           </span>
         ))}
       </div>
@@ -132,7 +132,7 @@ export function ConquestMap({ c }: { c: Conquest }) {
         ))}
       </ul>
       <p className="text-[11px] text-faint">
-        고리는 그 사상가 문제 중 <b>한 번 이상 맞힌 문제</b>의 비율입니다. <b>기출문제만</b> 셉니다: 윤리 퀴즈의 부분 문항 + 기출문제 탭에서 푸는 <b>완전 기출문제</b> (개념 다지기 연습문제 · 예상 문제는 빠짐). 두 사상가 이상이 함께 나온 연계 문항은 모두에게 함께 셉니다. 고리를 다 채우면 정복! 문제가 {c.min}개 이상인 사상가는 정복하면 그 사상가 카드를 한 장 받습니다. 문제가 많을수록 등급이 높습니다: <b>10개↑ 일반 · 20개↑ 희귀 · 30개↑ 영웅 · 40개↑ 전설</b> (보상은 사상가마다 한 번). 사상가를 누르면 카드 상세와 퀴즈 진행이 열립니다 (카드가 아직 없는 사상가는 바로 기출문제 목록).
+        고리는 그 사상가의 <b>완전 기출</b>(기출 문항 전체) 중 맞힌 문항의 비율입니다. 부분 기출 · 연습문제 · 예상 문제는 세지 않습니다. 윤리 퀴즈 &lsquo;실전만 · 완전 기출&rsquo;이나 기출문제 탭에서 맞히면 채워지고, 두 사상가 이상이 함께 나온 연계 문항은 모두에게 함께 셉니다. 고리를 다 채우면 정복! 완전 기출이 {c.min}문항 이상인 사상가는 정복하면 그 사상가 카드를 한 장 받습니다. 문제가 많을수록 등급이 높습니다: <b>10문항↑ 일반 · 20문항↑ 희귀 · 30문항↑ 영웅 · 40문항↑ 전설</b> (보상은 사상가마다 한 번). 사상가를 누르면 카드 상세와 퀴즈 진행이 열립니다 (카드가 아직 없는 사상가는 바로 기출문제 목록).
         {!c.ready && " (카드 보상은 관리자가 업데이트를 적용하면 받을 수 있습니다.)"}
       </p>
     </div>
@@ -160,7 +160,7 @@ export function ConquestSummary({ c }: { c: Conquest }) {
             <span>
               정복 <b className="text-ink">{c.totals.full}</b>/{c.totals.philosophers}명
             </span>
-            <span className="tabular-nums">맞힌 기출문제 {c.totals.done}/{c.totals.items}</span>
+            <span className="tabular-nums">맞힌 완전 기출 {c.totals.done}/{c.totals.items}</span>
           </div>
           <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-2">
             <div className="h-full rounded-full bg-gradient-to-r from-navy to-[#d9a520]" style={{ width: `${c.totals.items ? (c.totals.done / c.totals.items) * 100 : 0}%` }} />

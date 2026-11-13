@@ -145,25 +145,21 @@ export function conquestCells(items: { id: string; names: string[] }[], correct:
 export const fullKey = (questionId: string) => `q:${questionId}`;
 
 /**
- * 정복 지도의 칸들: 윤리 퀴즈 부분 문항(기출만) + 완전 기출문제.
- *  - 연계 문제: 부분 문항도 원래 기출 문항의 사상가 모두에게 함께 센다
- *  - 맞힘: 퀴즈에서 맞힌 부분 문항 + 완전 기출문제를 맞히면 그 문항 · 딸린 부분 문항 모두
+ * 정복 지도의 칸: 완전 기출문제만 (기출 문항 전체 · 부분 기출은 세지 않음).
+ *  - 연계 문항: 주요 · 비교 사상가 모두에게 함께 센다
+ *  - 맞힘: 기출문제 탭에서 맞힌 기록(solved) 또는 윤리 퀴즈의 완전 기출 문제(origin 'full')를 맞힘
  * items: 공개 문제 / links: 기출 문항 → 주요·비교 사상가 / correct: 퀴즈에서 맞힌 문제 / solved: 맞힌 완전 기출 문항
  */
 export function conquestEntries(
-  items: { id: string; kind: string; philosopher_names: string[] | null; question_id: string | null }[],
+  items: { id: string; origin?: string | null; question_id: string | null }[],
   links: Record<string, string[]>,
   correct: Set<string>,
   solved: Set<string>,
 ) {
-  const exam = items.filter((it) => it.kind === "exam");
-  const entries = [
-    ...exam.map((it) => ({ id: it.id, names: [...new Set([...(it.philosopher_names ?? []), ...((it.question_id && links[it.question_id]) || [])])] })),
-    ...Object.entries(links).map(([q, names]) => ({ id: fullKey(q), names })),
-  ];
-  const done = new Set(correct);
-  for (const it of exam) if (it.question_id && solved.has(it.question_id)) done.add(it.id);
+  const entries = Object.entries(links).map(([q, names]) => ({ id: fullKey(q), names }));
+  const done = new Set<string>();
   for (const q of solved) done.add(fullKey(q));
+  for (const it of items) if (it.origin === "full" && it.question_id && correct.has(it.id)) done.add(fullKey(it.question_id));
   return { entries, done };
 }
 

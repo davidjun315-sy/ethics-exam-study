@@ -10,6 +10,8 @@ import type { QuizResult, StartLevel } from "./srs.ts";
 export interface Candidate {
   id: string;
   kind: "exam" | "expected" | "practice";
+  /** 완전 기출 (문항 전체, 023) */
+  full?: boolean;
   /** 실전 문제인데 같은 기출의 연습문제를 아직 하나도 맞히지 못함 → 연습문제를 먼저 내도록 뒤로 미룬다 */
   gated?: boolean;
   questionId: string | null;

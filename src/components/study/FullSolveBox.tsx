@@ -81,7 +81,7 @@ export function FullSolveBox({ questionId, signedIn, revealed, philosophers }: {
       ) : s?.correct ? (
         <p className="mt-1 text-xs text-muted">
           {s.newly ? "방금 정복했습니다! " : ""}
-          {names ? <b className="text-ink">{names}</b> : "이 문항의 사상가"}의 정복 지도에 반영됐고, 이 문항의 부분 문항도 함께 정복으로 셉니다.
+          {names ? <b className="text-ink">{names}</b> : "이 문항의 사상가"}의 정복 지도에 반영됐습니다. 윤리 퀴즈의 같은 완전 기출도 맞힌 것으로 셉니다.
         </p>
       ) : (
         <p className="mt-1 text-xs text-muted">

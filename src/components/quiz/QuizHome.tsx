@@ -112,7 +112,7 @@ export function QuizHome({
           </div>
         </div>
         <a href="#settings" className="hidden rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-muted hover:border-navy/40 hover:text-navy sm:inline-block">
-          {TRACK_NAMES[d.track]} · {SCOPE_NAMES[d.scope]}
+          {d.track === "full" ? "실전만 · 완전 기출" : TRACK_NAMES[d.track]} · {SCOPE_NAMES[d.scope]}
         </a>
       </>
   );
@@ -384,8 +384,9 @@ export function QuizHome({
           <h2 className="mb-1 text-base font-bold">학습 단계</h2>
           <p className="mb-3 text-xs text-muted">
             연습문제는 실제 기출의 원문·정답 개념·채점 요소·자주 하는 실수로 만든 문제입니다 (공개 {d.kindCount.practice}문제). 연습+실전에서는 연습문제를 맞힌 기출의 실전 문제가 먼저 나옵니다.
+            실전만에서는 <b>부분 기출</b>(문항을 빈칸·요구 사항별로 나눈 문제)과 <b>완전 기출</b>(문항 전체를 시험처럼 한 번에) 중에서 고릅니다. 사상가 정복 지도는 완전 기출만 셉니다.
           </p>
-          <TrackPicker current={d.track} practiceCount={d.kindCount.practice} />
+          <TrackPicker current={d.track} practiceCount={d.kindCount.practice} fullCount={d.kindCount.full} partCount={d.kindCount.exam} />
         </div>
         <div>
         <h2 className="mb-1 text-base font-bold">출제 범위</h2>

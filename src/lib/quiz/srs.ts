@@ -162,9 +162,21 @@ export const TRACK_DESC: Record<Track, string> = {
  * 연습문제는 실제 기출에서 만든 것이므로 출제 범위가 'AI 예상문제만'이면 빼고, 학습 단계가 '실전만'이면 뺀다.
  * track 을 주지 않으면 예전처럼(실전만) 판단한다.
  */
-export const inScope = (kind: "exam" | "expected" | "practice", scope: QuestionScope, track: Track = "real") => {
-  if (kind === "practice") return track !== "real" && scope !== "expected";
+export const inScope = (kind: "exam" | "expected" | "practice", scope: QuestionScope, track: EffTrack = "real", full = false) => {
+  // 완전 기출 (023): 문항 전체를 한 문제로 → '실전만 · 완전 기출'에서만 (그때는 부분 기출 대신)
+  if (full) return track === "full" && scope !== "expected";
+  if (kind === "practice") return track !== "real" && track !== "full" && scope !== "expected";
   if (track === "practice") return false;
+  if (kind === "exam" && track === "full") return false;
   return scope === "both" || kind === scope;
 };
+/** 실전만 안의 단위 (023): 부분 기출(문항을 나눈 세부 문제) · 완전 기출(문항 전체) */
+export const REAL_UNIT_NAMES = { part: "부분 기출", full: "완전 기출" } as const;
+export type RealUnit = keyof typeof REAL_UNIT_NAMES;
+export const REAL_UNIT_DESC: Record<RealUnit, string> = {
+  part: "기출을 빈칸·요구 사항별로 나눈 세부 문제",
+  full: "기출 문항 전체를 시험처럼 한 번에 (서술형 · 스스로 채점)",
+};
+/** 실제로 쓰는 학습 단계: 실전만 + 완전 기출 = 'full' */
+export type EffTrack = Track | "full";
 export type StartLevel = keyof typeof LEVEL_NAMES;

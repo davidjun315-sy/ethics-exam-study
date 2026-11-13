@@ -40,7 +40,7 @@ export interface FullSolveResult {
 }
 
 /** 기록 (점수·맞힘 판정은 서버가 정한 값만 넘긴다) */
-export async function recordFullSolve(learner: string, questionId: string, score: number | null, correct: boolean, how: "ai" | "self"): Promise<FullSolveResult> {
+export async function recordFullSolve(learner: string, questionId: string, score: number | null, correct: boolean, how: "ai" | "self" | "quiz"): Promise<FullSolveResult> {
   const { data, error } = await getAdminClient().rpc("quiz_record_full_solve", { p_learner: learner, p_question: questionId, p_score: score, p_correct: correct, p_how: how });
   if (error) {
     if (!missing(error.message)) console.error("[quiz-full:record]", error.message);

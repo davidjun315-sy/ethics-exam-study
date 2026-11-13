@@ -12,7 +12,7 @@ const Body = z.object({
       area: z.string().max(50).optional(),
       philosopher: z.string().max(100).optional(),
       year: z.number().int().optional(),
-      kind: z.enum(["exam", "expected", "practice"]).optional(),
+      kind: z.enum(["exam", "expected", "practice", "full"]).optional(),
       format: z.enum(["fill", "essay"]).optional(),
       difficulty: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       which: z.enum(["any", "new", "review"]).optional(),

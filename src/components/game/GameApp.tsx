@@ -287,7 +287,7 @@ export function PhilosopherSheet({
             {quiz && quiz.total === 0 && (
               <div className="rounded-lg border border-line p-3 text-[11px] text-muted" data-quiz-progress>
                 <h3 className="mb-0.5 text-sm font-bold text-ink">윤리 퀴즈 진행</h3>
-                아직 이 사상가의 기출 실전 문제가 없습니다 (정복 지도는 기출문제만 셉니다).
+                아직 이 사상가와 연결된 기출 문항이 없습니다 (정복 지도는 완전 기출만 셉니다).
               </div>
             )}
             {quiz && quiz.total > 0 && (
@@ -295,7 +295,7 @@ export function PhilosopherSheet({
                 <div className="mb-1 flex items-baseline justify-between gap-2">
                   <h3 className="text-sm font-bold">윤리 퀴즈 진행</h3>
                   <span className="text-xs tabular-nums text-muted">
-                    맞힌 문제 <b className="text-ink">{quiz.done}</b>/{quiz.total} · 남은 {Math.max(0, quiz.total - quiz.done)}문제
+                    맞힌 완전 기출 <b className="text-ink">{quiz.done}</b>/{quiz.total} · 남은 {Math.max(0, quiz.total - quiz.done)}문항
                   </span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={quiz.total} aria-valuenow={quiz.done} aria-label="정복 진행">
@@ -305,8 +305,8 @@ export function PhilosopherSheet({
                   {quiz.done >= quiz.total
                     ? "정복 완료!"
                     : quiz.rewardable
-                      ? `남은 ${quiz.total - quiz.done}문제를 맞히면 정복 · ${quiz.rarityName || "카드"} 등급 카드 보상`
-                      : `한 번 이상 맞힌 문제 기준 (카드 보상은 문제 ${quiz.min}개 이상인 사상가만)`}
+                      ? `남은 ${quiz.total - quiz.done}문항을 맞히면 정복 · ${quiz.rarityName || "카드"} 등급 카드 보상`
+                      : `완전 기출(문항 전체) 기준 (카드 보상은 ${quiz.min}문항 이상인 사상가만)`}
                   {quiz.rewardable && quiz.done >= quiz.total && quiz.rarityName && ` · ${quiz.rarityName} 등급 카드`}
                   {quiz.reward === "claimed" && " · 보상 받음"}
                   {quiz.reward === "claimable" && " · 정복 지도에서 보상을 받으세요"}

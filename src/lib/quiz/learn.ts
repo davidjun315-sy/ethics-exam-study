@@ -10,6 +10,7 @@ import { isCorrectFill } from "./grade.ts";
 import { fetchAll } from "./paged.ts";
 import { focusRequirement } from "./split.ts";
 import { grantQuizCoins } from "@/lib/game/data";
+import { recordFullSolve } from "./full.ts";
 import type { EssayContext } from "./essay.ts";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { buildMission, buildPractice, type Candidate, type ProgressLite, type Slot } from "./mission.ts";
@@ -32,6 +33,8 @@ import {
   inScope,
   type QuestionScope,
   type Track,
+  type EffTrack,
+  type RealUnit,
 } from "./srs.ts";
 import { gradePractice, publicPayload, PRACTICE_TYPE_NAMES, type PracticePayload } from "./practice.ts";
 import { passageOnly } from "./split.ts";
@@ -52,6 +55,7 @@ export interface Profile {
   start_level: StartLevel; // 예전 시작 난이도 (지금은 쓰지 않음, 기록 보존)
   question_scope?: QuestionScope; // 007 이후
   track?: Track; // 011 이후
+  real_unit?: RealUnit; // 023 이후: 실전만 안에서 부분 / 완전 기출
 
   xp: number;
   streak: number;
@@ -83,7 +87,16 @@ export async function setQuestionScope(learner: string, scope: QuestionScope) {
 }
 
 /** 학습 단계. 011 을 실행하기 전이거나 정하지 않았으면 연습+실전 */
-export const trackOf = (p: Profile | null): Track => p?.track ?? "mixed";
+export const trackOf = (p: Profile | null): EffTrack => (p?.track === "real" && p.real_unit === "full" ? "full" : (p?.track ?? "mixed"));
+
+/** 실전만 안에서 부분 기출 / 완전 기출 (023). 고르면 학습 단계도 '실전만'으로 */
+export async function setRealUnit(learner: string, unit: RealUnit) {
+  const { error } = await getAdminClient().from("quiz_profiles").upsert({ learner, track: "real", real_unit: unit, updated_at: new Date().toISOString() }, { onConflict: "learner" });
+  if (error) {
+    if (/real_unit/.test(error.message)) throw new Error("완전 기출을 고를 열이 없습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/023_quiz_full_items.sql 을 실행하세요.");
+    throw quizError(error.message);
+  }
+}
 
 /** 학습 단계 설정·변경 */
 export async function setTrack(learner: string, track: Track) {
@@ -98,11 +111,11 @@ export async function setTrack(learner: string, track: Track) {
  * 출제 범위·학습 단계에 맞춰 미션 구성: 한쪽만 고르면 다른 쪽 자리도 그 종류로 채운다.
  * 연습+실전: 새 문제 자리의 절반을 연습문제로 (예: 기출 6·예상 2 → 연습 4·기출 2·예상 2)
  */
-function missionSettings(s: { daily_total: number; daily_exam: number; daily_expected: number; daily_review: number }, scope: QuestionScope, track: Track = "real") {
+function missionSettings(s: { daily_total: number; daily_exam: number; daily_expected: number; daily_review: number }, scope: QuestionScope, track: EffTrack = "real") {
   const fresh = s.daily_exam + s.daily_expected;
   const exam = scope === "both" ? s.daily_exam : scope === "exam" ? fresh : 0;
   const expected = scope === "both" ? s.daily_expected : scope === "expected" ? fresh : 0;
-  if (scope === "expected" || track === "real") return { total: s.daily_total, exam, expected, review: s.daily_review, practice: 0 };
+  if (scope === "expected" || track === "real" || track === "full") return { total: s.daily_total, exam, expected, review: s.daily_review, practice: 0 };
   if (track === "practice") return { total: s.daily_total, exam: 0, expected: 0, review: s.daily_review, practice: fresh };
   const practice = Math.ceil(fresh / 2);
   return { total: s.daily_total, exam: Math.max(0, exam - practice), expected, review: s.daily_review, practice };
@@ -115,7 +128,8 @@ export interface Filters {
   area?: string;
   philosopher?: string;
   year?: number;
-  kind?: QuizKind;
+  /** full = 완전 기출 (문항 전체, 023) · exam = 부분 기출 */
+  kind?: QuizKind | "full";
   format?: QuizFormat;
   difficulty?: 1 | 2 | 3;
   which?: "any" | "new" | "review";
@@ -123,15 +137,16 @@ export interface Filters {
   ids?: string[];
 }
 
-type CandidateRow = { id: string; kind: QuizKind; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
+type CandidateRow = { id: string; kind: QuizKind; origin: string; question_id: string | null; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3 };
 
 async function approvedItems(f: Filters = {}) {
   const build = () => {
     let q = getAdminClient()
       .from("quiz_items")
-      .select("id, kind, question_id, area, philosopher_names, difficulty, format, exam_year")
+      .select("id, kind, origin, question_id, area, philosopher_names, difficulty, format, exam_year")
       .eq("status", "approved");
-    if (f.kind) q = q.eq("kind", f.kind);
+    if (f.kind === "full") q = q.eq("kind", "exam").eq("origin", "full");
+    else if (f.kind) q = q.eq("kind", f.kind);
     if (f.format) q = q.eq("format", f.format);
     if (f.difficulty) q = q.eq("difficulty", f.difficulty);
     if (f.year) q = q.eq("exam_year", f.year);
@@ -146,6 +161,7 @@ async function approvedItems(f: Filters = {}) {
     (r): Candidate => ({
       id: r.id,
       kind: r.kind,
+      full: r.origin === "full",
       questionId: r.question_id,
       area: r.area ?? "미분류",
       philosophers: r.philosopher_names ?? [],
@@ -197,7 +213,7 @@ function toSession(day: string, d: DailyRow): Session {
 async function repairDaily(learner: string, day: string, d: DailyRow): Promise<Session> {
   const db = getAdminClient();
   const results = d.results ?? {};
-  const [{ data: rows, error }, profile] = await Promise.all([db.from("quiz_items").select("id, status, question_id, kind").in("id", d.item_ids), getProfile(learner)]);
+  const [{ data: rows, error }, profile] = await Promise.all([db.from("quiz_items").select("id, status, question_id, kind, origin").in("id", d.item_ids), getProfile(learner)]);
   if (error) throw quizError(error.message);
   const scope = scopeOf(profile);
   const track = trackOf(profile);
@@ -206,14 +222,14 @@ async function repairDaily(learner: string, day: string, d: DailyRow): Promise<S
   const bad = d.item_ids.filter((id) => {
     if (results[id]) return false;
     const r = byId.get(id);
-    return r?.status !== "approved" || !inScope(r.kind as QuizKind, scope, track);
+    return r?.status !== "approved" || !inScope(r.kind as QuizKind, scope, track, r.origin === "full");
   });
   if (bad.length === 0) return toSession(day, d);
 
   const keep = d.item_ids.filter((id) => !bad.includes(id));
   const usedQuestions = new Set(keep.map((id) => byId.get(id)?.question_id).filter(Boolean));
   const [candidates, progress] = await Promise.all([approvedItems(), progressMap(learner)]);
-  const pool = candidates.filter((c) => inScope(c.kind, scope, track) && !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
+  const pool = candidates.filter((c) => inScope(c.kind, scope, track, c.full) && !keep.includes(c.id) && !(c.questionId && usedQuestions.has(c.questionId)));
   const repl = buildMission({
     candidates: pool,
     progress,
@@ -271,7 +287,7 @@ export async function getDailySession(learner: string, create = true): Promise<S
   const scope = scopeOf(profile);
   const track = trackOf(profile);
   const { itemIds, slots } = buildMission({
-    candidates: gateReal(candidates.filter((c) => inScope(c.kind, scope, track)), progress, track),
+    candidates: gateReal(candidates.filter((c) => inScope(c.kind, scope, track, c.full)), progress, track),
     progress,
     settings: missionSettings(settings, scope, track),
     today: day,
@@ -288,7 +304,7 @@ export async function getDailySession(learner: string, create = true): Promise<S
  * 연습+실전: 같은 기출의 연습문제를 아직 하나도 맞히지 못한 실전 문제는 뒤로 미룬다 (연습 → 실전 순서).
  * 연습문제가 없는 기출은 그대로.
  */
-function gateReal(candidates: Candidate[], progress: Map<string, ProgressLite>, track: Track): Candidate[] {
+function gateReal(candidates: Candidate[], progress: Map<string, ProgressLite>, track: EffTrack): Candidate[] {
   if (track !== "mixed") return candidates;
   const practiced = new Map<string, boolean>(); // 기출 id → 연습문제를 하나라도 맞혔는가
   for (const c of candidates) {
@@ -317,7 +333,8 @@ export async function getPracticeSession(learner: string, mode: "free" | "review
   const track = trackOf(profile);
   const [all, progress] = await Promise.all([approvedItems(base), progressMap(learner)]);
   // 종류를 고르면 그 종류만, 아니면 출제 범위·학습 단계 안에서
-  const candidates = all.filter((c) => (base.kind ? c.kind === base.kind : inScope(c.kind, scope, track)));
+  // 종류를 골랐으면 그 종류만 (기출 = 부분 기출, 완전 기출은 따로), 아니면 출제 범위·학습 단계 안에서
+  const candidates = all.filter((c) => (base.kind === "full" ? c.full : base.kind ? c.kind === base.kind && !c.full : inScope(c.kind, scope, track, c.full)));
   const itemIds = buildPractice({
     candidates,
     progress,
@@ -351,6 +368,8 @@ async function loadSource(questionId: string | null) {
 export interface ItemView {
   id: string;
   kind: QuizKind;
+  /** 완전 기출 (문항 전체, 023) */
+  full: boolean;
   label: string;
   format: QuizFormat;
   /** 연습문제: 발문·보기 (정답 없음) */
@@ -378,6 +397,7 @@ export async function getItemView(id: string): Promise<ItemView> {
   return {
     id: it.id,
     kind: it.kind,
+    full: it.origin === "full",
     // 예상 문제의 레이블은 "사상가 · 개념"이라 정답이 드러날 수 있다 → 풀이 화면에는 보내지 않는다
     label: it.kind === "exam" ? it.label : "",
     format: it.format,
@@ -386,7 +406,8 @@ export async function getItemView(id: string): Promise<ItemView> {
     grading: it.grading,
     prompt: it.prompt,
     // 기출: <작성 방법> 아래에는 이 문제의 조건만 (한 화면에 한 문제) / 연습문제: 제시문만 (<작성 방법> 없이)
-    passage: it.kind === "exam" ? focusRequirement(src?.text ?? null, it.prompt) : it.kind === "practice" ? passageOnly(src?.text ?? null) : it.passage,
+    // 완전 기출: 문항 전체 (모든 요구 사항)
+    passage: it.origin === "full" ? (src?.text ?? null) : it.kind === "exam" ? focusRequirement(src?.text ?? null, it.prompt) : it.kind === "practice" ? passageOnly(src?.text ?? null) : it.passage,
     imageUrl: it.kind === "exam" ? (src?.image ?? null) : null,
     ref: src ? questionRef(src.exam, src.label) : null,
     score: it.kind === "exam" ? (src?.score ?? null) : null,
@@ -438,9 +459,11 @@ export async function getSolution(id: string): Promise<Solution> {
   ]);
   const d = ((a?.details ?? {}) as AnalysisDetails) || {};
   // 여러 요구 사항을 묶은 문제는 레이블이 "㉢, ㉣" → 각각의 해설·의도를 모두 보여 준다
+  // 완전 기출(문항 전체)은 모든 요구 사항의 해설 · 의도
+  const full = it.origin === "full";
   const labels = new Set(it.kind === "exam" && it.label ? it.label.split(",").map(normLabel).filter(Boolean) : []);
-  const ies = (d.itemExplanations ?? []).filter((x) => labels.has(normLabel(x.label)));
-  const intents = (d.examinerIntent?.itemIntents ?? []).filter((x) => labels.has(normLabel(x.label)));
+  const ies = (d.itemExplanations ?? []).filter((x) => full || labels.has(normLabel(x.label)));
+  const intents = (d.examinerIntent?.itemIntents ?? []).filter((x) => full || labels.has(normLabel(x.label)));
   const itemIntent = intents.length ? intents.map((x) => (intents.length > 1 ? `${x.label} ${x.intent}` : x.intent)).join("\n") : undefined;
   const related = it.question_id ? await findRelatedQuestions(it.question_id, 5).catch(() => []) : [];
   const p = it.kind === "practice" ? it.payload : null;
@@ -505,7 +528,9 @@ export async function getChallengeSession(learner: string, type: ChallengeType):
   const size = CHALLENGES[type].size;
   const progress = await progressMap(learner);
   const seed = `${learner}:${type}:${Date.now()}`;
-  const real = (cs: Candidate[]) => cs.filter((c) => c.kind !== "practice");
+  // 완전 기출(문항 전체)은 해독·서술 도전에서 빼고, '실전만 · 완전 기출'이면 오답 복수전에는 넣는다
+  const track = trackOf(profile);
+  const real = (cs: Candidate[]) => cs.filter((c) => c.kind !== "practice" && (!c.full || (type === "revenge" && track === "full")));
   if (type === "revenge") {
     const candidates = real(await approvedItems({ kind }));
     const itemIds = buildPractice({ candidates, progress, today: day, n: size, seed, which: "wrong" });
@@ -657,6 +682,8 @@ export async function recordAttempt(
     })
     .select("id")
     .single();
+  // 완전 기출 (문항 전체): 기출문제 탭의 풀이 기록과 같은 곳에 → 사상가 정복 지도 (022 없으면 조용히 건너뜀)
+  if (it.origin === "full" && it.question_id) await recordFullSolve(learner, it.question_id, null, result === "correct", "quiz").catch(() => null);
 
   // 일일 미션 진행
   let missionCompleted = false;
@@ -770,8 +797,8 @@ export interface Dashboard {
   wrongCount: number;
   bankSize: number;
   scope: QuestionScope;
-  kindCount: { exam: number; expected: number; practice: number }; // 공개된 문제 수 (practice = 기출 기반 연습문제)
-  track: Track;
+  kindCount: { exam: number; expected: number; practice: number; full: number }; // 공개된 문제 수 (practice = 기출 기반 연습문제 · exam = 부분 기출 · full = 완전 기출)
+  track: EffTrack;
   mastery: { name: string; seen: number; total: number; score: number }[]; // 영역별
   philosophers: { name: string; seen: number; score: number }[];
   calendar: { day: string; answered: number; completed: boolean }[];
@@ -795,8 +822,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
     getProfile(learner),
     getDailySession(learner, false),
     progressMap(learner),
-    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: QuizKind; format: QuizFormat }>((a, b) =>
-      db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind, format").eq("status", "approved").order("id").range(a, b),
+    fetchAll<{ id: string; area: string | null; philosopher_names: string[] | null; difficulty: 1 | 2 | 3; kind: QuizKind; origin: string; format: QuizFormat }>((a, b) =>
+      db.from("quiz_items").select("id, area, philosopher_names, difficulty, kind, origin, format").eq("status", "approved").order("id").range(a, b),
     ).then((data) => ({ data })),
     fetchAll<{ day: string; result: QuizResult; item_id: string; xp: number; mode: string }>((a, b) =>
       db.from("quiz_attempts").select("day, result, item_id, xp, mode").eq("learner", learner).gte("created_at", from.toISOString()).order("created_at").order("id").range(a, b),
@@ -811,19 +838,20 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
   let wrongCount = 0;
   const scope = scopeOf(profile);
   const track = trackOf(profile);
-  const kindCount = { exam: 0, expected: 0, practice: 0 };
+  const kindCount = { exam: 0, expected: 0, practice: 0, full: 0 };
   const challenges: Dashboard["challenges"] = { decode: { hard: 0, mid: 0 }, essay: { hard: 0, mid: 0 }, revenge: 0 };
   const itemInfo = new Map<string, { area: string; difficulty: 1 | 2 | 3; format: QuizFormat }>();
   for (const it of items.data ?? []) {
-    kindCount[it.kind]++;
+    const full = it.origin === "full";
+    kindCount[full ? "full" : it.kind]++;
     itemInfo.set(it.id, { area: it.area ?? "미분류", difficulty: it.difficulty, format: it.format });
     const p = progress.get(it.id);
     if (p?.lastResult) {
-      if (inScope(it.kind, scope, track) && p.dueOn && p.dueOn <= today) dueCount++;
-      if (inScope(it.kind, scope, track) && (p.lastResult === "wrong" || p.lastResult === "partial")) wrongCount++;
+      if (inScope(it.kind, scope, track, full) && p.dueOn && p.dueOn <= today) dueCount++;
+      if (inScope(it.kind, scope, track, full) && (p.lastResult === "wrong" || p.lastResult === "partial")) wrongCount++;
     }
     // 숙련도·실전 도전 집계는 실전 문제만 (연습문제는 같은 기출을 여러 번 묻기 때문)
-    if (it.kind === "practice") continue;
+    if (it.kind === "practice" || full) continue;
     if (inScope(it.kind, scope) && it.difficulty >= 2 && (it.format === "fill" || it.format === "essay")) {
       const c = challenges[it.format === "fill" ? "decode" : "essay"];
       if (it.difficulty === 3) c.hard++;
@@ -933,8 +961,8 @@ export async function getDashboard(learner: string): Promise<Dashboard> {
 
 /** 자유 학습 조건 목록 (공개된 문제 기준) */
 export async function getFilterOptions() {
-  const data = await fetchAll<{ area: string | null; philosopher_names: string[] | null; exam_year: number | null; kind: string }>((from, to) =>
-    getAdminClient().from("quiz_items").select("area, philosopher_names, exam_year, kind").eq("status", "approved").order("id").range(from, to),
+  const data = await fetchAll<{ area: string | null; philosopher_names: string[] | null; exam_year: number | null; kind: string; origin: string }>((from, to) =>
+    getAdminClient().from("quiz_items").select("area, philosopher_names, exam_year, kind, origin").eq("status", "approved").order("id").range(from, to),
   ).catch((e: Error) => {
     throw quizError(e.message);
   });
@@ -953,6 +981,7 @@ export async function getFilterOptions() {
     years: [...years.entries()].sort((a, b) => b[0] - a[0]),
     expected: rows.filter((r) => r.kind === "expected").length,
     practice: rows.filter((r) => r.kind === "practice").length,
+    full: rows.filter((r) => r.origin === "full").length,
     total: rows.length,
   };
 }
