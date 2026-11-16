@@ -20,8 +20,7 @@ import { examShortLabel, formatDate, questionRef } from "@/lib/format";
 import { getAttendance, getFeatured } from "@/lib/game/data";
 import { AttendanceWidget } from "@/components/game/AttendanceWidget";
 import { getQuizWeekly } from "@/lib/quiz/weekly";
-import { WeeklyRanking } from "@/components/quiz/WeeklyRanking";
-import { DailyRanking } from "@/components/quiz/DailyRanking";
+import { RankingHub } from "@/components/quiz/RankingHub";
 import { getDailyRanking } from "@/lib/quiz/fun";
 import { getCurrentMemberName } from "@/lib/members";
 import { currentLearner, getDashboard as getQuizDashboard, type Dashboard } from "@/lib/quiz/learn";
@@ -127,13 +126,8 @@ export default async function Home() {
       {/* 5. 나의 학습 현황 */}
       {quiz?.profile && <MyStats d={quiz} />}
 
-      {/* 윤리 퀴즈 랭킹: 이번 주 → 오늘의 미션 (한 묶음으로 붙여서) */}
-      {(weekly || daily) && (
-        <div className="space-y-3">
-          {weekly && <WeeklyRanking w={weekly} limit={5} more="/quiz#weekly-ranking" />}
-          {daily && <DailyRanking r={daily} limit={5} more={daily.mine?.done ? "/quiz#daily-ranking" : "/quiz/play?mode=daily"} />}
-        </div>
-      )}
+      {/* 윤리 퀴즈 랭킹: 이번 주 · 오늘의 미션 한 묶음 (누르면 팝업에서 전체 순위) */}
+      {(weekly || daily) && <RankingHub weekly={weekly} daily={daily} />}
 
       {site.error || !data ? (
         <DataError error={site.error} />
