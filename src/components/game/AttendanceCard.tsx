@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { CalendarCheck, Check, Ticket } from "lucide-react";
+import { CalendarCheck } from "lucide-react";
 import type { AttendanceState } from "@/lib/game/data";
-import { ATTEND_CYCLE, attendCoins, EPIC_TICKET_DAY, RARE_TICKET_DAY, TICKET_NAMES } from "@/lib/game/attendance";
+import { EPIC_TICKET_DAY, TICKET_NAMES } from "@/lib/game/attendance";
+import { AttendanceBoard } from "./AttendanceBoard";
 
 /** 홈: 출석 (28일 한 바퀴 · 7일차 희귀 확정 · 28일차 영웅 확정) */
 export function AttendanceCard({ a }: { a: AttendanceState }) {
-  const shown = a.checkedToday ? a.day : 0; // 도장 찍힌 칸 (오늘 아직이면 어제까지)
-  const done = a.checkedToday ? a.day : a.day; // 이어지는 출석일차
+  const done = a.day; // 이어지는 출석일차
   const toEpic = EPIC_TICKET_DAY - (a.checkedToday ? a.day : a.next.day - 1);
   return (
     <section className="card p-4" aria-labelledby="attend-h" data-attendance>
@@ -28,26 +28,7 @@ export function AttendanceCard({ a }: { a: AttendanceState }) {
           </>
         )}
       </p>
-      <ol className="grid grid-cols-7 gap-1" aria-label="출석 28일">
-        {Array.from({ length: ATTEND_CYCLE }, (_, i) => {
-          const d = i + 1;
-          const stamped = d <= shown;
-          const today = a.checkedToday && d === a.day;
-          const ticket = d === RARE_TICKET_DAY ? (a.rarePending && !(stamped && d === RARE_TICKET_DAY) ? null : "rare") : d === EPIC_TICKET_DAY ? "epic" : null;
-          return (
-            <li
-              key={d}
-              className={`relative flex aspect-square flex-col items-center justify-center rounded-lg border text-[10px] leading-none ${stamped ? "border-navy/30 bg-navy text-on-accent" : ticket ? "border-[#d9a520]/50 bg-[#ffd36b]/15" : "border-line bg-surface-2/50 text-faint"} ${today ? "ring-2 ring-[#ffd36b]" : ""}`}
-              title={`${d}일차 · ${attendCoins(d)} 코인${ticket ? ` · ${TICKET_NAMES[ticket]} 뽑기권` : ""}`}
-            >
-              {stamped ? <Check className="h-3.5 w-3.5" aria-hidden /> : ticket ? <Ticket className="h-3.5 w-3.5 text-[#b07a00] dark:text-[#ffd36b]" aria-hidden /> : <span className="font-semibold">{d}</span>}
-              <span className="sr-only">
-                {d}일차{stamped ? " 출석" : ""}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      <AttendanceBoard a={a} />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
         <span>
           코인 10→70 (일주일 단위 반복) · 7일차 🎟 희귀 확정 · 28일차 🎟 영웅 확정
