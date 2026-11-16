@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { BottomNav, SiteHeader } from "@/components/SiteHeader";
 import { getCurrentMemberName } from "@/lib/members";
+import { isAdmin } from "@/lib/admin-guard";
 import "./globals.css";
 
 // 관리자가 수시로 데이터를 수정하므로 모든 페이지를 요청 시점에 렌더링한다.
@@ -40,6 +41,8 @@ const themeScript = `(function(){try{var t=localStorage.getItem('ees:theme');var
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   // 로그인한 회원 이름 (회원 테이블이 없거나 DB 설정 전이면 로그인 안 한 것으로)
   const memberName = await getCurrentMemberName().catch(() => null);
+  // 회원 로그인 없이 관리자로만 들어온 경우도 퀴즈 · 게임 기록이 '관리자' 계정으로 쌓이므로 출석도 받음
+  const adminOnly = memberName ? false : await isAdmin().catch(() => false);
   return (
     <html lang="ko" suppressHydrationWarning>
       <head>
@@ -59,8 +62,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </footer>
         </div>
         <BottomNav member={memberName} />
-        {/* 로그인한 회원: 하루 한 번 자동 출석 */}
-        {memberName && <AttendanceCheck />}
+        {/* 로그인한 회원 · 관리자: 하루 한 번 자동 출석 */}
+        {(memberName || adminOnly) && <AttendanceCheck />}
       </body>
     </html>
   );
