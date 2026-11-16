@@ -74,7 +74,7 @@ export default async function Home() {
           ETHOS
         </div>
         <div className="relative">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <p className="eyebrow !text-navy/80">{todayLabel()}</p>
             {attendance?.ready && <AttendanceWidget day={attendance.day} checkedToday={attendance.checkedToday} tickets={attendance.tickets.rare + attendance.tickets.epic} />}
           </div>
