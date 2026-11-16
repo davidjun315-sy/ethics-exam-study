@@ -17,7 +17,7 @@ type Result = { ready: boolean; already: boolean; day: number; coins: number; ti
 
 /**
  * 로그인한 회원 · 관리자가 사이트에 들어오면 하루 한 번 자동 출석 (판정 · 지급은 서버) → 출석표 팝업.
- * 같은 날 다시 들어오면 서버가 '이미 출석'으로 돌려주므로 팝업도 보상도 다시 나오지 않는다.
+ * 팝업은 브라우저마다 하루 한 번. 보상은 서버가 하루 한 번만 준다 (이미 출석했으면 '출석 완료'로 보여 줌).
  */
 export function AttendanceCheck() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export function AttendanceCheck() {
 
   useEffect(() => {
     const day = todayKst();
-    const key = `ees:attend:${day}`;
+    const key = `ees:attend-pop:${day}`; // 이 브라우저에서 오늘 팝업을 보여 줬는지
     try {
       if (localStorage.getItem(key)) return;
     } catch {
@@ -41,8 +41,10 @@ export function AttendanceCheck() {
         } catch {
           /* 무시 */
         }
-        if (r.ready && !r.already && r.state) {
-          setShown(r);
+        if (!r.ready || !r.state) return;
+        // 오늘 처음 들어온 브라우저면 팝업 (다른 기기에서 이미 출석했어도 출석표는 한 번 보여 줌 · 보상은 서버가 하루 한 번만)
+        setShown(r);
+        if (!r.already) {
           window.dispatchEvent(new CustomEvent(ATTEND_EVENT, { detail: r }));
           router.refresh();
         }
@@ -75,7 +77,7 @@ function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onC
         <div className="relative">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-[0.18em] text-muted">
-              <CalendarCheck className="h-3.5 w-3.5 text-navy" aria-hidden /> 오늘의 출석
+              <CalendarCheck className="h-3.5 w-3.5 text-navy" aria-hidden /> {r.already ? "오늘 출석 완료" : "오늘의 출석"}
             </span>
             <button type="button" onClick={onClose} className="text-xl leading-none text-faint hover:text-ink" aria-label="닫기">
               ×
@@ -83,7 +85,7 @@ function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onC
           </div>
           <div className="mt-1 flex items-end justify-between gap-2">
             <h2 id="att-pop-h" className="text-3xl font-black tracking-tight">
-              출석 <span className="att-day-num text-navy">{r.day}</span>일차
+              출석 <span className="att-day-num text-navy">{a.day}</span>일차
             </h2>
             <span className="att-coin relative inline-flex items-center gap-1 rounded-full bg-[#ffd36b]/25 px-3 py-1 text-sm font-black text-[#8a5a00] dark:text-[#ffd36b]">
               <CoinIcon className="h-4 w-4" aria-hidden /> +{r.coins}
@@ -95,7 +97,7 @@ function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onC
           <p className="mt-0.5 text-[11px] text-faint">28일 한 바퀴 · 하루 빠지면 1일차부터 · 7일차 🎟 희귀 확정 · 28일차 🎟 영웅 확정</p>
 
           <div className="mt-3">
-            <AttendanceBoard a={a} stampDay={r.day} />
+            <AttendanceBoard a={a} stampDay={a.day} />
           </div>
 
           {r.ticket ? (
@@ -104,7 +106,7 @@ function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onC
                 <Ticket className="h-6 w-6" aria-hidden />
               </span>
               <div className="min-w-0">
-                <div className="text-sm font-black">🎟 {TICKET_NAMES[r.ticket]} 뽑기권 획득!</div>
+                <div className="text-sm font-black">🎟 {TICKET_NAMES[r.ticket]} 뽑기권 {r.already ? "받았어요" : "획득!"}</div>
                 <div className="text-[11px] text-white/85">{TICKET_ODDS[r.ticket].map((o) => `${o.rarity} ${o.pct}%`).join(" · ")}</div>
               </div>
             </div>
