@@ -14,6 +14,7 @@ import { teamSynergies, withSynergy, type Synergy } from "./synergy";
 import { achievements, canUseTitle, titleSynergy, type Achievement } from "./achievements";
 import { rankWeekly, weekStart } from "./ranking";
 import { clock, LIFE_MAX, LIFE_REGEN_SEC, lifeNow, type LifeState } from "./lives";
+import { attendanceView, type AttendanceView, type TicketKind } from "./attendance";
 import { getQuizStats } from "@/lib/quiz/fun";
 import {
   canFuseCard,
@@ -47,6 +48,8 @@ export const GAME_009_HINT = "카드 합성·무료 뽑기용 업데이트가 �
 const MESSAGES: Record<string, string> = {
   GAME_NOT_ENOUGH_COINS: "코인이 부족합니다. 윤리 퀴즈를 풀어 코인을 모아 보세요.",
   GAME_NO_CARDS: "아직 공개된 카드가 없습니다. 관리자가 카드 일러스트를 준비하면 열립니다.",
+  GAME_NO_TICKET: "가진 뽑기권이 없습니다. 출석 7일차 · 28일차에 받을 수 있어요.",
+  GAME_BAD_TICKET: "알 수 없는 뽑기권입니다.",
   GAME_NOT_OWNED: "보유하지 않은 카드이거나 이미 사용한 카드입니다.",
   GAME_MAX_LEVEL: "이미 최대 레벨입니다.",
   GAME_LEVEL_CHANGED: "다른 화면에서 이미 강화되었습니다. 새로고침 후 다시 시도하세요.",
@@ -318,7 +321,7 @@ export interface OwnedCard extends CardView {
   rarity: Rarity;
   level: number;
   locked: boolean;
-  source: "legacy" | "draw" | "free";
+  source: "legacy" | "draw" | "free" | "conquest" | "ticket";
   atk: number;
   hp: number;
   upgrade: { shards: number; coins: number } | null; // null = 최대 레벨
@@ -361,13 +364,66 @@ export interface GameState {
   title: { ready: boolean; value: string | null };
   /** 도장깨기 생명력 (ready=false 면 020 적용 전 → 제한 없음) */
   lives: LifeState & { ready: boolean; regenSec: number };
+  /** 출석 · 확정 뽑기권 (ready=false 면 026 적용 전 → 숨김) */
+  attendance: AttendanceState;
 }
 
-type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free"; created_at: string };
+// ---------------------------------------------------------------------
+// 출석 · 확정 뽑기권 (026)
+// ---------------------------------------------------------------------
+export interface AttendanceState extends AttendanceView {
+  ready: boolean;
+  tickets: Record<TicketKind, number>;
+}
+const NO_ATTEND: AttendanceState = { ready: false, checkedToday: false, day: 0, next: { day: 1, coins: 10, ticket: null }, rarePending: false, bestDay: 0, tickets: { rare: 0, epic: 0 } };
+
+export async function getAttendance(learner: string): Promise<AttendanceState> {
+  const db = getAdminClient();
+  const [st, tk] = await Promise.all([
+    db.from("game_attendance").select("last_day, cycle_day, best_day, rare_pending").eq("learner", learner).maybeSingle(),
+    db.from("game_tickets").select("kind, count").eq("learner", learner),
+  ]);
+  if (st.error || tk.error) return NO_ATTEND;
+  const s = st.data as { last_day: string | null; cycle_day: number; best_day: number; rare_pending: boolean } | null;
+  const tickets = { rare: 0, epic: 0 } as Record<TicketKind, number>;
+  for (const r of (tk.data ?? []) as { kind: TicketKind; count: number }[]) tickets[r.kind] = r.count;
+  return { ready: true, tickets, ...attendanceView({ lastDay: s?.last_day ?? null, cycleDay: s?.cycle_day ?? 0, bestDay: s?.best_day ?? 0, rarePending: s?.rare_pending ?? false }, kstDay()) };
+}
+
+export interface AttendResult {
+  ready: boolean;
+  already: boolean;
+  day: number;
+  coins: number;
+  ticket: TicketKind | null;
+}
+
+/** 오늘 출석 (하루 한 번 · 판정과 지급은 DB 함수가). 026 전이면 ready=false */
+export async function attend(learner: string): Promise<AttendResult> {
+  const { data, error } = await getAdminClient().rpc("game_attend", { p_learner: learner, p_day: kstDay() });
+  if (error) {
+    if (/game_attend|schema cache|does not exist/i.test(error.message)) return { ready: false, already: true, day: 0, coins: 0, ticket: null };
+    throw gameError(error.message);
+  }
+  const d = data as { already: boolean; day: number; coins: number; ticket: TicketKind | null };
+  return { ready: true, already: d.already, day: d.day, coins: d.coins, ticket: d.ticket };
+}
+
+/** 확정 뽑기권으로 카드 1장 (등급 · 사상가는 DB 에서 결정, 같은 requestId 재시도 → 처음 결과) */
+export async function drawWithTicket(learner: string, kind: TicketKind, requestId: string): Promise<DrawResult & { ticket: TicketKind; ticketsLeft: number }> {
+  const { data, error } = await getAdminClient().rpc("game_use_ticket", { p_learner: learner, p_kind: kind, p_ref: `ticket:${requestId}`, p_day: kstDay() });
+  if (error) throw gameError(error.message);
+  const r = data as { cardId: string; isNewPhilosopher?: boolean; ticketsLeft: number; replayed: boolean };
+  const card = await ownedCard(learner, r.cardId);
+  const state = await getGameState(learner);
+  return { card, isNewPhilosopher: Boolean(r.isNewPhilosopher), free: false, autoFeatured: false, coins: state.coins, replayed: r.replayed, ticket: kind, ticketsLeft: r.ticketsLeft };
+}
+
+type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free" | "conquest" | "ticket"; created_at: string };
 
 export async function getGameState(learner: string): Promise<GameState> {
   const db = getAdminClient();
-  const [settings, cards, wallet, uc, col, prof, free, camp, quizStats] = await Promise.all([
+  const [settings, cards, wallet, uc, col, prof, free, camp, quizStats, attendance] = await Promise.all([
     // 강화석 통일(018) 전이라고 저장돼 있으면 DB 를 다시 확인 → SQL 실행 즉시 반영 (통일 후엔 추가 조회 없음)
     getGameSettings().then((s) => (s.stones_unified ? s : freshStonesUnified().then((u) => ({ ...s, stones_unified: u })))),
     publishedCards(),
@@ -380,6 +436,7 @@ export async function getGameState(learner: string): Promise<GameState> {
     db.from("game_campaign").select("philosopher_id, cleared_at, turns").eq("learner", learner),
     // 윤리 퀴즈 업적용 (실패해도 0 으로)
     getQuizStats(learner),
+    getAttendance(learner).catch(() => NO_ATTEND),
   ]);
   for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
   const rows = (uc.data ?? []) as UserCardRow[];
@@ -409,6 +466,7 @@ export async function getGameState(learner: string): Promise<GameState> {
     specialCleared: stages.filter((x) => x.pattern && clearedIds.has(x.bossId)).length,
     wins: p?.wins ?? 0,
     quiz: quizStats,
+    attendanceBest: attendance.bestDay,
   });
   const titleRaw = (p as { title?: string | null } | null)?.title ?? null;
   return {
@@ -453,6 +511,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       regenSec: LIFE_REGEN_SEC,
       ...lifeNow({ lives: (p as { lives?: number | null } | null)?.lives, livesAt: (p as { lives_at?: string | null } | null)?.lives_at }),
     },
+    attendance,
   };
 }
 

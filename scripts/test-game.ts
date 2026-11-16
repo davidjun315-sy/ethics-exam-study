@@ -347,4 +347,13 @@ if (failed) {
   const skipped = r.events.filter((e) => e.t === "stunned").map((e) => (e as { actor: string }).actor);
   check("제압형: 기절은 보스(가장 위협적인 적)에게 · 기절한 적은 다음 차례를 쉼", stuns.length > 0 && stuns.filter((x) => x.stunned).every((x) => x.stunned === "foe-0" || x.stunned === "foe-1") && stuns[0].stunned === "foe-0" && skipped.includes("foe-0"));
 }
+{
+  const { attendCoins, attendTicket, attendanceView } = await import("../src/lib/game/attendance.ts");
+  check("출석 코인: 일주일 단위 10→70 반복", [1, 2, 7, 8, 14, 15, 28].map(attendCoins).join(",") === "10,20,70,10,70,10,70");
+  check("출석 뽑기권: 7일차 희귀(영웅 대기 중이면 없음) · 28일차 영웅", attendTicket(7, false) === "rare" && attendTicket(7, true) === null && attendTicket(28, true) === "epic" && attendTicket(14, false) === null);
+  const v1 = attendanceView({ lastDay: "2030-01-09", cycleDay: 6, bestDay: 6, rarePending: false }, "2030-01-10");
+  const v2 = attendanceView({ lastDay: "2030-01-10", cycleDay: 28, bestDay: 28, rarePending: false }, "2030-01-10");
+  const v3 = attendanceView({ lastDay: "2030-01-05", cycleDay: 12, bestDay: 12, rarePending: true }, "2030-01-10");
+  check("출석 화면: 어제까지 6일차 → 오늘 7일차 희귀 · 28일차 다음은 1일차 · 끊기면 1일차", !v1.checkedToday && v1.next.day === 7 && v1.next.ticket === "rare" && v2.checkedToday && v2.next.day === 1 && v3.day === 0 && v3.next.day === 1);
+}
 console.log("\n모두 통과");

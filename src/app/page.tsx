@@ -17,7 +17,8 @@ import { DataError, load } from "@/components/DataError";
 import { FeaturedPhilosopher } from "@/components/game/MyPhilosopher";
 import { cachedDashboard as getSiteDashboard } from "@/lib/data/cached";
 import { examShortLabel, formatDate, questionRef } from "@/lib/format";
-import { getFeatured } from "@/lib/game/data";
+import { getAttendance, getFeatured } from "@/lib/game/data";
+import { AttendanceCard } from "@/components/game/AttendanceCard";
 import { getQuizWeekly } from "@/lib/quiz/weekly";
 import { WeeklyRanking } from "@/components/quiz/WeeklyRanking";
 import { DailyRanking } from "@/components/quiz/DailyRanking";
@@ -53,7 +54,7 @@ const todayLabel = () => new Intl.DateTimeFormat("ko-KR", { month: "long", day: 
  */
 export default async function Home() {
   const learner = await currentLearner().catch(() => null);
-  const [site, name, quiz, game, weekly, daily] = await Promise.all([
+  const [site, name, quiz, game, weekly, daily, attendance] = await Promise.all([
     load(getSiteDashboard),
     getCurrentMemberName().catch(() => null),
     learner ? getQuizDashboard(learner).catch(() => null) : Promise.resolve(null),
@@ -61,6 +62,7 @@ export default async function Home() {
     // 이번 주 랭킹 (로그인한 학습자에게만: 다른 회원 이름이 보이므로)
     learner ? getQuizWeekly(learner) : Promise.resolve(null),
     learner ? getDailyRanking(learner) : Promise.resolve(null),
+    learner ? getAttendance(learner).catch(() => null) : Promise.resolve(null),
   ]);
   const data = site.data;
 
@@ -100,6 +102,9 @@ export default async function Home() {
         )}
         <TodayCard quiz={quiz} loggedIn={Boolean(learner)} />
       </div>
+
+      {/* 출석 (026 적용 뒤 · 로그인한 회원) */}
+      {attendance?.ready && <AttendanceCard a={attendance} />}
 
       {/* 4. 빠른 메뉴 */}
       <nav aria-label="주요 기능" className="grid grid-cols-2 gap-3 lg:grid-cols-5">

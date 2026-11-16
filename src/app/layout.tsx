@@ -1,3 +1,4 @@
+import { AttendanceCheck } from "@/components/game/AttendanceCheck";
 import type { Metadata, Viewport } from "next";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -58,6 +59,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </footer>
         </div>
         <BottomNav member={memberName} />
+        {/* 로그인한 회원: 하루 한 번 자동 출석 */}
+        {memberName && <AttendanceCheck />}
       </body>
     </html>
   );

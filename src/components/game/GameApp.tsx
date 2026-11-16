@@ -73,6 +73,12 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
         <div className="ml-auto flex items-center gap-2">
           <TitleBadge title={state.title.value} className="hidden sm:inline-flex" />
           <span className="text-xs text-muted">보유 카드 {state.owned.length}장</span>
+          {/* 출석 확정 뽑기권 */}
+          {state.attendance.ready && state.attendance.tickets.rare + state.attendance.tickets.epic > 0 && (
+            <button type="button" onClick={() => go("draw")} className="whitespace-nowrap rounded-full border border-[#d9a520]/40 bg-[#ffd36b]/15 px-2.5 py-1 text-xs font-bold text-[#8a5a00] dark:text-[#ffd36b]" title="출석 확정 뽑기권 → 카드 뽑기">
+              🎟 {state.attendance.tickets.rare + state.attendance.tickets.epic}
+            </button>
+          )}
           <Coins value={state.coins} />
         </div>
       </div>
