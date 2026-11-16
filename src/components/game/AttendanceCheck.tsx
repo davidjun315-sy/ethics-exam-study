@@ -10,6 +10,8 @@ import { AttendanceBoard } from "./AttendanceBoard";
 
 /** 출석 처리가 끝나면 알림 (홈 출석 카드 · 게임 화면이 듣고 새로 읽음) */
 export const ATTEND_EVENT = "ethos:attended";
+/** 홈 출석 위젯 등에서 출석표 팝업을 다시 열 때 */
+export const ATTEND_OPEN_EVENT = "ethos:attend-open";
 
 const todayKst = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
 
@@ -53,6 +55,25 @@ export function AttendanceCheck() {
     return () => {
       alive = false;
     };
+  }, [router]);
+
+  // 위젯을 누르면 언제든 출석표 다시 보기 (출석은 서버가 하루 한 번만 처리 · 이미 했으면 그대로 보여 줌)
+  useEffect(() => {
+    const open = () => {
+      fetch("/api/game/attend", { method: "POST" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r: Result | null) => {
+          if (!r?.ready || !r.state) return;
+          setShown(r);
+          if (!r.already) {
+            window.dispatchEvent(new CustomEvent(ATTEND_EVENT, { detail: r }));
+            router.refresh();
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(ATTEND_OPEN_EVENT, open);
+    return () => window.removeEventListener(ATTEND_OPEN_EVENT, open);
   }, [router]);
 
   if (!shown?.state) return null;
