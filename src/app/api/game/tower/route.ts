@@ -3,7 +3,7 @@ import { z } from "zod";
 import { clientKey, parseBody, rateLimit } from "@/lib/http";
 import { requireLearner } from "@/lib/quiz/api";
 import { gameJsonError } from "@/lib/game/api";
-import { answerTower, chooseTowerBuff, enterTowerFloor, getTower, quitTower, startTower, spendTowerHint } from "@/lib/game/tower-data";
+import { answerTower, chooseTowerBuff, enterTowerFloor, eventTower, getTower, quitTower, resolveTower, startTower, spendTowerHint } from "@/lib/game/tower-data";
 import { GeminiError } from "@/lib/ai/gemini";
 
 // 서술형 층은 AI 채점 (무료 등급이 느리면 예비 모델로 다시)
@@ -12,7 +12,11 @@ export const maxDuration = 120;
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("start"), cardIds: z.array(z.string().uuid()).min(1).max(3), startFloor: z.union([z.literal(1), z.literal(11), z.literal(21), z.literal(31)]).optional() }),
   z.object({ action: z.literal("answer"), runId: z.string().uuid(), itemId: z.string().uuid(), answer: z.string().max(5000) }),
-  z.object({ action: z.literal("buff"), runId: z.string().uuid(), buff: z.enum(["heal", "power", "shield", "hint"]) }),
+  // 답을 낸 뒤 필살기 (팀 순서 0~2) 또는 넘기기 (null) → 보스 행동
+  z.object({ action: z.literal("resolve"), runId: z.string().uuid(), turn: z.number().int().min(0).max(100000), skill: z.number().int().min(0).max(2).nullable() }),
+  // 층을 깬 뒤 고르기: 기본 강화 (heal · power · shield · hint · focus) 또는 유물 (relic:이름)
+  z.object({ action: z.literal("buff"), runId: z.string().uuid(), buff: z.string().regex(/^(heal|power|shield|hint|focus|relic:[a-z]{2,20})$/) }),
+  z.object({ action: z.literal("event"), runId: z.string().uuid(), option: z.string().regex(/^[a-z:]{2,40}$/) }),
   z.object({ action: z.literal("hint"), runId: z.string().uuid() }),
   z.object({ action: z.literal("enter"), runId: z.string().uuid() }),
   z.object({ action: z.literal("quit"), runId: z.string().uuid() }),
@@ -29,7 +33,7 @@ export async function GET() {
   }
 }
 
-/** 사상의 탑: 시작 · 답 · 강화 고르기 · 힌트 · 그만두기 (판정과 보상은 모두 서버) */
+/** 사상의 탑: 시작 · 답 · 필살기/넘기기 · 강화/유물 고르기 · 이벤트 · 힌트 · 그만두기 (판정 · 전투 · 보상은 모두 서버) */
 export async function POST(req: Request) {
   const { learner, denied } = await requireLearner();
   if (denied) return denied;
@@ -44,6 +48,11 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 하세요." }, { status: 429 });
         }
         return NextResponse.json(await answerTower(learner, data.runId, data.itemId, data.answer));
+      case "resolve":
+        if (!rateLimit(`tower:${learner}`, 240, 60 * 60 * 1000)) return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 하세요." }, { status: 429 });
+        return NextResponse.json(await resolveTower(learner, data.runId, data.turn, data.skill));
+      case "event":
+        return NextResponse.json(await eventTower(learner, data.runId, data.option));
       case "buff":
         return NextResponse.json({ run: await chooseTowerBuff(learner, data.runId, data.buff) });
       case "enter":

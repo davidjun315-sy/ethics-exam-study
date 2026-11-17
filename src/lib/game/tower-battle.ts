@@ -31,9 +31,9 @@ export const SHIELD_CAP = 0.4;
 /** 콤보 × 공격 강화 × 역할 효과를 곱한 배율의 한도 */
 export const BOOST_CAP = 1.7;
 /** 2.0 적 체력 배율 (필살기 몫만큼) */
-export const HP_SCALE = 1.5;
+export const HP_SCALE = 1.65;
 /** 2.0 적 공격 배율 (역할 · 필살기 · 유물로 버티는 만큼 적도 세게 · 시뮬레이션으로 맞춤) */
-export const ENEMY_SCALE = 1.5;
+export const ENEMY_SCALE = 1.4;
 /** 정상(31층~)은 층마다 2%씩 더 (역할 · 유물이 쌓여도 끝없이 오르지 않게) */
 export const enemyScale = (floor: number) => ENEMY_SCALE * (1 + Math.max(0, floor - 30) * 0.02);
 
@@ -41,10 +41,10 @@ export const ROLE_NAMES: Record<SkillEffect, string> = { strike: "공격형", sw
 
 /** 역할 효과 (팀에 있는 카드마다 · 늘 켜짐) */
 export const ROLE_PASSIVE = {
-  /** 공격형: 정답 피해 +7% (한 장마다) · 콤보 한도 +10% (한 장이라도 있으면) */
-  strike: { dmg: 0.07, comboCap: 0.1 },
-  /** 광역형: 정답마다 추가타 (기본 피해의 14% · 한 장마다 한 번) · 추가타는 보스 방벽에 2배 */
-  sweep: { extra: 0.14 },
+  /** 공격형: 정답 피해 +5% (한 장마다) · 콤보 한도 +10% (한 장이라도 있으면) */
+  strike: { dmg: 0.05, comboCap: 0.1 },
+  /** 광역형: 정답마다 추가타 (기본 피해의 10% · 한 장마다 한 번) · 추가타는 보스 방벽에 2배 */
+  sweep: { extra: 0.1 },
   /** 수호형: 정답이면 보호막 (최대 체력의 2.5% · 한 장마다, 부분 정답은 절반) */
   guard: { shield: 0.025 },
   /** 지원형: 정답이면 체력 회복 (최대 체력의 2% · 한 장마다, 부분 정답은 절반) */
@@ -54,8 +54,8 @@ export const ROLE_PASSIVE = {
 } as const;
 
 export const ROLE_PASSIVE_DESC: Record<SkillEffect, string> = {
-  strike: "정답 피해 +7% · 콤보 한도 +10%",
-  sweep: "정답마다 추가타 (피해 14%) · 방벽에 2배",
+  strike: "정답 피해 +5% · 콤보 한도 +10%",
+  sweep: "정답마다 추가타 (피해 10%) · 방벽에 2배",
   guard: "정답이면 보호막 +2.5%",
   heal: "정답이면 체력 +2%",
   stun: "적 공격 -8% (최대 -24%)",
@@ -63,13 +63,13 @@ export const ROLE_PASSIVE_DESC: Record<SkillEffect, string> = {
 
 /** 역할 필살기 (사유력 비용 · 효과) */
 export const ROLE_SKILL: Record<SkillEffect, { cost: number; title: string; desc: string }> = {
-  strike: { cost: 3, title: "결정적 논증", desc: "강한 단일 공격 (기본 피해의 180%) · 방벽에 2배" },
-  sweep: { cost: 3, title: "연쇄 논박", desc: "3연타 (각 60%) · 방벽에 2배" },
+  strike: { cost: 3, title: "결정적 논증", desc: "강한 단일 공격 (기본 피해의 150%) · 방벽에 2배" },
+  sweep: { cost: 3, title: "연쇄 논박", desc: "3연타 (각 50%) · 방벽에 2배" },
   guard: { cost: 3, title: "철벽 수호", desc: "보호막 +22% · 다음 적 공격 절반" },
   heal: { cost: 3, title: "치유의 성찰", desc: "체력 25% 회복 · 봉인 해제" },
   stun: { cost: 3, title: "논점 봉쇄", desc: "공격(80%) + 보스 행동 2턴 늦춤 · 2턴 동안 적 공격 -30%" },
 };
-const SKILL_NUM = { strikeMult: 1.8, sweepHits: 3, sweepMult: 0.6, guardShield: 0.22, healPct: 0.25, stunDelay: 2, stunWeaken: 2, weakenMult: 0.7, stunMult: 0.8 };
+const SKILL_NUM = { strikeMult: 1.5, sweepHits: 3, sweepMult: 0.5, guardShield: 0.22, healPct: 0.25, stunDelay: 2, stunWeaken: 2, weakenMult: 0.7, stunMult: 0.8 };
 
 // ---------------------------------------------------------------------
 // 사상가 고유 패시브 (역할과 별개 · 이름으로 찾음 · 없으면 역할 효과만)
