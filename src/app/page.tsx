@@ -17,7 +17,7 @@ import { DataError, load } from "@/components/DataError";
 import { FeaturedPhilosopher } from "@/components/game/MyPhilosopher";
 import { cachedDashboard as getSiteDashboard } from "@/lib/data/cached";
 import { examShortLabel, formatDate, questionRef } from "@/lib/format";
-import { getAttendance, getFeatured } from "@/lib/game/data";
+import { getAttendance, getFeatured, getGameSettings } from "@/lib/game/data";
 import { AttendanceWidget } from "@/components/game/AttendanceWidget";
 import { getQuizWeekly } from "@/lib/quiz/weekly";
 import { RankingHub } from "@/components/quiz/RankingHub";
@@ -53,7 +53,7 @@ const todayLabel = () => new Intl.DateTimeFormat("ko-KR", { month: "long", day: 
  */
 export default async function Home() {
   const learner = await currentLearner().catch(() => null);
-  const [site, name, quiz, game, weekly, daily, attendance] = await Promise.all([
+  const [site, name, quiz, game, weekly, daily, attendance, heroArt] = await Promise.all([
     load(getSiteDashboard),
     getCurrentMemberName().catch(() => null),
     learner ? getQuizDashboard(learner).catch(() => null) : Promise.resolve(null),
@@ -62,6 +62,8 @@ export default async function Home() {
     learner ? getQuizWeekly(learner) : Promise.resolve(null),
     learner ? getDailyRanking(learner) : Promise.resolve(null),
     learner ? getAttendance(learner).catch(() => null) : Promise.resolve(null),
+    // 관리자가 올린 메인 배너 그림 (027 · 없으면 기본 그라데이션)
+    getGameSettings().then((s) => s.art["home-hero"] ?? null).catch(() => null),
   ]);
   const data = site.data;
 
@@ -69,6 +71,14 @@ export default async function Home() {
     <div className="mx-auto max-w-6xl space-y-6 sm:space-y-8">
       {/* 1. 인사 */}
       <section className="rise-in relative overflow-hidden rounded-2xl border border-line px-5 py-5 sm:px-7 sm:py-6" style={{ background: "var(--hero)" }}>
+        {heroArt && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={heroArt} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-90 dark:opacity-25" aria-hidden />
+            {/* 글자가 잘 읽히도록 왼쪽을 은은하게 덮음 */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[var(--surface)]/85 via-[var(--surface)]/45 to-transparent dark:from-[#151b2e]/90 dark:via-[#151b2e]/60" aria-hidden />
+          </>
+        )}
         <div className="pointer-events-none absolute -right-6 -top-10 select-none text-[7rem] font-black leading-none tracking-[0.12em] text-navy/[0.06] sm:text-[9rem]" aria-hidden>
           ETHOS
         </div>

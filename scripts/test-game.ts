@@ -356,4 +356,69 @@ if (failed) {
   const v3 = attendanceView({ lastDay: "2030-01-05", cycleDay: 12, bestDay: 12, rarePending: true }, "2030-01-10");
   check("출석 화면: 어제까지 6일차 → 오늘 7일차 희귀 · 28일차 다음은 1일차 · 끊기면 1일차", !v1.checkedToday && v1.next.day === 7 && v1.next.ticket === "rare" && v2.checkedToday && v2.next.day === 1 && v3.day === 0 && v3.next.day === 1);
 }
+{
+  const T = await import("../src/lib/game/tower.ts");
+  check("탑 구간: 1·10 → 1 · 11 → 2 · 30 → 3 · 31 → 4 · 보스층은 10의 배수", T.tierOf(1) === 1 && T.tierOf(10) === 1 && T.tierOf(11) === 2 && T.tierOf(30) === 3 && T.tierOf(31) === 4 && T.isBossFloor(20) && !T.isBossFloor(21));
+  check("탑 적 체력: 일반 3문제 · 보스 5문제 · 31층 위 일반 4 · 보스 6", T.hitsToClear(3) === 3 && T.hitsToClear(10) === 5 && T.hitsToClear(40) === 6 && T.hitsToClear(35) === 4);
+  check("탑 적 공격: 위로 갈수록 · 보스가 더 아픔", T.enemyHit(30) > T.enemyHit(5) && T.enemyHit(20) > T.enemyHit(19));
+  const s0 = T.startState(900);
+  const a = T.applyAnswer(s0, "correct", { teamAtk: 120, quick: false });
+  const b = T.applyAnswer(a.state, "correct", { teamAtk: 120, quick: true });
+  check("탑 정답: 기본 100 · 콤보 +10% · 빠른 정답 +20%", a.dealt === 100 && b.dealt === Math.round(100 * 1.1 * 1.2) && b.state.combo === 2);
+  const w = T.applyAnswer(b.state, "wrong", { teamAtk: 120, quick: true });
+  check("탑 오답: 적 공격 · 콤보 끊김", w.taken === T.enemyHit(1) && w.state.hp === s0.maxHp - w.taken && w.state.combo === 0);
+  const sh = T.applyAnswer(T.applyBuff(s0, "shield"), "wrong", { teamAtk: 120, quick: false });
+  check("탑 강화 '반론 대비': 오답 한 번 막음", sh.shieldUsed && sh.taken === 0 && sh.state.buffs.shield === 0);
+  check("탑 부분 정답(서술형)은 피해 절반", T.damageFor("partial", { teamAtk: 120, floor: 1, combo: 0, power: 0, quick: false }) === 50);
+  check("탑 카드 보정 범위 0.75~1.4배", T.teamPowerMult(10, 1) === 0.75 && T.teamPowerMult(9999, 1) === 1.4);
+  const low = { ...s0, hp: 10 };
+  check("탑 강화 후보 3개 · 체력이 낮으면 회복 포함", Array.from({ length: 30 }, (_, i) => T.buffChoices(low, i)).every((c) => c.length === 3 && c.includes("heal") && new Set(c).size === 3));
+  check("탑 회복은 최대 체력을 넘지 않음", T.applyBuff({ ...s0, hp: s0.maxHp - 5 }, "heal").hp === s0.maxHp);
+  check("탑 보상: 1층 6코인 · 10층 45코인 + 강화석 1 · 30층 강화석 3", T.floorCoins(1) === 6 && T.floorCoins(10) === 45 && T.floorStones(10) === 1 && T.floorStones(30) === 3 && T.floorStones(31) === 0);
+  check("탑 하루 도전: 3번 · 출석하면 4번", T.triesFor(false) === 3 && T.triesFor(true) === 4);
+  // 문제 고르기
+  const it = (id: string, o: Partial<import("../src/lib/game/tower.ts").TowerItem>) => ({ id, kind: "exam" as const, full: false, difficulty: 2 as const, auto: true, philosophers: ["칸트"], rate: null, ...o });
+  const pool = [
+    it("p1", { kind: "practice", difficulty: 1 }),
+    it("e1", { difficulty: 1 }),
+    it("e2", { difficulty: 2 }),
+    it("e3", { difficulty: 3 }),
+    it("e3m", { difficulty: 3, philosophers: ["칸트", "밀"] }),
+    it("hard2", { difficulty: 2, rate: 0.3 }),
+    it("full", { full: true, auto: false, difficulty: 3 }),
+    it("selfgraded", { auto: false, difficulty: 2 }),
+    it("other1", { difficulty: 1, philosophers: ["공자"] }),
+  ];
+  const pick = (floor: number, o: Partial<{ used: string[]; essayOk: boolean; essays: number; names: string[] }> = {}) =>
+    T.pickItem(pool, { floor, names: o.names ?? ["칸트"], used: new Set(o.used ?? []), essayOk: o.essayOk ?? true, essaysThisFloor: o.essays ?? 0, seed: 7 })?.id;
+  check("탑 1구간: 개념 다지기 · 기출 하만", ["p1", "e1"].includes(pick(3)!) && pick(3, { used: ["p1", "e1"] }) !== "e3");
+  check("탑 2구간: 기출 중", ["e2", "hard2"].includes(pick(15)!));
+  check("탑 3구간: 기출 상 · 정답률 낮은 중 / 보스층은 비교 문항 우선", ["e3", "e3m", "hard2"].includes(pick(25)!) && pick(30) === "e3m");
+  check("탑 4구간: 서술형(완전 기출)도 · 한 층에 하나까지 · AI 채점 안 되면 빼기", Array.from({ length: 1 }, () => true).every(() => pick(35, { used: ["e2", "e3", "e3m", "hard2"] }) === "full") && pick(35, { used: ["e2", "e3", "e3m", "hard2"], essays: 1 }) !== "full" && pick(35, { used: ["e2", "e3", "e3m", "hard2"], essayOk: false }) !== "full");
+  check("탑: 자기평가 문제(서술형 부분 기출)는 내지 않음", [3, 15, 25, 35].every((f) => pick(f, { used: pool.filter((x) => x.id !== "selfgraded").map((x) => x.id) }) !== "selfgraded"));
+  check("탑: 그 사상가 문제가 없으면 같은 구간 다른 문제", pick(3, { names: ["공자"], used: ["other1"] }) !== undefined);
+  // 적 순서: 보스층은 빈출 상위
+  const ph = ["a", "b", "c", "d", "e"].map((philosopherId) => ({ philosopherId }));
+  check("탑 적: 보스층은 가장 자주 나온 사상가부터", T.enemyForFloor(ph, 10)!.philosopherId === "e" && T.enemyForFloor(ph, 20)!.philosopherId === "d" && T.enemyForFloor(ph, 1)!.philosopherId === "a");
+  // 난이도 곡선: 구간별 정답률로 몇 층까지 가나 (힌트 · 강화 없이, 평균)
+  const climb = (acc: (tier: number) => number, runs = 400) => {
+    let sum = 0;
+    const rnd = seededRandom("tower-sim");
+    for (let r = 0; r < runs; r++) {
+      let s = T.startState(900);
+      for (let guard = 0; guard < 2000; guard++) {
+        const o = T.applyAnswer(s, rnd() < acc(T.tierOf(s.floor)) ? "correct" : "wrong", { teamAtk: 150, quick: false });
+        s = o.state;
+        if (o.dead) break;
+        if (o.floorCleared) s = T.applyBuff(T.nextFloor(s), T.buffChoices(s, guard)[0]);
+      }
+      sum += s.floor - 1;
+    }
+    return sum / runs;
+  };
+  const mid = climb((t) => [0, 0.8, 0.7, 0.6, 0.5][t]);
+  const strong = climb((t) => [0, 0.95, 0.9, 0.85, 0.8][t]);
+  const weak = climb((t) => [0, 0.6, 0.5, 0.4, 0.3][t]);
+  check("탑 난이도 곡선: 약 < 보통 < 강 · 보통 10~30층 · 강해도 60층 아래", weak < mid && mid < strong && mid > 10 && mid < 30 && strong < 60, `약 ${weak.toFixed(1)} · 보통 ${mid.toFixed(1)} · 강 ${strong.toFixed(1)}층`);
+}
 console.log("\n모두 통과");

@@ -20,6 +20,8 @@ export interface AchievementInput {
   quiz?: { answered: number; bestStreak: number; missions: number; essayCorrect: number; conquered: number };
   /** 출석: 가장 멀리 간 출석일차 (026) */
   attendanceBest?: number;
+  /** 사상의 탑: 가장 높이 깬 층 (027) */
+  towerBest?: number;
 }
 
 export interface Achievement {
@@ -27,7 +29,7 @@ export interface Achievement {
   /** 칭호 (업적 이름) */
   title: string;
   desc: string;
-  group: "출석" | "퀴즈" | "수집" | "성장" | "도장깨기" | "대전" | "분야";
+  group: "출석" | "탑" | "퀴즈" | "수집" | "성장" | "도장깨기" | "대전" | "분야";
   done: boolean;
   progress: number; // 0~1
   /** 진행 표시 (예: 3/5) */
@@ -72,6 +74,10 @@ const TITLE_EFFECT: Record<string, { tier: number; atk: number; hp: number }> = 
   // 출석
   attend7: { tier: 2, atk: 0.01, hp: 0.02 },
   attend28: { tier: 4, atk: 0.03, hp: 0.04 },
+  // 사상의 탑
+  tower10: { tier: 2, atk: 0.02, hp: 0.01 },
+  tower30: { tier: 4, atk: 0.04, hp: 0.03 },
+  tower50: { tier: 5, atk: 0.05, hp: 0.05 },
 };
 const effectOf = (id: string) => TITLE_EFFECT[id.startsWith("trad:") ? "trad" : id] ?? { tier: 1, atk: 0, hp: 0 };
 
@@ -104,6 +110,10 @@ export function achievements(i: AchievementInput): Achievement[] {
   // 출석 (한 번 얻으면 끊겨도 유지: 가장 멀리 간 출석일차)
   add("attend7", "꾸준한 발걸음", "출석 7일차에 도달한다 (하루도 빠지지 않고 7일)", "출석", i.attendanceBest ?? 0, 7);
   add("attend28", "한 달 개근", "출석 28일차에 도달한다 (하루도 빠지지 않고 28일)", "출석", i.attendanceBest ?? 0, 28);
+  // 사상의 탑 (가장 높이 깬 층)
+  add("tower10", "탑의 순례자", "사상의 탑 10층을 깬다", "탑", i.towerBest ?? 0, 10);
+  add("tower30", "탑의 현자", "사상의 탑 30층을 깬다", "탑", i.towerBest ?? 0, 30);
+  add("tower50", "탑의 정복자", "사상의 탑 50층을 깬다", "탑", i.towerBest ?? 0, 50);
   // 윤리 퀴즈 (공부한 만큼)
   const q = i.quiz ?? { answered: 0, bestStreak: 0, missions: 0, essayCorrect: 0, conquered: 0 };
   add("quiz1", "첫걸음", "윤리 퀴즈 첫 문제를 푼다", "퀴즈", q.answered, 1, false);

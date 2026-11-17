@@ -21,7 +21,7 @@ type Result = { ready: boolean; already: boolean; day: number; coins: number; ti
  * 로그인한 회원 · 관리자가 사이트에 들어오면 하루 한 번 자동 출석 (판정 · 지급은 서버) → 출석표 팝업.
  * 팝업은 브라우저마다 하루 한 번. 보상은 서버가 하루 한 번만 준다 (이미 출석했으면 '출석 완료'로 보여 줌).
  */
-export function AttendanceCheck() {
+export function AttendanceCheck({ headerArt = null }: { headerArt?: string | null }) {
   const router = useRouter();
   const [shown, setShown] = useState<Result | null>(null);
 
@@ -77,11 +77,11 @@ export function AttendanceCheck() {
   }, [router]);
 
   if (!shown?.state) return null;
-  return <AttendancePopup r={shown} a={shown.state} onClose={() => setShown(null)} />;
+  return <AttendancePopup r={shown} a={shown.state} headerArt={headerArt} onClose={() => setShown(null)} />;
 }
 
 /** 오늘의 출석 팝업: 도장 쾅 → 코인 → (7·28일차) 뽑기권 */
-function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onClose: () => void }) {
+function AttendancePopup({ r, a, headerArt, onClose }: { r: Result; a: AttendanceState; headerArt: string | null; onClose: () => void }) {
   const okRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     okRef.current?.focus();
@@ -93,8 +93,12 @@ function AttendancePopup({ r, a, onClose }: { r: Result; a: AttendanceState; onC
   return (
     <div className="att-backdrop fixed inset-0 z-[90] flex items-end justify-center bg-black/55 p-3 backdrop-blur-[2px] sm:items-center" role="dialog" aria-modal="true" aria-labelledby="att-pop-h" onClick={onClose} data-attend-popup>
       <div className="att-panel relative w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-surface p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* 은은한 빛 */}
-        <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(255,211,107,.35),transparent)]" aria-hidden />
+        {/* 머리 그림 (관리자가 올린 그림 · 없으면 은은한 빛) */}
+        {headerArt ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-cover bg-center [mask-image:linear-gradient(to_bottom,black_35%,transparent)] dark:opacity-40" style={{ backgroundImage: `url("${headerArt}")` }} aria-hidden />
+        ) : (
+          <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(255,211,107,.35),transparent)]" aria-hidden />
+        )}
         <div className="relative">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-[0.18em] text-muted">

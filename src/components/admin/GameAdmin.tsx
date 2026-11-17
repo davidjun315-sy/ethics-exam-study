@@ -11,6 +11,7 @@ import { PhilosopherCard } from "@/components/game/PhilosopherCard";
 import { DuelRulesForm } from "./DuelRulesForm";
 import { BattleArtPanel } from "./BattleArtPanel";
 import { BattleBgForm } from "./BattleBgForm";
+import { ArtSlotsForm } from "./ArtSlotsForm";
 
 const STATUS: Record<CandidateRow["status"], { label: string; tone: string }> = {
   ready: { label: "공개 중", tone: "bg-ok-soft text-ok" },
@@ -92,6 +93,7 @@ export function GameAdmin({ candidates, settings, freeDraws }: { candidates: Can
       <SettingsForm initial={settings} />
       <DuelRulesForm initial={settings.duel_rules} ready={settings.duel_rules_ready} />
       <BattleBgForm initial={settings.battle_bg} ready={settings.battle_bg_ready} />
+      <ArtSlotsForm initial={settings.art} ready={settings.art_ready} />
       {freeDraws && (
         <section className="card p-4">
           <h2 className="text-[15px] font-bold">최초 무료 뽑기</h2>

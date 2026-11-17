@@ -16,6 +16,7 @@ import { FusionTab } from "./FusionTab";
 import { BattleTab } from "./BattleTab";
 import { DuelTab } from "./DuelTab";
 import { StageTab } from "./StageTab";
+import { TowerTab } from "./TowerTab";
 import { HonorTab, TitleBadge } from "./HonorTab";
 
 export type Tab = "draw" | "collection" | "upgrade" | "fusion" | "battle" | "honor";
@@ -41,7 +42,9 @@ export function Coins({ value, className = "" }: { value: number; className?: st
 export const byStrength = (a: OwnedCard, b: OwnedCard) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level;
 
 /** 철학자 대난투: 다섯 탭이 같은 상태(코인·보유 카드)를 나눠 쓴다. 변경 후에는 서버에서 다시 읽는다 */
-export function GameApp({ initial, initialTab, initialBase, initialDetail }: { initial: GameState; initialTab: Tab; initialBase?: string | null; initialDetail?: string | null }) {
+export type ArenaMode = "stage" | "tower" | "quick" | "duel";
+
+export function GameApp({ initial, initialTab, initialBase, initialDetail, initialMode }: { initial: GameState; initialTab: Tab; initialBase?: string | null; initialDetail?: string | null; initialMode?: ArenaMode }) {
   const [state, setState] = useState(initial);
   const [tab, setTab] = useState<Tab>(initialTab);
   // 사상가 id (카드 상세). 주소로 받은 값은 도감에 있는 사상가일 때만
@@ -120,7 +123,7 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail }: { i
       ) : tab === "honor" ? (
         <HonorTab state={state} reload={reload} />
       ) : (
-        <ArenaTab state={state} reload={reload} goDraw={() => go("draw")} />
+        <ArenaTab state={state} reload={reload} goDraw={() => go("draw")} initialMode={initialMode} />
       )}
 
       {detail && (
@@ -432,11 +435,16 @@ export function gemStyle(r: OwnedCard["rarity"]): React.CSSProperties {
   return { ["--r1" as string]: c[0], ["--r2" as string]: c[1] };
 }
 
-/** 배틀 아레나: 도장깨기(내 카드 3장 vs 관 보스) · 빠른 대전(3 vs 3) · 카드 대전(턴제 카드 게임) */
-function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
-  const [mode, setMode] = useState<"stage" | "quick" | "duel">("stage");
+/** 배틀 아레나: 도장깨기(내 카드 3장 vs 관 보스) · 사상의 탑(기출 퀴즈로 오르는 탑) · 빠른 대전(3 vs 3) · 카드 대전(턴제 카드 게임) */
+function ArenaTab({ state, reload, goDraw, initialMode }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void; initialMode?: ArenaMode }) {
+  const [mode, setModeState] = useState<ArenaMode>(initialMode ?? "stage");
+  const setMode = (m: ArenaMode) => {
+    setModeState(m);
+    window.history.replaceState(null, "", `/quiz/game?tab=battle&mode=${m}`);
+  };
   const modes = [
     { key: "stage" as const, label: "도장깨기" },
+    { key: "tower" as const, label: "사상의 탑" },
     { key: "quick" as const, label: "빠른 대전" },
     { key: "duel" as const, label: "카드 대전" },
   ];
@@ -449,7 +457,7 @@ function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => P
             role="tab"
             aria-selected={mode === m.key}
             onClick={() => setMode(m.key)}
-            className={`flex-1 rounded-lg px-4 py-2 text-center text-sm transition-colors sm:flex-none ${mode === m.key ? "bg-surface font-semibold text-ink shadow-soft" : "text-muted hover:text-ink"}`}
+            className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-center text-[13px] transition-colors sm:flex-none sm:px-4 sm:text-sm ${mode === m.key ? "bg-surface font-semibold text-ink shadow-soft" : "text-muted hover:text-ink"}`}
           >
             {m.label}
           </button>
@@ -457,6 +465,8 @@ function ArenaTab({ state, reload, goDraw }: { state: GameState; reload: () => P
       </div>
       {mode === "stage" ? (
         <StageTab state={state} reload={reload} goDraw={goDraw} />
+      ) : mode === "tower" ? (
+        <TowerTab state={state} reload={reload} goDraw={goDraw} />
       ) : mode === "duel" ? (
         <DuelTab state={state} reload={reload} goDraw={goDraw} />
       ) : (

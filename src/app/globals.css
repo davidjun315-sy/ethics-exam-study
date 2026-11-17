@@ -855,3 +855,19 @@ body {
   .att-seal-in, .att-seal-in::after, .att-thud, .att-backdrop, .att-panel, .att-coin, .att-coin-fly, .att-ticket, .att-ticket::before { animation: none; }
   .att-coin-fly { display: none; }
 }
+
+/* ── 사상의 탑 ── */
+.tower-hit { animation: tower-hit .45s ease-out; }
+@keyframes tower-hit { 0%,100% { transform: none; filter: none; } 20% { transform: translateX(6px) rotate(1deg); filter: brightness(1.8); } 45% { transform: translateX(-4px); } 70% { transform: translateX(2px); } }
+.tower-shake { animation: tower-shake .4s ease-out; }
+@keyframes tower-shake { 0%,100% { transform: none; } 25% { transform: translateX(-5px); } 50% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
+.tower-float { animation: tower-float 1.2s ease-out forwards; pointer-events: none; }
+@keyframes tower-float { 0% { opacity: 0; transform: translateY(6px) scale(.8); } 15% { opacity: 1; transform: translateY(0) scale(1.15); } 100% { opacity: 0; transform: translateY(-34px) scale(1); } }
+.tower-window { animation: tower-window 3.2s ease-in-out infinite; }
+@keyframes tower-window { 0%,100% { opacity: .55; } 50% { opacity: 1; box-shadow: 0 0 8px #ffd98a; } }
+.tower-glow { animation: tower-glow 5s ease-in-out infinite; }
+@keyframes tower-glow { 0%,100% { opacity: .6; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tower-hit, .tower-shake, .tower-float, .tower-window, .tower-glow { animation: none; }
+  .tower-float { opacity: 1; }
+}

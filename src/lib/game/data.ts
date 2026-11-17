@@ -35,6 +35,7 @@ import {
   type SkillEffect,
 } from "./rules";
 import { suggestFor } from "./suggestions";
+import { cleanArt, type ArtSlotKey } from "./art-slots";
 
 /**
  * 철학자 대난투 서버 데이터.
@@ -50,6 +51,7 @@ const MESSAGES: Record<string, string> = {
   GAME_NO_CARDS: "아직 공개된 카드가 없습니다. 관리자가 카드 일러스트를 준비하면 열립니다.",
   GAME_NO_TICKET: "가진 뽑기권이 없습니다. 출석 7일차 · 28일차에 받을 수 있어요.",
   GAME_BAD_TICKET: "알 수 없는 뽑기권입니다.",
+  GAME_TOWER_NO_TRIES: "오늘 사상의 탑 도전 횟수를 다 썼어요. 내일 다시 오르세요.",
   GAME_NOT_OWNED: "보유하지 않은 카드이거나 이미 사용한 카드입니다.",
   GAME_MAX_LEVEL: "이미 최대 레벨입니다.",
   GAME_LEVEL_CHANGED: "다른 화면에서 이미 강화되었습니다. 새로고침 후 다시 시도하세요.",
@@ -101,6 +103,9 @@ export interface GameSettings {
   battle_bg_ready: boolean;
   /** 018: 강화 재료를 강화석 하나로 통일 */
   stones_unified: boolean;
+  /** 꾸미기 이미지 (칸 → 그림 주소, 027) */
+  art: Partial<Record<ArtSlotKey, string>>;
+  art_ready: boolean;
 }
 const DEFAULT_SETTINGS: GameSettings = {
   draw_cost: 100,
@@ -116,6 +121,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   battle_bg: {},
   battle_bg_ready: false,
   stones_unified: false,
+  art: {},
+  art_ready: false,
 };
 
 /**
@@ -150,7 +157,24 @@ export async function loadGameSettings(): Promise<GameSettings> {
     battle_bg: cleanBattleBg((d as { battle_bg?: unknown }).battle_bg),
     battle_bg_ready: Boolean(data && "battle_bg" in data),
     stones_unified: Boolean(data && "stones_unified" in data && (data as { stones_unified?: boolean }).stones_unified !== false),
+    art: cleanArt((d as { art?: unknown }).art),
+    art_ready: Boolean(data && "art" in data),
   };
+}
+
+export const GAME_027_ART_HINT = "꾸미기 이미지 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/027_game_tower.sql 을 실행하세요.";
+
+/** 관리자: 꾸미기 이미지 칸 저장 (url = null 이면 기본 그림으로) */
+export async function saveArt(key: ArtSlotKey, url: string | null) {
+  const db = getAdminClient();
+  const { data, error } = await db.from("game_settings").select("art").eq("id", 1).maybeSingle();
+  if (error) throw /art/.test(error.message) ? new GameError(GAME_027_ART_HINT, 503) : gameError(error.message);
+  const next = { ...cleanArt((data as { art?: unknown } | null)?.art) };
+  if (url) next[key] = url;
+  else delete next[key];
+  const { error: e2 } = await db.from("game_settings").upsert({ id: 1, art: next, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  if (e2) throw /art/.test(e2.message) ? new GameError(GAME_027_ART_HINT, 503) : gameError(e2.message);
+  invalidateContent();
 }
 
 /** 전장 배경을 고를 수 있는 분야 */
@@ -190,7 +214,7 @@ export async function saveDuelRules(rules: DuelRules) {
   invalidateContent();
 }
 
-export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready" | "stones_unified">) {
+export async function saveGameSettings(s: Omit<GameSettings, "dup_refund" | "duel_rules" | "duel_rules_ready" | "battle_bg" | "battle_bg_ready" | "stones_unified" | "art" | "art_ready">) {
   // 등급이 오르면 능력치도 반드시 오르도록
   const m = s.rarity_mult;
   if (!(m.common > 0 && m.rare > m.common && m.epic > m.rare && m.legendary > m.epic)) throw new GameError("등급 배율은 일반 < 희귀 < 영웅 < 전설 순으로 커야 합니다.");
@@ -342,6 +366,7 @@ export interface GameState {
     stonesUnified: boolean;
     duelRules: DuelRules;
     battleBg: Record<string, string>;
+    art: Partial<Record<ArtSlotKey, string>>;
   };
   cards: CardView[]; // 공개 사상가 (도감)
   owned: OwnedCard[]; // 보유 카드 한 장씩 (공개가 내려가도 일러스트가 있으면 계속 보유)
@@ -438,6 +463,13 @@ export async function getGameState(learner: string): Promise<GameState> {
     getQuizStats(learner),
     getAttendance(learner).catch(() => NO_ATTEND),
   ]);
+  // 사상의 탑 최고 층 (업적용 · 027 전이면 0)
+  const towerBest = await db
+    .from("game_tower_profiles")
+    .select("best_floor")
+    .eq("learner", learner)
+    .maybeSingle()
+    .then((r) => (r.error ? 0 : ((r.data as { best_floor: number } | null)?.best_floor ?? 0)));
   for (const r of [wallet, uc, col, prof, free]) if (r.error) throw gameError(r.error.message);
   const rows = (uc.data ?? []) as UserCardRow[];
   const missing = [...new Set(rows.map((r) => r.philosopher_id))].filter((id) => !cards.some((c) => c.philosopherId === id));
@@ -467,6 +499,7 @@ export async function getGameState(learner: string): Promise<GameState> {
     wins: p?.wins ?? 0,
     quiz: quizStats,
     attendanceBest: attendance.bestDay,
+    towerBest,
   });
   const titleRaw = (p as { title?: string | null } | null)?.title ?? null;
   return {
@@ -483,6 +516,7 @@ export async function getGameState(learner: string): Promise<GameState> {
       stonesUnified: settings.stones_unified,
       duelRules: settings.duel_rules,
       battleBg: settings.battle_bg,
+      art: settings.art,
     },
     cards,
     owned,
