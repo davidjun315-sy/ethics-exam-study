@@ -3,7 +3,7 @@
  * 관리자가 ChatGPT 로 그린 그림을 칸마다 올리면 그 자리에 쓰이고, 비어 있으면 기본(그라데이션) 그림이 나온다.
  * 그림은 game_settings.art (027) 에 칸 이름 → 주소로 저장.
  */
-export type ArtSlotKey = "tower-lobby" | "tower-t1" | "tower-t2" | "tower-t3" | "tower-t4" | "tower-boss" | "tower-result" | "home-hero" | "attend-header";
+export type ArtSlotKey = "tower-kind-1" | "tower-kind-2" | "tower-kind-3" | "tower-kind-4" | "tower-lobby" | "tower-t1" | "tower-t2" | "tower-t3" | "tower-t4" | "tower-boss" | "tower-result" | "home-hero" | "attend-header";
 
 export interface ArtSlot {
   key: ArtSlotKey;
@@ -12,7 +12,7 @@ export interface ArtSlot {
   where: string;
   group: "사상의 탑" | "메인 · 출석";
   /** 가로:세로 (미리보기 · 안내) */
-  ratio: "16:9" | "21:9" | "3:1";
+  ratio: "16:9" | "21:9" | "3:1" | "2:3";
   /** 올릴 때 줄이는 가장 긴 변 */
   maxSide: number;
   /** 기본 그림 (CSS 배경) */
@@ -24,7 +24,62 @@ export interface ArtSlot {
 const STYLE =
   "rich painterly cel-shaded 2D fantasy illustration matching a cute chibi mobile game, soft volumetric light, elegant muted palette, high detail but calm composition, no characters, no people, no text, no letters, no UI, no watermark";
 
+const TOWER_KIND = (look: string, sky: string) =>
+  `Tall vertical 2:3 illustration of a single majestic ten-story tower of philosophy: ${look}. Background: ${sky}. The whole tower is visible from the stone base to the tip of the roof, standing slightly LEFT of center; the RIGHT third of the image stays calm and uncluttered (open sky, soft mist) because game UI will be overlaid there. Warm glowing windows, cinematic lighting, depth and atmosphere, ${STYLE}.`;
+
 export const ART_SLOTS: ArtSlot[] = [
+  {
+    key: "tower-kind-1",
+    label: "탑 · 기초의 회랑 (1~10층)",
+    where: "사상의 탑 › 탑 고르기 카드 · 큰 탑 그림 (신전풍)",
+    group: "사상의 탑",
+    ratio: "2:3",
+    maxSide: 1600,
+    fallback: "linear-gradient(180deg,#0f1a36 0%,#2b3c72 60%,#6b6aa3 100%)",
+    prompt: TOWER_KIND(
+      "an ancient Greek academy style tower of white and honey-colored marble, rows of slender Ionic columns on every level, arched windows glowing warm gold, a triangular pediment roof with laurel carvings and a small glowing orb on top, broad marble stairs and a glowing gate at the base, olive trees around it",
+      "a serene twilight blue sky with soft drifting clouds and a pale full moon",
+    ),
+  },
+  {
+    key: "tower-kind-2",
+    label: "탑 · 논증의 계단 (11~20층)",
+    where: "사상의 탑 › 탑 고르기 카드 · 큰 탑 그림 (동양 누각)",
+    group: "사상의 탑",
+    ratio: "2:3",
+    maxSide: 1600,
+    fallback: "linear-gradient(180deg,#1c1330 0%,#5a3558 60%,#c27a63 100%)",
+    prompt: TOWER_KIND(
+      "a ten-tiered East Asian pagoda pavilion with red lacquered pillars, gracefully upturned curved eaves and dark tile roofs on every tier, lattice windows glowing warm amber, a bronze finial with stacked rings on top, a stone base with stone lanterns and a wide stairway",
+      "a sunset sky in orange, rose and violet with a large soft setting sun, layered distant mountains in mist, a few birds flying",
+    ),
+  },
+  {
+    key: "tower-kind-3",
+    label: "탑 · 비판의 첨탑 (21~30층)",
+    where: "사상의 탑 › 탑 고르기 카드 · 큰 탑 그림 (고딕 첨탑)",
+    group: "사상의 탑",
+    ratio: "2:3",
+    maxSide: 1600,
+    fallback: "linear-gradient(180deg,#0b0a22 0%,#2a1f57 60%,#5b3f86 100%)",
+    prompt: TOWER_KIND(
+      "a dark gothic cathedral tower of grey-violet stone with pointed lancet windows glowing violet and gold, flying buttresses, carved gargoyles, and a tall needle spire flanked by two smaller pinnacles",
+      "a dramatic stormy purple night sky with swirling clouds and a distant bolt of lightning",
+    ),
+  },
+  {
+    key: "tower-kind-4",
+    label: "탑 · 성찰의 정상 (31층~)",
+    where: "사상의 탑 › 탑 고르기 카드 · 큰 탑 그림 (천문대)",
+    group: "사상의 탑",
+    ratio: "2:3",
+    maxSide: 1600,
+    fallback: "linear-gradient(180deg,#03050f 0%,#0f1840 60%,#253a7a 100%)",
+    prompt: TOWER_KIND(
+      "a celestial observatory tower of moonlit white marble with thin gold bands, round porthole windows glowing pale blue, a domed roof crowned by a large golden armillary sphere, small crystal stones floating around it",
+      "a deep night sky filled with dense stars and a flowing aurora in green, cyan and violet",
+    ),
+  },
   {
     key: "tower-lobby",
     label: "탑 입구 (대표 그림)",
@@ -125,6 +180,9 @@ export function cleanArt(v: unknown): Partial<Record<ArtSlotKey, string>> {
   if (!v || typeof v !== "object") return {};
   return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k, u]) => (ART_SLOT_KEYS as string[]).includes(k) && typeof u === "string" && /^https?:\/\//.test(u))) as Partial<Record<ArtSlotKey, string>>;
 }
+
+/** 탑 종류 그림 칸 */
+export const towerKindSlot = (tier: 1 | 2 | 3 | 4): ArtSlotKey => `tower-kind-${tier}` as ArtSlotKey;
 
 /** 탑 층 배경 칸 */
 export const towerSlotFor = (floor: number): ArtSlotKey => (floor % 10 === 0 ? "tower-boss" : floor <= 10 ? "tower-t1" : floor <= 20 ? "tower-t2" : floor <= 30 ? "tower-t3" : "tower-t4");

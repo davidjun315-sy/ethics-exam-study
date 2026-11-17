@@ -142,7 +142,7 @@ export function TowerScene({
           <circle cx={compact ? 58 : 62} cy={compact ? 46 : 64} r={compact ? 13 : 17} fill="#fffaf0" opacity=".92" />
         </>
       )}
-      <SkyExtras tier={tier} H={H} compact={compact} id={id} />
+      <SkyExtras tier={tier} compact={compact} id={id} />
 
       {/* 먼 산 */}
       <path d={`M0 ${H - 150} L46 ${H - 196} L96 ${H - 160} L148 ${H - 214} L208 ${H - 168} L262 ${H - 206} L318 ${H - 166} L360 ${H - 188} L360 ${H} L0 ${H} Z`} fill={p.mount} opacity=".55" />
@@ -251,7 +251,7 @@ export function TowerScene({
 }
 
 /** 하늘 꾸밈: 구름 · 노을 해와 새 · 폭풍과 번개 · 오로라 */
-function SkyExtras({ tier, H, compact, id }: { tier: TowerTier; H: number; compact: boolean; id: string }) {
+function SkyExtras({ tier, compact, id }: { tier: TowerTier; compact: boolean; id: string }) {
   if (tier === 1)
     return (
       <g opacity=".85">
@@ -501,7 +501,7 @@ function Reward({ f, x, y, done, epicTicketGiven, hide }: { f: number; x: number
 /**
  * 탑 화면의 큰 탑: 지금 구간(10층) + 내 위치 표시가 층을 따라 올라감 + 지금 층 상대
  */
-export function TowerMap({
+function TowerDrawn({
   floor,
   cleared,
   best,
@@ -571,6 +571,129 @@ export function TowerMap({
           <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#ffd36b] px-1.5 text-[9px] font-black leading-[14px] text-[#3a2600] shadow">{mode === "run" ? "나" : "기록"}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+type MapProps = {
+  floor: number;
+  cleared: number;
+  best: number;
+  from?: number | null;
+  team: Pick<TeamCard, "cardId" | "name" | "artUrl" | "battleArtUrl">[];
+  enemyName?: string | null;
+  mode: "run" | "lobby";
+  epicTicketGiven?: boolean;
+  /** 관리자가 올린 탑 그림 (탑 종류별 · 있으면 그림 + 층 사다리, 없으면 그린 탑) */
+  kindArt?: Partial<Record<TowerTier, string | undefined>>;
+};
+
+/** 탑 화면의 큰 탑: 올린 그림이 있으면 그림 + 층 사다리, 없으면 SVG 로 그린 탑 */
+export function TowerMap({ kindArt, ...p }: MapProps) {
+  const art = kindArt?.[tierOfFloor(Math.max(1, p.floor))];
+  return art ? <TowerIllustrated art={art} {...p} floor={Math.max(1, p.floor)} epicTicketGiven={p.epicTicketGiven ?? false} /> : <TowerDrawn {...p} />;
+}
+
+/**
+ * 그림이 있는 탑: ChatGPT 로 만든 탑 그림을 크게 깔고, 오른쪽에 반투명 유리 층 사다리(10칸).
+ * 층 번호 · 보상 · 깬 층 · 지금 층(상대) · 최고 기록 · 내 위치(층을 따라 올라감)를 사다리에 표시.
+ */
+function TowerIllustrated({
+  art,
+  floor,
+  cleared,
+  best,
+  from,
+  team,
+  enemyName,
+  mode,
+  epicTicketGiven,
+}: {
+  art: string;
+  floor: number;
+  cleared: number;
+  best: number;
+  from?: number | null;
+  team: Pick<TeamCard, "cardId" | "name" | "artUrl" | "battleArtUrl">[];
+  enemyName?: string | null;
+  mode: "run" | "lobby";
+  epicTicketGiven: boolean;
+}) {
+  const lo = Math.floor((floor - 1) / 10) * 10 + 1;
+  const floors = Array.from({ length: 10 }, (_, i) => lo + 9 - i); // 위 → 아래
+  // 사다리 안에서 층 가운데 (위에서부터 %)
+  const pct = (f: number) => ((lo + 9 - f) / 10) * 100 + 5;
+  const start = from && from !== floor ? (from >= lo ? pct(from) : 104) : pct(floor);
+  const [top, setTop] = useState(start);
+  useEffect(() => {
+    const t = setTimeout(() => setTop(pct(floor)), 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floor]);
+  const climbing = Math.abs(top - pct(floor)) > 0.1;
+  const lead = team[0];
+  const showMe = mode === "run" || best > 0;
+
+  return (
+    <div className="relative mx-auto aspect-[2/3] w-full max-w-[420px] select-none overflow-hidden rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,.6)] ring-1 ring-white/10" data-tower-map data-tower-illustrated>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={art} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+      <div className="absolute inset-y-0 right-0 w-[60%] bg-gradient-to-l from-black/55 via-black/25 to-transparent" aria-hidden />
+      <div className="pointer-events-none absolute right-3 top-2.5 text-right text-[10px] font-bold tracking-wider text-white/80 drop-shadow">{lo + 10}층부터 다음 탑 ▲</div>
+
+      {/* 층 사다리 */}
+      <div className="absolute bottom-[4%] right-[3%] top-[8%] w-[46%]">
+        <ol className="flex h-full flex-col gap-[1.2%]" aria-label={`${lo}~${lo + 9}층`}>
+          {floors.map((f) => {
+            const here = f === floor && mode === "run";
+            const done = f <= cleared && !here;
+            const boss = isBossFloor(f);
+            const r = floorReward(f, epicTicketGiven);
+            const isBest = mode === "lobby" && f === best;
+            return (
+              <li
+                key={f}
+                className={`flex min-h-0 flex-1 items-center gap-1.5 rounded-lg border px-2 text-[11px] backdrop-blur-[3px] transition-colors ${
+                  here ? "border-[#ffd36b] bg-[#ffd36b]/25 shadow-[0_0_14px_rgba(255,211,107,.55)]" : isBest ? "border-[#ffd36b]/70 bg-black/35" : boss ? "border-[#ff8a7a]/50 bg-[#5c1a26]/45" : done ? "border-white/15 bg-white/10" : "border-white/10 bg-black/30"
+                }`}
+                data-floor={f}
+              >
+                <span className={`w-6 shrink-0 font-black tabular-nums ${here ? "text-[#ffe9a8]" : done ? "text-white/70" : "text-white"}`}>{f}</span>
+                {boss && <span className="shrink-0 text-[10px]">👑</span>}
+                <span className="min-w-0 flex-1 truncate text-right font-semibold">
+                  {here && enemyName ? (
+                    <span className="text-white">VS {enemyName}</span>
+                  ) : isBest ? (
+                    <span className="text-[#ffe9a8]">🏁 최고</span>
+                  ) : done ? (
+                    <span className="text-[#9fe0c0]">✓</span>
+                  ) : (
+                    <span className="text-[#ffe9a8]">
+                      🪙{r.coins}
+                      {r.stones > 0 && <span className="ml-1 text-[#bfe3ff]">💎{r.stones}</span>}
+                      {r.ticket && <span className="ml-1">🎟</span>}
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        {/* 내 위치 */}
+        {showMe && (
+          <div className="absolute -left-12 z-10 -translate-y-1/2 transition-[top] duration-[1000ms] ease-[cubic-bezier(.3,.8,.3,1)]" style={{ top: `${top}%` }} data-tower-me>
+            <span className={`relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-[#ffd36b] bg-[#1a2234] shadow-[0_0_16px_rgba(255,211,107,.7)] ${climbing ? "tower-hop" : ""}`}>
+              {lead?.battleArtUrl || lead?.artUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={(lead.battleArtUrl ?? lead.artUrl)!} alt="" className={`h-full w-full ${lead.battleArtUrl ? "translate-y-[22%] scale-[1.6] object-contain object-top" : "object-cover object-[center_18%]"}`} />
+              ) : (
+                <span className="text-xs font-black text-white">나</span>
+              )}
+            </span>
+            <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#ffd36b] px-1.5 text-[9px] font-black leading-[14px] text-[#3a2600] shadow">{mode === "run" ? "나" : "기록"}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

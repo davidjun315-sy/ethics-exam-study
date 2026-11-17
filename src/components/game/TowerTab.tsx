@@ -5,7 +5,7 @@ import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Swords, Timer,
 import type { GameState } from "@/lib/game/data";
 import type { RunView, TowerAnswerResult, TowerHint, TowerOverview } from "@/lib/game/tower-data";
 import { isBossFloor, QUICK_SEC, TIER_START, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
-import { slotOf, towerSlotFor, type ArtSlotKey } from "@/lib/game/art-slots";
+import { slotOf, towerKindSlot, towerSlotFor, type ArtSlotKey } from "@/lib/game/art-slots";
 import { quizApi } from "@/lib/quiz/client";
 import { PracticeInput, type PublicPractice } from "@/components/quiz/PracticeParts";
 import { SolutionView } from "@/components/quiz/SolutionView";
@@ -249,11 +249,12 @@ function TowerMain({
               )}
             </>
           ) : null}
-          {!run && <TowerPicker ov={ov} pick={pick} onPick={setPick} />}
+          {!run && <TowerPicker ov={ov} pick={pick} onPick={setPick} art={state.settings.art} />}
           <TowerMap
             floor={run ? s!.floor : Math.min(TIER_START[pick] + 9, Math.max(TIER_START[pick], ov.best))}
             cleared={run ? (run.choices ? s!.floor : run.cleared) : ov.best}
             epicTicketGiven={ov.epicTicketGiven}
+            kindArt={{ 1: state.settings.art?.["tower-kind-1"], 2: state.settings.art?.["tower-kind-2"], 3: state.settings.art?.["tower-kind-3"], 4: state.settings.art?.["tower-kind-4"] }}
             best={Math.max(ov.best, run?.cleared ?? 0)}
             from={climbFrom}
             team={run ? run.team : teamCards}
@@ -343,7 +344,7 @@ function TowerMain({
 }
 
 /** 탑 고르기: 구간마다 따로 들어가는 네 개의 탑 (그림 · 문제 · 보상 · 잠김) */
-function TowerPicker({ ov, pick, onPick }: { ov: TowerOverview; pick: TowerTier; onPick: (t: TowerTier) => void }) {
+function TowerPicker({ ov, pick, onPick, art }: { ov: TowerOverview; pick: TowerTier; onPick: (t: TowerTier) => void; art: GameState["settings"]["art"] }) {
   return (
     <div className="space-y-1.5" data-tower-picker>
       <p className="text-[11px] font-bold tracking-wider text-white/75">들어갈 탑을 고르세요</p>
@@ -364,10 +365,15 @@ function TowerPicker({ ov, pick, onPick }: { ov: TowerOverview; pick: TowerTier;
               className={`group relative overflow-hidden rounded-2xl text-left transition ${on ? "ring-2 ring-[#ffd36b] shadow-[0_0_24px_rgba(255,211,107,.35)]" : "ring-1 ring-white/15 hover:ring-white/40"} ${open ? "" : "cursor-not-allowed"}`}
               data-tower-tier={t}
             >
-              <div className="h-24 overflow-hidden sm:h-28">
+              <div className="relative h-24 overflow-hidden sm:h-28">
+                {art?.[towerKindSlot(t)] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={art[towerKindSlot(t)]} alt="" className={`absolute inset-0 h-full w-full object-cover object-[35%_30%] ${open ? "" : "opacity-55 grayscale-[.6]"}`} />
+                ) : (
                 <div className="-mt-[12%]">
                   <TowerScene floors={Array.from({ length: 5 }, (_, i) => from + i * 2 + (i === 4 ? 1 : 0))} stateOf={(f) => (f <= ov.best ? "done" : "next")} tier={t} compact showRewards={false} dim={!open} />
                 </div>
+                )}
               </div>
               <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/60 to-transparent px-2 pb-4 pt-1.5">
                 <span className="block text-[10px] font-bold text-white/75">{ti.floors}</span>

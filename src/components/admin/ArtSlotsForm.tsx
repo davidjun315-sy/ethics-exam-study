@@ -6,7 +6,7 @@ import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
 import { ART_SLOTS, type ArtSlotKey } from "@/lib/game/art-slots";
 
-const ASPECT: Record<string, string> = { "16:9": "aspect-video", "21:9": "aspect-[21/9]", "3:1": "aspect-[3/1]" };
+const ASPECT: Record<string, string> = { "16:9": "aspect-video", "21:9": "aspect-[21/9]", "3:1": "aspect-[3/1]", "2:3": "aspect-[2/3] max-h-64 mx-auto" };
 
 /**
  * 관리자: 꾸미기 이미지 칸 (사상의 탑 배경 · 메인 배너 · 출석 팝업 등).
