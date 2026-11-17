@@ -397,6 +397,34 @@ if (failed) {
   check("탑 4구간: 서술형(완전 기출)도 · 한 층에 하나까지 · AI 채점 안 되면 빼기", Array.from({ length: 1 }, () => true).every(() => pick(35, { used: ["e2", "e3", "e3m", "hard2"] }) === "full") && pick(35, { used: ["e2", "e3", "e3m", "hard2"], essays: 1 }) !== "full" && pick(35, { used: ["e2", "e3", "e3m", "hard2"], essayOk: false }) !== "full");
   check("탑: 자기평가 문제(서술형 부분 기출)는 내지 않음", [3, 15, 25, 35].every((f) => pick(f, { used: pool.filter((x) => x.id !== "selfgraded").map((x) => x.id) }) !== "selfgraded"));
   check("탑: 그 사상가 문제가 없으면 같은 구간 다른 문제", pick(3, { names: ["공자"], used: ["other1"] }) !== undefined);
+  // 같은 기출에서 나온 문제 묶음은 겹치지 않게 · 최근 푼 기출은 뒤로
+  {
+    const grp = [
+      it("q1a", { difficulty: 1, group: "Q1" }),
+      it("q1b", { difficulty: 1, group: "Q1" }),
+      it("q1c", { kind: "practice", difficulty: 1, group: "Q1" }),
+      it("q2a", { difficulty: 1, group: "Q2" }),
+      it("q3a", { kind: "practice", difficulty: 1, group: "Q3" }),
+    ];
+    const seq: string[] = [];
+    const usedG = new Set<string>();
+    for (let k = 0; k < 3; k++) {
+      const x = T.pickItem(grp, { floor: 2, names: ["칸트"], used: new Set(seq), usedGroups: usedG, essayOk: false, essaysThisFloor: 0, seed: 11 + k })!;
+      seq.push(x.id);
+      usedG.add(x.group!);
+    }
+    check("탑: 한 도전에서 같은 기출 묶음은 다 돌기 전까지 다시 안 나옴", new Set(seq.map((id) => grp.find((g) => g.id === id)!.group)).size === 3, seq.join(","));
+    const fourth = T.pickItem(grp, { floor: 2, names: ["칸트"], used: new Set(seq), usedGroups: usedG, essayOk: false, essaysThisFloor: 0, seed: 99 });
+    check("탑: 새 기출이 바닥나면 같은 기출의 다른 문제", fourth !== null && !seq.includes(fourth.id));
+    const fresh = Array.from({ length: 20 }, (_, k) => T.pickItem(grp, { floor: 2, names: ["칸트"], used: new Set(), usedGroups: new Set(), recent: new Set(["Q1", "Q2"]), essayOk: false, essaysThisFloor: 0, seed: k })!.group);
+    check("탑: 최근에 푼 기출보다 안 푼 기출 먼저", fresh.every((g) => g === "Q3"));
+  }
+  {
+    const many = Array.from({ length: 30 }, (_, k) => ({ philosopherId: `p${k}` }));
+    const firsts = new Set(Array.from({ length: 40 }, (_, k) => T.enemyForFloor(many, 5, k)!.philosopherId));
+    const bosses = new Set(Array.from({ length: 40 }, (_, k) => T.enemyForFloor(many, 10, k)!.philosopherId));
+    check("탑 적: 도전마다 같은 층이라도 상대가 바뀜 (빈출 순서 근처) · 보스는 그대로", firsts.size >= 4 && [...firsts].every((id) => Math.abs(Number(id.slice(1)) - 4) <= 3) && bosses.size === 1);
+  }
   // 적 순서: 보스층은 빈출 상위
   const ph = ["a", "b", "c", "d", "e"].map((philosopherId) => ({ philosopherId }));
   check("탑 적: 보스층은 가장 자주 나온 사상가부터", T.enemyForFloor(ph, 10)!.philosopherId === "e" && T.enemyForFloor(ph, 20)!.philosopherId === "d" && T.enemyForFloor(ph, 1)!.philosopherId === "a");

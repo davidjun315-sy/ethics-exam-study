@@ -196,6 +196,8 @@ export interface TowerItem {
   philosophers: string[];
   /** 다른 회원 정답률 (풀이 3번 이상일 때만, 0~1) */
   rate: number | null;
+  /** 같은 기출에서 나온 문제 묶음 (원본 기출 id · 없으면 문제 id). 한 기출에서 문제가 10개 가까이 나오므로 묶음 단위로 겹치지 않게 */
+  group?: string;
 }
 
 /** 이 구간에 맞는 문제인가 (서술형은 4구간 완전 기출만 · AI 채점이 될 때) */
@@ -214,11 +216,23 @@ export function fitsTier(it: TowerItem, tier: TowerTier, essayOk: boolean): bool
  */
 export function pickItem(
   items: TowerItem[],
-  o: { floor: number; names: string[]; used: Set<string>; essayOk: boolean; essaysThisFloor: number; seed: number },
+  o: {
+    floor: number;
+    names: string[];
+    used: Set<string>;
+    essayOk: boolean;
+    essaysThisFloor: number;
+    seed: number;
+    /** 이번 도전에서 이미 나온 기출 묶음 */
+    usedGroups?: Set<string>;
+    /** 최근 며칠 사이 이 학습자가 푼 기출 묶음 (다른 도전 · 퀴즈 포함) */
+    recent?: Set<string>;
+  },
 ): TowerItem | null {
   const tier = tierOf(o.floor);
   const boss = isBossFloor(o.floor);
   const essayCap = boss ? 2 : 1;
+  const g = (it: TowerItem) => it.group ?? it.id;
   const free = items.filter((it) => !o.used.has(it.id) && (it.auto || o.essaysThisFloor < essayCap));
   const mine = (it: TowerItem) => it.philosophers.some((p) => o.names.includes(p));
   const rank = (list: TowerItem[]) =>
@@ -229,25 +243,35 @@ export function pickItem(
       }
       return hash(`${o.seed}:${a.id}`) - hash(`${o.seed}:${b.id}`);
     });
-  for (let t = tier; t >= 1; t--) {
-    const fit = free.filter((it) => fitsTier(it, t as TowerTier, o.essayOk));
-    const own = fit.filter(mine);
-    if (own.length) return rank(own)[0];
-    if (t === tier && fit.length) {
+  const choose = (pool: TowerItem[]): TowerItem | null => {
+    for (let t = tier; t >= 1; t--) {
+      const fit = pool.filter((it) => fitsTier(it, t as TowerTier, o.essayOk));
+      const own = fit.filter(mine);
+      if (own.length) return rank(own)[0];
       // 사상가 문제가 없으면 같은 구간 문제 (적 사상가와 무관해도 난이도는 지킨다)
-      return rank(fit)[0];
+      if (t === tier && fit.length) return rank(fit)[0];
     }
-  }
+    return null;
+  };
+  // 새 기출 우선: 이번 도전에도 최근에도 안 나온 기출 → 이번 도전에 안 나온 기출 → 아무 문제
+  const notThisRun = free.filter((it) => !o.usedGroups?.has(g(it)));
+  const fresh = notThisRun.filter((it) => !o.recent?.has(g(it)));
+  const hit = choose(fresh) ?? choose(notThisRun) ?? choose(free);
+  if (hit) return hit;
   const any = free.filter((it) => it.auto);
   return any.length ? rank(any)[0] : null;
 }
 
 /** 이 층의 적: 빈출 순으로 쌓은 사상가 목록에서 층 번호대로 (위로 갈수록 자주 나오는 사상가 · 끝나면 처음부터 다시) */
-export function enemyForFloor<T extends { philosopherId: string }>(byFreqAsc: T[], floor: number): T | null {
+export function enemyForFloor<T extends { philosopherId: string }>(byFreqAsc: T[], floor: number, seed?: number): T | null {
   if (!byFreqAsc.length) return null;
   // 낮은 층 = 덜 나온 사상가, 보스층 = 자주 나온 사상가
   if (isBossFloor(floor)) return byFreqAsc[byFreqAsc.length - 1 - ((floor / 10 - 1) % byFreqAsc.length)];
-  return byFreqAsc[(floor - 1 - Math.floor(floor / 10)) % byFreqAsc.length];
+  const base = (floor - 1 - Math.floor(floor / 10)) % byFreqAsc.length;
+  if (seed === undefined) return byFreqAsc[base];
+  // 도전마다 다른 상대: 빈출 순서 근처(±3)에서 고름 → 난이도 흐름은 그대로, 같은 층이라도 매번 다른 사상가
+  const off = (hash(`${seed}:enemy:${floor}`) % 7) - 3;
+  return byFreqAsc[Math.min(byFreqAsc.length - 1, Math.max(0, base + off))];
 }
 
 export function hash(s: string): number {

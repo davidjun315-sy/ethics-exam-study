@@ -42,14 +42,14 @@ const missing027 = (m: string) => /game_tower|schema cache|does not exist|Could 
 // ---------------------------------------------------------------------
 // 문제 후보 (승인된 문제 + 다른 회원 정답률) · 1시간마다 새로
 // ---------------------------------------------------------------------
-type ItemRow = { id: string; kind: TowerItem["kind"]; origin: string; grading: "auto" | "self"; format: string; payload: { mode?: string } | null; difficulty: 1 | 2 | 3; philosopher_names: string[] | null };
+type ItemRow = { id: string; question_id: string | null; kind: TowerItem["kind"]; origin: string; grading: "auto" | "self"; format: string; payload: { mode?: string } | null; difficulty: 1 | 2 | 3; philosopher_names: string[] | null };
 
 async function buildTowerItems(): Promise<TowerItem[]> {
   const db = getAdminClient();
   const since = new Date(Date.now() - 180 * 864e5).toISOString();
   const [rows, attempts] = await Promise.all([
     fetchAll<ItemRow>((from, to) =>
-      db.from("quiz_items").select("id, kind, origin, grading, format, payload, difficulty, philosopher_names").eq("status", "approved").order("id").range(from, to),
+      db.from("quiz_items").select("id, question_id, kind, origin, grading, format, payload, difficulty, philosopher_names").eq("status", "approved").order("id").range(from, to),
     ),
     fetchAll<{ item_id: string; result: string }>((from, to) => db.from("quiz_attempts").select("item_id, result").gte("created_at", since).order("id").range(from, to)).catch(() => []),
   ]);
@@ -71,6 +71,7 @@ async function buildTowerItems(): Promise<TowerItem[]> {
       auto: Boolean(practiceAuto) || r.grading === "auto",
       philosophers: r.philosopher_names ?? [],
       rate: s && s.n >= 3 ? s.ok / s.n : null,
+      group: r.question_id ?? r.id,
     };
   });
 }
@@ -96,6 +97,8 @@ export interface TeamCard {
 interface Stored extends RunState {
   enemyId: string | null;
   used: string[];
+  /** 이번 도전에서 나온 기출 묶음 (예전 도전엔 없음 → used 로 계산) */
+  usedQ?: string[];
   essays: number;
   seed: number;
 }
@@ -260,15 +263,31 @@ async function enemyNames(enemyId: string | null): Promise<string[]> {
   return c ? [c.name] : [];
 }
 
-/** 다음 문제 정하기 (없으면 null → 이 층은 문제 없이 통과시키지 않고 도전 끝) */
-async function serveNext(s: Stored, entered = true): Promise<{ current: Current | null; state: Stored }> {
+/** 최근 3일 동안 이 학습자가 푼 기출 묶음 (퀴즈 · 탑 모두) → 다른 도전에서도 새 기출이 먼저 나오게 */
+async function recentGroups(learner: string, byId: Map<string, TowerItem>): Promise<Set<string>> {
+  const since = new Date(Date.now() - 3 * 864e5).toISOString();
+  const { data } = await getAdminClient().from("quiz_progress").select("item_id").eq("learner", learner).gte("last_at", since).limit(2000);
+  const out = new Set<string>();
+  for (const r of (data ?? []) as { item_id: string }[]) {
+    const it = byId.get(r.item_id);
+    out.add(it?.group ?? r.item_id);
+  }
+  return out;
+}
+
+/** 다음 문제 정하기: 이번 도전에 안 나온 기출 → 최근에 안 푼 기출 우선 (없으면 null → 도전 끝) */
+async function serveNext(learner: string, s: Stored, entered = true): Promise<{ current: Current | null; state: Stored }> {
   const [items, names] = await Promise.all([towerItems(), enemyNames(s.enemyId)]);
-  const it = pickItem(items, { floor: s.floor, names, used: new Set(s.used), essayOk: isGeminiConfigured(), essaysThisFloor: s.essays, seed: s.seed + s.answered });
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const usedQ = s.usedQ ?? [...new Set(s.used.map((id) => byId.get(id)?.group ?? id))];
+  const recent = await recentGroups(learner, byId).catch(() => new Set<string>());
+  const it = pickItem(items, { floor: s.floor, names, used: new Set(s.used), usedGroups: new Set(usedQ), recent, essayOk: isGeminiConfigured(), essaysThisFloor: s.essays, seed: s.seed + s.answered });
   if (!it) return { current: null, state: s };
   const essay = !it.auto;
+  const g = it.group ?? it.id;
   return {
     current: { itemId: it.id, servedAt: new Date().toISOString(), essay, hint: null, entered },
-    state: { ...s, used: [...s.used, it.id].slice(-400), essays: s.essays + (essay ? 1 : 0) },
+    state: { ...s, used: [...s.used, it.id].slice(-400), usedQ: (usedQ.includes(g) ? usedQ : [...usedQ, g]).slice(-400), essays: s.essays + (essay ? 1 : 0) },
   };
 }
 
@@ -336,7 +355,7 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   });
   const enemies = await enemyOrder();
   const seed = hash(`${learner}:${Date.now()}`);
-  const first: Stored = { ...startState(team.reduce((s, c) => s + c.hp, 0)), enemyId: enemyForFloor(enemies, 1)?.philosopherId ?? null, used: [], essays: 0, seed };
+  const first: Stored = { ...startState(team.reduce((s, c) => s + c.hp, 0)), enemyId: enemyForFloor(enemies, 1, seed)?.philosopherId ?? null, used: [], usedQ: [], essays: 0, seed };
   const max = triesFor(Boolean(att?.ready && att.checkedToday));
   const { data, error } = await getAdminClient().rpc("game_tower_start", { p_learner: learner, p_day: kstDay(), p_max: max, p_team: team, p_state: first });
   if (error) {
@@ -345,7 +364,7 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   }
   const run = (await loadRun(learner, (data as { id: string }).id))!;
   if ((data as { resumed: boolean }).resumed || run.current) return toView(run);
-  const n = await serveNext(run.state, false);
+  const n = await serveNext(learner, run.state, false);
   if (!n.current) throw new GameError("탑에 낼 문제가 아직 없습니다. 관리자가 윤리 퀴즈 문제를 공개하면 열립니다.", 409);
   return toView(await saveRun(run, { state: n.state, current: n.current }));
 }
@@ -419,7 +438,7 @@ export async function answerTower(learner: string, runId: string, itemId: string
   } else if (out.dead) {
     patch = { state, current: null, choices: null, status: "over" };
   } else {
-    const n = await serveNext(state);
+    const n = await serveNext(learner, state);
     state = n.state;
     patch = n.current ? { state, current: n.current } : { state, current: null, status: "over" };
   }
@@ -449,8 +468,8 @@ export async function chooseTowerBuff(learner: string, runId: string, buff: Buff
   if (!run.choices?.includes(buff)) throw new GameError("고를 수 없는 강화입니다.", 409);
   const enemies = await enemyOrder();
   const up = nextFloor(applyBuff(run.state, buff));
-  let state: Stored = { ...run.state, ...up, enemyId: enemyForFloor(enemies, up.floor)?.philosopherId ?? null, essays: 0 };
-  const n = await serveNext(state, false);
+  let state: Stored = { ...run.state, ...up, enemyId: enemyForFloor(enemies, up.floor, run.state.seed)?.philosopherId ?? null, essays: 0 };
+  const n = await serveNext(learner, state, false);
   state = n.state;
   return toView(await saveRun(run, n.current ? { state, current: n.current, choices: null } : { state, current: null, choices: null, status: "over" }));
 }
