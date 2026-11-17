@@ -49,7 +49,8 @@ export const GAME_009_HINT = "카드 합성·무료 뽑기용 업데이트가 �
 const MESSAGES: Record<string, string> = {
   GAME_NOT_ENOUGH_COINS: "코인이 부족합니다. 윤리 퀴즈를 풀어 코인을 모아 보세요.",
   GAME_NO_CARDS: "아직 공개된 카드가 없습니다. 관리자가 카드 일러스트를 준비하면 열립니다.",
-  GAME_NO_TICKET: "가진 뽑기권이 없습니다. 출석 7일차 · 28일차에 받을 수 있어요.",
+  GAME_NO_TICKET: "가진 뽑기권이 없습니다. 출석 7 · 14 · 21 · 28일차에 받을 수 있어요.",
+  GAME_BAD_PICK: "후보에 없는 카드입니다. 새로고침해 주세요.",
   GAME_BAD_TICKET: "알 수 없는 뽑기권입니다.",
   GAME_TOWER_NO_TRIES: "오늘 사상의 탑 도전 횟수를 다 썼어요. 내일 다시 오르세요.",
   GAME_NOT_OWNED: "보유하지 않은 카드이거나 이미 사용한 카드입니다.",
@@ -394,25 +395,35 @@ export interface GameState {
 }
 
 // ---------------------------------------------------------------------
-// 출석 · 확정 뽑기권 (026)
+// 출석 · 카드 보상 (026 · 029)
 // ---------------------------------------------------------------------
+const NO_TICKETS: Record<TicketKind, number> = { normal10: 0, rare_pick: 0, rare10: 0, epic_pick: 0, rare: 0, epic: 0 };
 export interface AttendanceState extends AttendanceView {
   ready: boolean;
   tickets: Record<TicketKind, number>;
+  /** 029 (7 · 14 · 21 · 28일차 카드 보상) 적용 여부 */
+  rewardsReady: boolean;
 }
-const NO_ATTEND: AttendanceState = { ready: false, checkedToday: false, day: 0, next: { day: 1, coins: 10, ticket: null }, rarePending: false, bestDay: 0, tickets: { rare: 0, epic: 0 } };
+const NO_ATTEND: AttendanceState = { ready: false, rewardsReady: false, checkedToday: false, day: 0, next: { day: 1, coins: 10, ticket: null }, claimed: [], bestDay: 0, tickets: { ...NO_TICKETS } };
 
 export async function getAttendance(learner: string): Promise<AttendanceState> {
   const db = getAdminClient();
-  const [st, tk] = await Promise.all([
-    db.from("game_attendance").select("last_day, cycle_day, best_day, rare_pending").eq("learner", learner).maybeSingle(),
+  const [st0, tk] = await Promise.all([
+    db.from("game_attendance").select("last_day, cycle_day, best_day, claimed").eq("learner", learner).maybeSingle(),
     db.from("game_tickets").select("kind, count").eq("learner", learner),
   ]);
+  // 029 전이면 claimed 열이 없음 → 예전 열만
+  let st = st0 as { data: unknown; error: { message: string } | null };
+  let rewardsReady = true;
+  if (st.error && /claimed/.test(st.error.message)) {
+    rewardsReady = false;
+    st = await db.from("game_attendance").select("last_day, cycle_day, best_day").eq("learner", learner).maybeSingle();
+  }
   if (st.error || tk.error) return NO_ATTEND;
-  const s = st.data as { last_day: string | null; cycle_day: number; best_day: number; rare_pending: boolean } | null;
-  const tickets = { rare: 0, epic: 0 } as Record<TicketKind, number>;
-  for (const r of (tk.data ?? []) as { kind: TicketKind; count: number }[]) tickets[r.kind] = r.count;
-  return { ready: true, tickets, ...attendanceView({ lastDay: s?.last_day ?? null, cycleDay: s?.cycle_day ?? 0, bestDay: s?.best_day ?? 0, rarePending: s?.rare_pending ?? false }, kstDay()) };
+  const s = st.data as { last_day: string | null; cycle_day: number; best_day: number; claimed?: number[] | null } | null;
+  const tickets = { ...NO_TICKETS };
+  for (const r of (tk.data ?? []) as { kind: TicketKind; count: number }[]) if (r.kind in tickets) tickets[r.kind] = r.count;
+  return { ready: true, rewardsReady, tickets, ...attendanceView({ lastDay: s?.last_day ?? null, cycleDay: s?.cycle_day ?? 0, bestDay: s?.best_day ?? 0, claimed: s?.claimed ?? [] }, kstDay()) };
 }
 
 export interface AttendResult {
@@ -434,14 +445,67 @@ export async function attend(learner: string): Promise<AttendResult> {
   return { ready: true, already: d.already, day: d.day, coins: d.coins, ticket: d.ticket };
 }
 
-/** 확정 뽑기권으로 카드 1장 (등급 · 사상가는 DB 에서 결정, 같은 requestId 재시도 → 처음 결과) */
-export async function drawWithTicket(learner: string, kind: TicketKind, requestId: string): Promise<DrawResult & { ticket: TicketKind; ticketsLeft: number }> {
+/** 예전 확정 뽑기권(희귀 · 영웅 확정)으로 카드 1장 (등급 · 사상가는 DB 에서 결정, 같은 requestId 재시도 → 처음 결과) */
+export async function drawWithTicket(learner: string, kind: "rare" | "epic", requestId: string): Promise<DrawResult & { ticket: TicketKind; ticketsLeft: number }> {
   const { data, error } = await getAdminClient().rpc("game_use_ticket", { p_learner: learner, p_kind: kind, p_ref: `ticket:${requestId}`, p_day: kstDay() });
   if (error) throw gameError(error.message);
   const r = data as { cardId: string; isNewPhilosopher?: boolean; ticketsLeft: number; replayed: boolean };
   const card = await ownedCard(learner, r.cardId);
   const state = await getGameState(learner);
   return { card, isNewPhilosopher: Boolean(r.isNewPhilosopher), free: false, autoFeatured: false, coins: state.coins, replayed: r.replayed, ticket: kind, ticketsLeft: r.ticketsLeft };
+}
+
+export const GAME_029_HINT = "출석 카드 보상 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/029_game_attendance_rewards.sql 을 실행하세요.";
+const rewardRpcError = (e: { message: string }) => (/game_open_pack|game_pick|schema cache|Could not find/i.test(e.message) ? new GameError(GAME_029_HINT, 503) : gameError(e.message));
+
+/** 10장권 열기 (일반 10장권 · 희귀 10장권) → 카드 10장 */
+export async function openPack(learner: string, kind: "normal10" | "rare10", requestId: string): Promise<MultiDrawResult> {
+  const { data, error } = await getAdminClient().rpc("game_open_pack", { p_learner: learner, p_kind: kind, p_ref: `pack:${requestId}`, p_day: kstDay() });
+  if (error) throw rewardRpcError(error);
+  const r = data as { cards: { cardId: string; isNewPhilosopher: boolean }[]; replayed: boolean };
+  const s = await getGameState(learner);
+  const byId = new Map(s.owned.map((o) => [o.cardId, o]));
+  const cards = r.cards.flatMap((c) => {
+    const o = byId.get(c.cardId);
+    return o ? [{ ...o, isNewPhilosopher: c.isNewPhilosopher, bonus: false }] : [];
+  });
+  return { cards, cost: 0, autoFeatured: false, coins: s.coins, replayed: r.replayed };
+}
+
+export interface PickOffer {
+  kind: "rare_pick" | "epic_pick";
+  rarity: Rarity;
+  /** 후보 10장 (그 등급 Lv.1 능력치로 보여 줌) */
+  options: (CardView & { rarity: Rarity; atk: number; hp: number; owned: boolean })[];
+}
+
+/** 선택권 열기: 후보 10장 (이미 열었으면 같은 후보 · 뽑기권은 고를 때 씀) */
+export async function getPickOffer(learner: string, kind: "rare_pick" | "epic_pick"): Promise<PickOffer> {
+  const { data, error } = await getAdminClient().rpc("game_pick_offer", { p_learner: learner, p_kind: kind });
+  if (error) throw rewardRpcError(error);
+  const ids = (data as { options: string[] }).options;
+  const rarity: Rarity = kind === "rare_pick" ? "rare" : "epic";
+  const [settings, s] = await Promise.all([getGameSettings(), getGameState(learner)]);
+  const cards = new Map([...s.cards, ...s.owned].map((c) => [c.philosopherId, c]));
+  const ownedPh = new Set(s.owned.map((o) => o.philosopherId));
+  const options = ids.flatMap((id) => {
+    const c = cards.get(id);
+    if (!c) return [];
+    const st = statsFor({ atk: c.baseAtk, hp: c.baseHp }, rarity, 1, settings.rarity_mult);
+    return [{ ...c, rarity, atk: st.atk, hp: st.hp, owned: ownedPh.has(id) }];
+  });
+  return { kind, rarity, options };
+}
+
+/** 선택권으로 1장 고르기 */
+export async function choosePick(learner: string, kind: "rare_pick" | "epic_pick", philosopherId: string, requestId: string): Promise<DrawResult & { ticket: TicketKind }> {
+  const { data, error } = await getAdminClient().rpc("game_pick_choose", { p_learner: learner, p_kind: kind, p_philosopher: philosopherId, p_ref: `pick:${requestId}`, p_day: kstDay() });
+  if (error) throw rewardRpcError(error);
+  const r = data as { cardId: string; isNewPhilosopher?: boolean; replayed: boolean };
+  const s = await getGameState(learner);
+  const card = s.owned.find((o) => o.cardId === r.cardId);
+  if (!card) throw new GameError("카드 정보를 찾을 수 없습니다.", 500);
+  return { card, isNewPhilosopher: Boolean(r.isNewPhilosopher), free: false, autoFeatured: false, coins: s.coins, replayed: r.replayed, ticket: kind };
 }
 
 type UserCardRow = { id: string; philosopher_id: string; rarity: Rarity; level: number; locked: boolean; source: "legacy" | "draw" | "free" | "conquest" | "ticket"; created_at: string };

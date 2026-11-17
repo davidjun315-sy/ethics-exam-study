@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { DrawResult, GameState, MultiDrawResult } from "@/lib/game/data";
+import type { DrawResult, GameState, MultiDrawResult, PickOffer } from "@/lib/game/data";
 import { RARITIES, RARITY_NAMES, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { Ticket } from "lucide-react";
-import { TICKET_NAMES, TICKET_ODDS, type TicketKind } from "@/lib/game/attendance";
+import { isPack, isPick, REWARD_DAYS, TICKET_DESC, TICKET_NAMES, TICKET_ODDS, type TicketKind } from "@/lib/game/attendance";
 import { CardBack, PhilosopherCard } from "./PhilosopherCard";
 import { Coins } from "./GameApp";
 
@@ -37,6 +37,9 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
   // 10+1 뽑기 결과 · 몇 장까지 뒤집었나
   const [multi, setMulti] = useState<MultiDrawResult | null>(null);
   const [shownN, setShownN] = useState(0);
+  // 선택권: 후보 10장 · 고른 사상가
+  const [pick, setPick] = useState<PickOffer | null>(null);
+  const [pickSel, setPickSel] = useState<string | null>(null);
   const cost = state.settings.drawCost;
   const multiCost = cost * 10;
   const enoughMulti = state.coins >= multiCost;
@@ -57,6 +60,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
     setError(null);
     setResult(null);
     setMulti(null);
+    setPick(null);
     setShownN(0);
     setPhase("drawing");
     const requestId = crypto.randomUUID();
@@ -71,11 +75,67 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
     }
   }
 
+  /** 10장권 열기 (일반 10장권 · 희귀 10장권) */
+  async function openPack(kind: "normal10" | "rare10") {
+    if (phase === "drawing") return;
+    setError(null);
+    setResult(null);
+    setMulti(null);
+    setPick(null);
+    setShownN(0);
+    setPhase("drawing");
+    const requestId = crypto.randomUUID();
+    try {
+      const [r] = await Promise.all([postWithRetry<MultiDrawResult>("/api/game/ticket", { action: "pack", kind, requestId }), new Promise((ok) => setTimeout(ok, 700))]);
+      setMulti(r);
+      setPhase("reveal");
+      reload().catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("idle");
+    }
+  }
+  /** 선택권 열기: 후보 10장 (이미 열었으면 같은 후보) */
+  async function openPick(kind: "rare_pick" | "epic_pick") {
+    if (phase === "drawing") return;
+    setError(null);
+    setResult(null);
+    setMulti(null);
+    setPickSel(null);
+    try {
+      setPick(await quizApi<PickOffer>("/api/game/ticket", "POST", { action: "offer", kind }));
+      setPhase("idle");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  /** 선택권: 고른 카드 받기 → 한 장 뒤집기 연출 */
+  async function confirmPick() {
+    if (!pick || !pickSel || phase === "drawing") return;
+    setError(null);
+    setPhase("drawing");
+    setFlipped(false);
+    const requestId = crypto.randomUUID();
+    try {
+      const r = await postWithRetry<DrawResult & { ticket: TicketKind }>("/api/game/ticket", { action: "pick", kind: pick.kind, philosopherId: pickSel, requestId });
+      setPick(null);
+      setResult(r);
+      setPhase("reveal");
+      setTimeout(() => setFlipped(true), TEASE_MS[r.card.rarity]);
+      reload().catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("idle");
+    }
+  }
+  const spendTicket = (k: TicketKind) => (isPack(k) ? openPack(k) : isPick(k) ? openPick(k) : draw(k));
+
   async function draw(ticket?: TicketKind) {
     if (phase === "drawing") return;
     setError(null);
     setResult(null);
     setMulti(null);
+    setPick(null);
     setFlipped(false);
     setPhase("drawing");
     const requestId = crypto.randomUUID();
@@ -99,7 +159,9 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
       <section className="card relative overflow-hidden p-5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_45%,color-mix(in_srgb,var(--navy)_14%,transparent),transparent)]" />
         <div className="relative flex min-h-[26rem] flex-col items-center justify-center gap-4 pb-2 pt-6 sm:pt-8">
-          {multi ? (
+          {pick ? (
+            <PickPanel offer={pick} sel={pickSel} onSel={setPickSel} maxLevel={state.settings.maxLevel} busy={phase === "drawing"} onConfirm={confirmPick} />
+          ) : multi ? (
             <MultiReveal r={multi} shown={shownN} maxLevel={state.settings.maxLevel} onOpen={onOpen} onSkip={() => setShownN(multi.cards.length)} />
           ) : phase === "idle" && !result ? (
             <div className="card-enter flex flex-col items-center">
@@ -131,7 +193,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
                 <div className="text-xl font-black">{result.card.name}</div>
                 <p className={`text-sm font-semibold ${result.free || result.isNewPhilosopher ? "text-ok" : "text-navy"}`}>
                   {result.ticket
-                    ? `🎟 ${TICKET_NAMES[result.ticket]} 뽑기권 · ${result.isNewPhilosopher ? "NEW! 새 철학자가 도감에 추가되었습니다" : "같은 철학자의 카드를 한 장 더 얻었습니다"}`
+                    ? `🎟 ${TICKET_NAMES[result.ticket]} · ${result.isNewPhilosopher ? "NEW! 새 철학자가 도감에 추가되었습니다" : "같은 철학자의 카드를 한 장 더 얻었습니다"}`
                     : result.free
                     ? "첫 철학자 획득!"
                     : result.isNewPhilosopher
@@ -177,21 +239,22 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
               </button>
             )}
           </div>
-          {/* 출석 확정 뽑기권 */}
-          {state.attendance.ready && state.attendance.tickets.rare + state.attendance.tickets.epic > 0 && (
+          {/* 출석 보상 뽑기권 */}
+          {state.attendance.ready && (["normal10", "rare_pick", "rare10", "epic_pick", "rare", "epic"] as TicketKind[]).some((k) => state.attendance.tickets[k] > 0) && (
             <div className="flex flex-wrap justify-center gap-2" data-tickets>
-              {(["epic", "rare"] as const)
+              {(["epic_pick", "rare10", "rare_pick", "normal10", "epic", "rare"] as TicketKind[])
                 .filter((k) => state.attendance.tickets[k] > 0)
                 .map((k) => (
                   <button
                     key={k}
                     type="button"
                     disabled={phase === "drawing"}
-                    onClick={() => draw(k)}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-black shadow disabled:opacity-50 ${k === "epic" ? "bg-gradient-to-r from-[#7b3fe4] to-[#b37bff] text-white" : "bg-gradient-to-r from-[#2a6fd6] to-[#6fb6ff] text-white"}`}
-                    title={`확률: ${TICKET_ODDS[k].map((o) => `${o.rarity} ${o.pct}%`).join(" · ")}`}
+                    onClick={() => spendTicket(k)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-black shadow disabled:opacity-50 ${TICKET_TONE[k]}`}
+                    title={TICKET_DESC[k]}
+                    data-ticket={k}
                   >
-                    <Ticket className="h-4 w-4" aria-hidden /> {TICKET_NAMES[k]} 뽑기 · {state.attendance.tickets[k]}장
+                    <Ticket className="h-4 w-4" aria-hidden /> {TICKET_NAMES[k]} 쓰기 · {state.attendance.tickets[k]}장
                   </button>
                 ))}
             </div>
@@ -222,19 +285,31 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
         {state.attendance.ready && (
           <section className="card p-4">
             <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-              <Ticket className="h-4 w-4 text-[#b07a00] dark:text-[#ffd36b]" aria-hidden /> 출석 확정 뽑기권
+              <Ticket className="h-4 w-4 text-[#b07a00] dark:text-[#ffd36b]" aria-hidden /> 출석 보상
             </h3>
-            <p className="text-xs text-muted">출석 7일차에 희귀 확정, 28일차에 영웅 확정 뽑기권을 받습니다 (희귀 확정은 영웅 확정을 받기 전까지 한 번만). 코인 없이 한 번 뽑습니다.</p>
-            <ul className="mt-2 space-y-0.5 text-xs text-muted">
-              {(["rare", "epic"] as const).map((k) => (
-                <li key={k} className="flex justify-between gap-2">
+            <p className="text-xs text-muted">연속 출석 7 · 14 · 21 · 28일차에 받습니다. 하루 빠지면 1일차부터지만, 이미 받은 보상은 28일차 보상을 받을 때까지 다시 주지 않아요.</p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {Object.entries(REWARD_DAYS).map(([d, k]) => (
+                <li key={k} className="flex items-center justify-between gap-2">
                   <span>
-                    {TICKET_NAMES[k]} <b className="text-ink">{state.attendance.tickets[k]}장</b>
+                    <b className="tabular-nums text-muted">{d}일</b> {TICKET_NAMES[k]}
+                    {state.attendance.claimed.includes(Number(d)) && <span className="ml-1 text-[10px] text-ok">이번 판 받음</span>}
                   </span>
-                  <span className="tabular-nums">{TICKET_ODDS[k].map((o) => `${o.rarity} ${o.pct}%`).join(" · ")}</span>
+                  <b className="tabular-nums">{state.attendance.tickets[k]}장</b>
                 </li>
               ))}
+              {(["rare", "epic"] as const)
+                .filter((k) => state.attendance.tickets[k] > 0)
+                .map((k) => (
+                  <li key={k} className="flex justify-between gap-2 text-muted">
+                    <span>
+                      {TICKET_NAMES[k]} (예전) · {TICKET_ODDS[k].map((o) => `${o.rarity} ${o.pct}%`).join(" · ")}
+                    </span>
+                    <b className="text-ink">{state.attendance.tickets[k]}장</b>
+                  </li>
+                ))}
             </ul>
+            {!state.attendance.rewardsReady && <p className="mt-2 text-[11px] text-warn">새 출석 보상은 관리자가 업데이트(029)를 적용하면 시작돼요.</p>}
           </section>
         )}
         <section className="card p-4">
@@ -260,7 +335,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
 
 const RARITY_RING: Record<Rarity, string> = { common: "ring-[#b9c0cb]/50", rare: "ring-[#5aa2ff]/70", epic: "ring-[#b07cff]/80", legendary: "ring-[#ffc94a]" };
 
-/** 10+1 뽑기 결과: 11장이 차례로 뒤집히고, 끝나면 등급별 요약 */
+/** 여러 장 결과 (10+1 뽑기 · 10장권): 차례로 뒤집히고, 끝나면 등급별 요약 */
 function MultiReveal({ r, shown, maxLevel, onOpen, onSkip }: { r: MultiDrawResult; shown: number; maxLevel: number; onOpen: (id: string) => void; onSkip: () => void }) {
   const done = shown >= r.cards.length;
   const count = (k: Rarity) => r.cards.filter((c) => c.rarity === k).length;
@@ -290,7 +365,7 @@ function MultiReveal({ r, shown, maxLevel, onOpen, onSkip }: { r: MultiDrawResul
       </div>
       {done ? (
         <div className="quiz-rise flex flex-wrap items-center justify-center gap-1.5 text-xs font-bold" aria-live="polite">
-          <span className="rounded-full bg-surface-2 px-2.5 py-1">11장 획득</span>
+          <span className="rounded-full bg-surface-2 px-2.5 py-1">{r.cards.length}장 획득</span>
           {(["legendary", "epic", "rare", "common"] as Rarity[]).filter((k) => count(k) > 0).map((k) => (
             <span key={k} className={`rounded-full px-2.5 py-1 ${k === "legendary" ? "bg-[#ffd36b]/30 text-[#8a5a00] dark:text-[#ffd36b]" : k === "epic" ? "bg-[#b07cff]/20 text-[#7b3fe4] dark:text-[#d8b4ff]" : k === "rare" ? "bg-[#5aa2ff]/20 text-[#2a6fd6] dark:text-[#8fd0ff]" : "bg-surface-2 text-muted"}`}>
               {RARITY_NAMES[k]} {count(k)}
@@ -304,6 +379,44 @@ function MultiReveal({ r, shown, maxLevel, onOpen, onSkip }: { r: MultiDrawResul
           모두 뒤집기
         </button>
       )}
+    </div>
+  );
+}
+
+const TICKET_TONE: Record<TicketKind, string> = {
+  normal10: "bg-gradient-to-r from-[#5d6673] to-[#9aa4b4] text-white",
+  rare_pick: "bg-gradient-to-r from-[#1f5fc4] to-[#58a6ff] text-white ring-2 ring-[#bfe3ff]/70",
+  rare10: "bg-gradient-to-r from-[#2a6fd6] to-[#6fb6ff] text-white",
+  epic_pick: "bg-gradient-to-r from-[#6a35d8] to-[#b37bff] text-white ring-2 ring-[#e6d0ff]/70",
+  rare: "bg-gradient-to-r from-[#2a6fd6] to-[#6fb6ff] text-white",
+  epic: "bg-gradient-to-r from-[#7b3fe4] to-[#b37bff] text-white",
+};
+
+/** 선택권: 후보 10장 중 1장 고르기 (후보는 서버가 정해 저장 · 새로고침해도 같음) */
+function PickPanel({ offer, sel, onSel, maxLevel, busy, onConfirm }: { offer: PickOffer; sel: string | null; onSel: (id: string) => void; maxLevel: number; busy: boolean; onConfirm: () => void }) {
+  const chosen = offer.options.find((o) => o.philosopherId === sel);
+  return (
+    <div className="w-full space-y-3" data-pick-panel>
+      <div className="text-center">
+        <p className="text-xs font-bold tracking-[0.2em] text-muted">{offer.kind === "epic_pick" ? "영웅" : "희귀"} 선택권</p>
+        <h3 className="text-lg font-black">10장 중 1장을 고르세요</h3>
+        <p className="text-[11px] text-muted">후보는 정해져 있어 새로고침해도 바뀌지 않아요 · 고르면 뽑기권 1장을 씁니다</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+        {offer.options.map((c) => {
+          const on = sel === c.philosopherId;
+          return (
+            <div key={c.philosopherId} className={`relative rounded-[16px] p-0.5 transition ${on ? "scale-[1.03] ring-2 ring-[#ffd36b] shadow-[0_0_18px_rgba(255,211,107,.5)]" : sel ? "opacity-60 hover:opacity-100" : ""}`} data-pick={c.philosopherId}>
+              <PhilosopherCard fx="lite" card={c} rarity={c.rarity} level={1} stats={{ atk: c.atk, hp: c.hp }} tilt={false} maxLevel={maxLevel} onClick={() => onSel(c.philosopherId)} />
+              {!c.owned && <span className="absolute -left-1 -top-1 z-10 rounded-full bg-ok px-1.5 py-0.5 text-[9px] font-black text-white shadow">NEW</span>}
+              {on && <span className="absolute -right-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-[#ffd36b] text-xs font-black text-[#3a2600] shadow">✓</span>}
+            </div>
+          );
+        })}
+      </div>
+      <button type="button" className="btn-primary mx-auto block w-full max-w-sm py-3 text-base font-bold" disabled={!sel || busy} onClick={onConfirm} data-pick-confirm>
+        {busy ? "받는 중…" : chosen ? `${chosen.name} 고르기` : "카드를 하나 고르세요"}
+      </button>
     </div>
   );
 }

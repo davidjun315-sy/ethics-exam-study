@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarCheck, Coins as CoinIcon, Ticket } from "lucide-react";
 import type { AttendanceState } from "@/lib/game/data";
-import { TICKET_NAMES, TICKET_ODDS, type TicketKind } from "@/lib/game/attendance";
+import { TICKET_DESC, TICKET_NAMES, type TicketKind } from "@/lib/game/attendance";
 import { AttendanceBoard } from "./AttendanceBoard";
 
 /** 출석 처리가 끝나면 알림 (홈 출석 카드 · 게임 화면이 듣고 새로 읽음) */
@@ -119,27 +119,27 @@ function AttendancePopup({ r, a, headerArt, onClose }: { r: Result; a: Attendanc
               </span>
             </span>
           </div>
-          <p className="mt-0.5 text-[11px] text-faint">28일 한 바퀴 · 하루 빠지면 1일차부터 · 7일차 🎟 희귀 확정 · 28일차 🎟 영웅 확정</p>
+          <p className="mt-0.5 text-[11px] text-faint">하루 빠지면 1일차부터 · 7일 일반 10장권 · 14일 희귀 선택권 · 21일 희귀 10장권 · 28일 영웅 선택권</p>
 
           <div className="mt-3">
             <AttendanceBoard a={a} stampDay={a.day} />
           </div>
 
           {r.ticket ? (
-            <div className={`att-ticket mt-3 flex items-center gap-3 rounded-2xl p-3 text-white ${r.ticket === "epic" ? "bg-gradient-to-r from-[#6a35d8] to-[#b37bff]" : "bg-gradient-to-r from-[#2a6fd6] to-[#6fb6ff]"}`}>
+            <div className={`att-ticket mt-3 flex items-center gap-3 rounded-2xl p-3 text-white ${r.ticket === "epic_pick" || r.ticket === "epic" ? "bg-gradient-to-r from-[#6a35d8] to-[#b37bff]" : r.ticket === "normal10" ? "bg-gradient-to-r from-[#5d6673] to-[#9aa4b4]" : "bg-gradient-to-r from-[#2a6fd6] to-[#6fb6ff]"}`}>
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20">
                 <Ticket className="h-6 w-6" aria-hidden />
               </span>
               <div className="min-w-0">
-                <div className="text-sm font-black">🎟 {TICKET_NAMES[r.ticket]} 뽑기권 {r.already ? "받았어요" : "획득!"}</div>
-                <div className="text-[11px] text-white/85">{TICKET_ODDS[r.ticket].map((o) => `${o.rarity} ${o.pct}%`).join(" · ")}</div>
+                <div className="text-sm font-black">🎟 {TICKET_NAMES[r.ticket]} {r.already ? "받았어요" : "획득!"}</div>
+                <div className="text-[11px] text-white/85">{TICKET_DESC[r.ticket]}</div>
               </div>
             </div>
           ) : (
             <p className="mt-3 rounded-xl bg-navy-soft/60 px-3 py-2 text-center text-xs">
               내일 들어오면 <b className="text-navy">{a.next.day}일차</b> +{a.next.coins} 코인
               {a.next.ticket && <b className="ml-1 text-[#8a5a00] dark:text-[#ffd36b]">+ 🎟 {TICKET_NAMES[a.next.ticket]}</b>}
-              {a.rarePending && a.day < 28 && !a.next.ticket && <span className="block text-[11px] text-muted">희귀 확정은 받았어요 · 28일차 영웅 확정까지 {28 - a.day}일</span>}
+              {a.claimed.length > 0 && <span className="block text-[11px] text-muted">이번 판에 받은 보상: {a.claimed.map((d) => `${d}일차`).join(" · ")} · 28일차 영웅 선택권을 받으면 다시 처음부터</span>}
             </p>
           )}
 

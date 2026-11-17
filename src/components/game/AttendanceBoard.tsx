@@ -1,6 +1,6 @@
 import { Ticket } from "lucide-react";
 import type { AttendanceState } from "@/lib/game/data";
-import { ATTEND_CYCLE, attendCoins, EPIC_TICKET_DAY, RARE_TICKET_DAY, TICKET_NAMES } from "@/lib/game/attendance";
+import { ATTEND_CYCLE, attendCoins, REWARD_DAYS, TICKET_NAMES } from "@/lib/game/attendance";
 
 /**
  * 출석표 28칸 (홈 카드 · 출석 팝업 공통).
@@ -15,16 +15,17 @@ export function AttendanceBoard({ a, stampDay }: { a: AttendanceState; stampDay?
         const d = i + 1;
         const stamped = d <= shown;
         const today = a.checkedToday && d === a.day;
-        // 7일차 희귀 확정: 이번 바퀴에서 아직 안 받았을 때만 표시 (받고 영웅 대기 중이면 지난 바퀴 것)
-        const ticket = d === RARE_TICKET_DAY ? (a.rarePending && !stamped ? null : "rare") : d === EPIC_TICKET_DAY ? "epic" : null;
+        // 보상 칸 (7 · 14 · 21 · 28). 이번 판에 이미 받았는데 아직 그 날이 안 온 칸은 '받음' (오면 건너뜀)
+        const ticket = REWARD_DAYS[d] ?? null;
+        const got = Boolean(ticket) && !stamped && a.claimed.includes(d);
         const animate = stampDay === d;
         return (
           <li
             key={d}
             className={`att-cell relative flex aspect-square items-center justify-center rounded-xl border text-[11px] font-semibold leading-none ${
-              stamped ? "border-[#e8c9c4] bg-[#fff7f5] dark:border-[#5a3a38] dark:bg-[#2a1e1e]" : ticket ? (ticket === "epic" ? "att-cell-epic border-[#b37bff]/50" : "att-cell-rare border-[#6fb6ff]/50") : "border-line bg-surface-2/60 text-faint"
+              stamped ? "border-[#e8c9c4] bg-[#fff7f5] dark:border-[#5a3a38] dark:bg-[#2a1e1e]" : got ? "border-line bg-surface-2/60 text-faint opacity-60" : ticket ? (ticket === "epic_pick" ? "att-cell-epic border-[#b37bff]/50" : ticket === "normal10" ? "border-[#a7b0bd]/60 bg-[#a7b0bd]/10" : "att-cell-rare border-[#6fb6ff]/50") : "border-line bg-surface-2/60 text-faint"
             } ${today ? "ring-2 ring-[#ffd36b] ring-offset-1 ring-offset-surface" : ""}`}
-            title={`${d}일차 · ${attendCoins(d)} 코인${ticket ? ` · ${TICKET_NAMES[ticket]} 뽑기권` : ""}`}
+            title={`${d}일차 · ${attendCoins(d)} 코인${ticket ? ` · ${TICKET_NAMES[ticket]}${got ? " (이번 판에 받음)" : ""}` : ""}`}
           >
             {/* 칸 번호 (도장 밑에 비침) */}
             <span className={`absolute left-1 top-0.5 text-[8px] ${stamped ? "text-[#c9a39d] dark:text-[#8a6a66]" : "hidden"}`}>{d}</span>
@@ -32,8 +33,13 @@ export function AttendanceBoard({ a, stampDay }: { a: AttendanceState; stampDay?
               <span className={`att-seal ${animate ? "att-seal-in" : ""}`} aria-hidden>
                 출석
               </span>
+            ) : got ? (
+              <span className="text-[9px] font-bold">받음</span>
             ) : ticket ? (
-              <Ticket className={`h-4 w-4 ${ticket === "epic" ? "text-[#8f5be8] dark:text-[#d8b4ff]" : "text-[#2f78d8] dark:text-[#8fd0ff]"}`} aria-hidden />
+              <span className="flex flex-col items-center gap-0.5">
+                <Ticket className={`h-4 w-4 ${ticket === "epic_pick" ? "text-[#8f5be8] dark:text-[#d8b4ff]" : ticket === "normal10" ? "text-[#5d6673] dark:text-[#c3cad6]" : "text-[#2f78d8] dark:text-[#8fd0ff]"}`} aria-hidden />
+                <span className="text-[8px] font-bold leading-none">{ticket.endsWith("pick") ? "선택" : "10장"}</span>
+              </span>
             ) : (
               <span>{d}</span>
             )}

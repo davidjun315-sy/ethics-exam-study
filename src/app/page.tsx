@@ -18,6 +18,7 @@ import { FeaturedPhilosopher } from "@/components/game/MyPhilosopher";
 import { cachedDashboard as getSiteDashboard } from "@/lib/data/cached";
 import { examShortLabel, formatDate, questionRef } from "@/lib/format";
 import { getAttendance, getFeatured, getGameSettings } from "@/lib/game/data";
+import { totalTickets } from "@/lib/game/attendance";
 import { AttendanceWidget } from "@/components/game/AttendanceWidget";
 import { getQuizWeekly } from "@/lib/quiz/weekly";
 import { RankingHub } from "@/components/quiz/RankingHub";
@@ -85,7 +86,7 @@ export default async function Home() {
         <div className="relative">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <p className="eyebrow !text-navy/80">{todayLabel()}</p>
-            {attendance?.ready && <AttendanceWidget day={attendance.day} checkedToday={attendance.checkedToday} tickets={attendance.tickets.rare + attendance.tickets.epic} />}
+            {attendance?.ready && <AttendanceWidget day={attendance.day} checkedToday={attendance.checkedToday} tickets={totalTickets(attendance.tickets)} />}
           </div>
           <h1 className="mt-1.5 text-[1.35rem] font-bold leading-snug tracking-tight sm:text-2xl">{greeting(name)}</h1>
           <p className="mt-1 text-sm text-muted">ETHOS · 도덕·윤리 학습 플랫폼</p>

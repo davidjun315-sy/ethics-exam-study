@@ -350,11 +350,13 @@ if (failed) {
 {
   const { attendCoins, attendTicket, attendanceView } = await import("../src/lib/game/attendance.ts");
   check("출석 코인: 일주일 단위 10→70 반복", [1, 2, 7, 8, 14, 15, 28].map(attendCoins).join(",") === "10,20,70,10,70,10,70");
-  check("출석 뽑기권: 7일차 희귀(영웅 대기 중이면 없음) · 28일차 영웅", attendTicket(7, false) === "rare" && attendTicket(7, true) === null && attendTicket(28, true) === "epic" && attendTicket(14, false) === null);
-  const v1 = attendanceView({ lastDay: "2030-01-09", cycleDay: 6, bestDay: 6, rarePending: false }, "2030-01-10");
-  const v2 = attendanceView({ lastDay: "2030-01-10", cycleDay: 28, bestDay: 28, rarePending: false }, "2030-01-10");
-  const v3 = attendanceView({ lastDay: "2030-01-05", cycleDay: 12, bestDay: 12, rarePending: true }, "2030-01-10");
-  check("출석 화면: 어제까지 6일차 → 오늘 7일차 희귀 · 28일차 다음은 1일차 · 끊기면 1일차", !v1.checkedToday && v1.next.day === 7 && v1.next.ticket === "rare" && v2.checkedToday && v2.next.day === 1 && v3.day === 0 && v3.next.day === 1);
+  check("출석 보상: 7 일반 10장권 · 14 희귀 선택권 · 21 희귀 10장권 · 28 영웅 선택권", attendTicket(7, []) === "normal10" && attendTicket(14, []) === "rare_pick" && attendTicket(21, []) === "rare10" && attendTicket(28, []) === "epic_pick" && attendTicket(8, []) === null);
+  check("출석 보상: 이번 판에 이미 받은 보상은 건너뜀", attendTicket(7, [7]) === null && attendTicket(14, [7, 14]) === null && attendTicket(21, [7, 14]) === "rare10");
+  const v1 = attendanceView({ lastDay: "2030-01-09", cycleDay: 6, bestDay: 6, claimed: [] }, "2030-01-10");
+  const v2 = attendanceView({ lastDay: "2030-01-10", cycleDay: 28, bestDay: 28, claimed: [] }, "2030-01-10");
+  const v3 = attendanceView({ lastDay: "2030-01-05", cycleDay: 12, bestDay: 12, claimed: [7] }, "2030-01-10");
+  const v4 = attendanceView({ lastDay: "2030-01-09", cycleDay: 13, bestDay: 13, claimed: [7, 14] }, "2030-01-10");
+  check("출석 화면: 6일차 → 오늘 7일차 일반 10장권 · 28일차 다음은 1일차 · 끊기면 1일차 · 받은 보상은 다음 표시에서 빠짐", !v1.checkedToday && v1.next.day === 7 && v1.next.ticket === "normal10" && v2.checkedToday && v2.next.day === 1 && v3.day === 0 && v3.next.day === 1 && v4.next.day === 14 && v4.next.ticket === null);
 }
 {
   const T = await import("../src/lib/game/tower.ts");

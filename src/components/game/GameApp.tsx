@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { CardView, GameState, OwnedCard } from "@/lib/game/data";
 import { quizApi } from "@/lib/quiz/client";
+import { totalTickets } from "@/lib/game/attendance";
 import type { QuizProgress } from "@/lib/quiz/fun-core";
 import { canFuseCard, fusionMaterials, nextRarity, RARITIES, RARITY_NAMES, SHARDS_FOR_CARD, SKILL_EFFECTS, type Rarity } from "@/lib/game/rules";
 import { PhilosopherCard } from "./PhilosopherCard";
@@ -75,9 +76,9 @@ export function GameApp({ initial, initialTab, initialBase, initialDetail, initi
           <TitleBadge title={state.title.value} className="hidden sm:inline-flex" />
           <span className="text-xs text-muted">보유 카드 {state.owned.length}장</span>
           {/* 출석 확정 뽑기권 */}
-          {state.attendance.ready && state.attendance.tickets.rare + state.attendance.tickets.epic > 0 && (
-            <button type="button" onClick={() => go("draw")} className="whitespace-nowrap rounded-full border border-[#d9a520]/40 bg-[#ffd36b]/15 px-2.5 py-1 text-xs font-bold text-[#8a5a00] dark:text-[#ffd36b]" title="출석 확정 뽑기권 → 카드 뽑기">
-              🎟 {state.attendance.tickets.rare + state.attendance.tickets.epic}
+          {state.attendance.ready && totalTickets(state.attendance.tickets) > 0 && (
+            <button type="button" onClick={() => go("draw")} className="whitespace-nowrap rounded-full border border-[#d9a520]/40 bg-[#ffd36b]/15 px-2.5 py-1 text-xs font-bold text-[#8a5a00] dark:text-[#ffd36b]" title="출석 보상 뽑기권 → 카드 뽑기">
+              🎟 {totalTickets(state.attendance.tickets)}
             </button>
           )}
           <Coins value={state.coins} />
