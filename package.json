@@ -19,6 +19,7 @@
     "test:tidy": "node --experimental-strip-types --no-warnings scripts/test-tidy.ts",
     "test:export": "node --experimental-strip-types --no-warnings scripts/test-export.ts",
     "test:game": "node --experimental-strip-types --no-warnings scripts/test-game.ts",
+    "sim:tower": "node --experimental-strip-types --no-warnings scripts/tower-sim.ts",
     "test:practice": "node --experimental-strip-types --no-warnings scripts/test-practice.ts",
     "test:duel": "node --experimental-strip-types --no-warnings scripts/test-duel.ts"
   },

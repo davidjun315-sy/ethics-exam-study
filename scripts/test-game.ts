@@ -467,4 +467,254 @@ if (failed) {
   check("도장깨기 강화석: 5관마다만 (1~4개) · 특수 보스 +1 · 78관 전체 40개 안팎", stageStones(1) === 0 && stageStones(4) === 0 && stageStones(5) === 1 && stageStones(25) === 2 && stageStones(65) === 4 && stageStones(3, true) === 1 && total78 >= 30 && total78 <= 45, `78관 합 ${total78} (특수 보스 별도)`);
   check("탑 강화석: 최고 기록 아래 보스층은 0 (코인만)", T.floorReward(10, false, 12).stones === 0 && T.floorReward(20, false, 12).stones === 2 && T.floorReward(10, false, 12).coins === T.floorCoins(10));
 }
+
+// ---------------------------------------------------------------------
+// 사상의 탑 2.0 전투 엔진
+// ---------------------------------------------------------------------
+{
+  const T = await import("../src/lib/game/tower.ts");
+  const B = await import("../src/lib/game/tower-battle.ts");
+  const Sim = await import("./tower-sim.ts");
+  type Eff = "strike" | "sweep" | "guard" | "heal" | "stun";
+  const team = (...e: Eff[]) => e.map((effect, i) => ({ name: `T${i}`, effect }));
+  const plain = team("stun", "stun", "stun").map((c) => ({ ...c, effect: "stun" as Eff }));
+  const at = (floor: number, kind: "normal" | "boss" | "elite", effect: Eff = "strike", tm = plain) => B.enterFloor({ ...T.startState(1000, floor), b: B.newBattle(floor, kind, { effect }) }, floor, kind, { effect }, tm).state;
+  const ctx = { teamAtk: 140, quick: false };
+
+  // 사유력
+  {
+    let s = at(1, "normal");
+    const c = B.resolveAnswer(s, "correct", plain, ctx);
+    const p = B.resolveAnswer(s, "partial", plain, ctx);
+    const w = B.resolveAnswer(s, "wrong", plain, ctx);
+    check("사유력: 정답 +2 · 부분 정답 +1 · 오답 0", c.state.b.focus === 2 && p.state.b.focus === 1 && w.state.b.focus === 0);
+    s = { ...s, b: { ...s.b, focus: 5 } };
+    check("사유력: 최대 6", B.resolveAnswer(s, "correct", plain, ctx).state.b.focus === 6);
+    const t = B.resolveTurn(c.state, plain, null, ctx);
+    const next = B.enterFloor(t.state, 2, "normal", {}, plain).state;
+    check("사유력: 층을 넘어 이어짐", next.b.focus === 2);
+  }
+  // 필살기: 비용 · 부족 · 넘기기 · 한 턴 한 번
+  {
+    const s = at(1, "normal");
+    const a = B.resolveAnswer(s, "correct", team("strike", "guard", "heal"), ctx);
+    check("필살기: 사유력 2 < 3 이면 선택창 없음 · 수호형(비용 3)도 불가", !a.skillWindow && /사유력이 부족/.test(B.skillProblem(a.state, team("strike", "guard", "heal"), 0) ?? ""));
+    let threw = false;
+    try {
+      B.resolveTurn(a.state, team("strike", "guard", "heal"), 0, ctx);
+    } catch {
+      threw = true;
+    }
+    check("필살기: 사유력이 모자라면 서버가 거절", threw);
+    const rich = { ...a.state, b: { ...a.state.b, focus: 4 } };
+    const u = B.resolveTurn(rich, team("strike", "guard", "heal"), 0, ctx);
+    check("필살기: 쓰면 비용만큼 줄고 기술 사건이 남음", u.state.b.focus === 1 && u.events.some((e) => e.t === "skill" && e.dmg > 0));
+    let twice = false;
+    try {
+      B.resolveTurn(u.state, team("strike", "guard", "heal"), 0, ctx);
+    } catch {
+      twice = true;
+    }
+    check("필살기: 같은 턴을 두 번 처리할 수 없음 (선택창은 한 번)", twice && u.state.b.pending === null);
+    const skip = B.resolveTurn(rich, team("strike", "guard", "heal"), null, ctx);
+    check("필살기: 넘기면 사유력 그대로", skip.state.b.focus === 4 && !skip.events.some((e) => e.t === "skill"));
+    check("부엉이 유물: 비용 -1 (최소 1)", B.skillCost("strike", { owl: 1 }) === 2 && B.skillCost("guard", {}) === 3);
+  }
+  // 역할 효과
+  {
+    const s0 = at(1, "normal");
+    const dmg = (tm: ReturnType<typeof team>) => B.resolveAnswer(at(1, "normal", "strike", tm), "correct", tm, ctx).dealt;
+    check("공격형: 정답 피해 ↑", dmg(team("strike", "strike", "strike")) > dmg(team("stun", "stun", "stun")));
+    const sw = B.resolveAnswer(at(1, "normal", "strike", team("sweep", "sweep", "stun")), "correct", team("sweep", "sweep", "stun"), ctx);
+    check("광역형: 카드마다 추가타", sw.events.filter((e) => e.t === "extra").length === 2);
+    const hurtS0 = { ...s0, hp: 50 };
+    const gd = B.resolveAnswer(hurtS0, "correct", team("guard", "stun", "stun"), ctx);
+    const hl = B.resolveAnswer(hurtS0, "correct", team("heal", "stun", "stun"), ctx);
+    check("수호형: 정답이면 보호막 · 지원형: 정답이면 회복", gd.state.b.shield > 0 && hl.state.hp > 50);
+    const b = at(10, "boss");
+    check("제압형: 적 공격 -8%씩 (최대 -24%)", B.enemyDamage(b, team("stun", "stun", "stun"), 1) < B.enemyDamage(b, team("strike", "strike", "strike"), 1));
+    const sk = (e: Eff) => {
+      const tm = team(e, "strike", "strike");
+      const s = { ...at(10, "boss", "strike", tm), hp: 40 };
+      const a = B.resolveAnswer({ ...s, b: { ...s.b, focus: 6 } }, "correct", tm, ctx);
+      return B.resolveTurn(a.state, tm, 0, ctx);
+    };
+    const g = sk("guard");
+    check("수호형 필살기: 보호막 + 다음 공격 절반", g.state.b.shield >= Math.round(g.state.maxHp * 0.2) && g.state.b.boss.halfNext);
+    check("지원형 필살기: 체력 회복 (25%)", sk("heal").state.hp >= 40 + Math.round(sk("heal").state.maxHp * 0.25));
+    const st = sk("stun");
+    check("제압형 필살기: 보스 행동 늦춤 + 약화", st.state.b.boss.gauge >= 3 && st.state.b.boss.weaken > 0);
+    check("광역형 필살기: 3연타", sk("sweep").events.some((e) => e.t === "skill" && e.hits === 3));
+  }
+  // 보스 행동 게이지 · 예고 · 시점
+  {
+    let s = at(10, "boss", "strike");
+    check("보스: 행동 게이지 3턴 · 다음 행동 예고", s.b.boss.pattern === "attack" && s.b.boss.gauge === 3 && s.b.boss.intent === "smash" && B.intentText(s.b.boss) === "3턴 뒤 강타");
+    check("1~10층 일반 층은 게이지 없음 · 11층부터 가벼운 공격", at(3, "normal").b.boss.pattern === "none" && at(13, "normal").b.boss.pattern === "normal");
+    const hpLog: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const a = B.resolveAnswer(s, "partial", plain, ctx);
+      const t = B.resolveTurn(a.state, plain, null, ctx);
+      hpLog.push(t.events.filter((e) => e.t === "enemy").length);
+      s = t.state;
+    }
+    check("보스: 3턴째에 패턴 공격 (정답이어도)", hpLog.join(",") === "0,0,1" && s.b.boss.gauge === 3);
+    // 오답 + 패턴 같은 턴 → 한 번만
+    let w = at(10, "boss", "strike");
+    w = { ...w, b: { ...w.b, boss: { ...w.b.boss, gauge: 1 } } };
+    const a = B.resolveAnswer(w, "wrong", plain, ctx);
+    const t = B.resolveTurn(a.state, plain, null, ctx);
+    const hits = [...a.events, ...t.events].filter((e) => e.t === "enemy");
+    check("오답 공격과 패턴 공격은 한 턴에 같이 들어오지 않음", a.events.every((e) => e.t !== "enemy") && hits.length === 1 && hits[0].t === "enemy" && hits[0].pattern);
+    // 제압형 필살기로 미루면 오답 공격만
+    const stunT = team("stun", "strike", "strike");
+    const a2 = B.resolveAnswer({ ...w, b: { ...w.b, focus: 3 } }, "wrong", stunT, ctx);
+    const t2 = B.resolveTurn(a2.state, stunT, 0, ctx);
+    const h2 = t2.events.filter((e) => e.t === "enemy");
+    check("패턴이 미뤄지면 미뤄 둔 오답 공격만 들어옴", h2.length === 1 && h2[0].t === "enemy" && !h2[0].pattern && t2.state.b.boss.gauge > 0);
+  }
+  // 단계
+  {
+    let s = at(10, "boss", "strike");
+    const r = B.resolveAnswer({ ...s, enemyHp: Math.round(s.enemyMax * 0.62) }, "partial", plain, ctx);
+    check("보스: 체력 60% 아래 → 2단계", r.state.b.boss.phase === 2 && r.events.some((e) => e.t === "phase" && e.phase === 2));
+    s = at(10, "boss", "sweep");
+    const r3 = B.resolveAnswer({ ...s, enemyHp: Math.round(s.enemyMax * 0.3) }, "partial", plain, ctx);
+    check("폭주형: 25% 아래 → 3단계 폭주 (공격 +30% · 더 자주)", r3.state.b.boss.phase === 3 && r3.state.b.boss.enraged && r3.state.b.boss.interval === 2);
+    s = at(20, "boss", "guard");
+    const g = B.resolveAnswer({ ...s, enemyHp: Math.round(s.enemyMax * 0.62) }, "partial", plain, ctx);
+    check("수호형 보스: 2단계에 방벽", g.state.b.boss.shield > 0 && g.events.some((e) => e.t === "barrier"));
+    const shield = g.state.b.boss.shield;
+    const sw = team("sweep", "sweep", "sweep");
+    const normal = B.resolveAnswer(g.state, "correct", plain, ctx);
+    const multi = B.resolveAnswer(g.state, "correct", sw, ctx);
+    check("방벽: 먼저 깎이고 광역 추가타는 2배로 깎음", normal.state.b.boss.shield < shield && multi.state.b.boss.shield < normal.state.b.boss.shield);
+    // 회복형
+    let h = at(10, "boss", "heal");
+    h = { ...h, enemyHp: 300, b: { ...h.b, boss: { ...h.b.boss, gauge: 1 } } };
+    const hm = B.resolveTurn(B.resolveAnswer(h, "wrong", plain, ctx).state, plain, null, ctx);
+    check("회복형 보스: 주기적으로 회복", hm.events.some((e) => e.t === "mend" && e.amount > 0) && hm.state.enemyHp > 300);
+    // 제압형
+    let z = at(10, "boss", "stun");
+    z = { ...z, b: { ...z.b, focus: 5, boss: { ...z.b.boss, gauge: 1 } } };
+    const zd = B.resolveTurn(B.resolveAnswer(z, "wrong", plain, ctx).state, plain, null, ctx);
+    check("제압형 보스: 사유력 흡수", zd.events.some((e) => e.t === "drain") && zd.state.b.focus === 3);
+    const sealed = { ...zd.state, b: { ...zd.state.b, boss: { ...zd.state.b.boss, sealed: 2 }, focus: 6 } };
+    const sa = B.resolveAnswer(sealed, "correct", plain, ctx);
+    check("필살기 봉인 중엔 선택창 없음", !sa.skillWindow && /봉인/.test(B.skillProblem(sa.state, plain, 0) ?? ""));
+  }
+  // 보호막 · 완전 방어 · 반격 · 불굴
+  {
+    let s = at(10, "boss");
+    s = { ...s, buffs: { ...s.buffs, shield: 1 } };
+    const a = B.resolveAnswer(s, "wrong", plain, ctx);
+    check("반론 대비: 다음 공격 한 번 완전 방어", a.state.hp === s.hp && a.shieldUsed && a.state.buffs.shield === 0);
+    s = at(10, "boss");
+    s = { ...s, b: { ...s.b, shield: 1000, relics: { counter: 1 } } };
+    const c = B.resolveAnswer(s, "wrong", plain, ctx);
+    check("보호막이 먼저 막고 반격의 방패가 되돌림", c.state.hp === s.hp && c.events.some((e) => e.t === "reflect") && c.state.enemyHp < s.enemyHp);
+    s = at(30, "boss");
+    s = { ...s, hp: 5, b: { ...s.b, relics: { undying: 1 } } };
+    const u = B.resolveAnswer(s, "wrong", plain, ctx);
+    check("불굴의 의지: 쓰러질 공격을 한 번 버팀 (30%)", !u.dead && u.state.hp === Math.round(u.state.maxHp * 0.3) && u.state.b.undyingUsed);
+    const u2 = B.resolveAnswer({ ...u.state, hp: 5, b: { ...u.state.b, pending: null } }, "wrong", plain, ctx);
+    check("불굴의 의지: 도전에 한 번만", u2.dead);
+  }
+  // 유물 · 층 사이 선택
+  {
+    let s = at(10, "boss");
+    for (let i = 0; i < 5; i++) s = B.applyChoice(s, "relic:blade");
+    check("유물 겹침 한도: 칼날 최대 3", s.b.relics.blade === 3);
+    for (let i = 0; i < 5; i++) s = B.applyChoice(s, "power");
+    check("공격 강화 합 한도 +60%", B.powerBonus(s.buffs, s.b.relics) === 0.6);
+    const ch = B.choicesAfterClear(s, "normal", 7);
+    const all = Array.from({ length: 60 }, (_, k) => B.choicesAfterClear(s, "normal", k)).flat();
+    check("한도에 닿으면 논증 단련 · 칼날은 후보에서 빠짐", !all.includes("power") && !all.includes("relic:blade") && ch.length === 3);
+    const boss = B.choicesAfterClear(at(10, "boss"), "boss", 3);
+    check("보스층을 깨면 유물 3개 후보", boss.length === 3 && boss.every((c) => c.startsWith("relic:")) && new Set(boss).size === 3);
+    const norm = Array.from({ length: 100 }, (_, k) => B.choicesAfterClear(at(5, "normal"), "normal", k));
+    const withRelic = norm.filter((c) => c.some((x) => x.startsWith("relic:"))).length;
+    check("일반 층: 가끔 유물 하나가 섞임 (100번 중 25~55번)", withRelic >= 25 && withRelic <= 55, `${withRelic}번`);
+    check("후보는 같은 씨앗이면 같음", JSON.stringify(B.choicesAfterClear(at(5, "normal"), "normal", 42)) === JSON.stringify(B.choicesAfterClear(at(5, "normal"), "normal", 42)));
+    const low = { ...at(5, "normal"), hp: 30 };
+    check("체력이 절반 아래면 회복이 꼭 후보에", Array.from({ length: 30 }, (_, k) => B.choicesAfterClear(low, "normal", k)).every((c) => c.includes("heal")));
+    check("유물 종류 12개 이상 · 이름 · 설명 · 한도", B.RELIC_IDS.length >= 12 && B.RELIC_IDS.every((r) => B.RELICS[r].name && B.RELICS[r].desc && B.RELICS[r].max >= 1));
+    const lamp = B.applyChoice(at(5, "normal"), "relic:lamp");
+    check("등불: 얻을 때 힌트 +2 · 모래시계: 빠른 정답 +10초", lamp.buffs.hints === 2 && B.quickWindow(B.applyChoice(at(5, "normal"), "relic:hourglass").b) === T.QUICK_SEC + 10);
+    const sc = B.enterFloor(B.applyChoice(at(5, "normal"), "relic:scroll"), 6, "normal", {}, plain).state;
+    check("두루마리: 층 시작 사유력 +1", sc.b.focus === 1);
+    let bad = false;
+    try {
+      B.applyChoice(at(5, "normal"), "relic:nothing");
+    } catch {
+      bad = true;
+    }
+    check("없는 선택은 거절", bad && B.choiceInfo("heal")?.kind === "buff" && B.choiceInfo("relic:mirror")?.kind === "relic");
+  }
+  // 이벤트 층
+  {
+    check("이벤트 층: 5 · 15 · 25 · 35층 (보스 · 시작 층 아님)", B.isEventFloor(5) && B.isEventFloor(15) && !B.isEventFloor(10) && !B.isEventFloor(11) && !B.isEventFloor(1) && !B.isEventFloor(21));
+    const s = at(5, "normal");
+    const kinds = new Set(Array.from({ length: 200 }, (_, k) => B.eventFor(s, 5, k, { merchant: true }).kind));
+    check("이벤트 5종이 모두 나옴", kinds.size === 5, [...kinds].join(","));
+    const noShop = new Set(Array.from({ length: 200 }, (_, k) => B.eventFor(s, 5, k, { merchant: false }).kind));
+    check("상점 SQL 전이면 상인은 안 나옴", !noShop.has("merchant"));
+    const rest = { ...s, hp: 30, b: { ...s.b, event: { kind: "rest" as const, floor: 5, relics: [] } } };
+    check("휴식: 체력 40% 회복", B.applyEvent(rest, "heal").state.hp === 30 + Math.round(s.maxHp * 0.4) && B.applyEvent(rest, "heal").state.b.event === null);
+    const altar = { ...s, hp: 20, b: { ...s.b, event: { kind: "altar" as const, floor: 5, relics: ["mirror" as const] } } };
+    let refused = false;
+    try {
+      B.applyEvent(altar, "offer");
+    } catch {
+      refused = true;
+    }
+    check("제단: 체력이 모자라면 바칠 수 없음", refused);
+    const ok = B.applyEvent({ ...altar, hp: 100 }, "offer");
+    check("제단: 체력 25%를 바치고 유물", ok.state.hp === 100 - Math.round(s.maxHp * 0.25) && ok.state.b.relics.mirror === 1);
+    const shop = { ...s, b: { ...s.b, event: { kind: "merchant" as const, floor: 5, relics: ["owl" as const], prices: { relic: 70, heal: 30 } } } };
+    const buy = B.applyEvent(shop, "buy:relic:owl");
+    check("상인: 값만큼 코인을 내고 유물", buy.spend === 70 && buy.state.b.relics.owl === 1);
+    const elite = { ...s, b: { ...s.b, event: { kind: "elite" as const, floor: 5, relics: [] } } };
+    check("특수 전투: 싸우면 전투 · 피하면 통과", B.applyEvent(elite, "fight").outcome === "fight" && B.applyEvent(elite, "leave").outcome === "pass");
+    const el = B.enterFloor(s, 5, "elite", { effect: "guard" }, plain).state;
+    check("특수 전투: 보스처럼 패턴 · 체력 더 많음", el.b.boss.pattern === "guard" && el.enemyMax > at(5, "normal").enemyMax);
+  }
+  // 예전 도전 상태
+  {
+    const old = { ...T.startState(900, 7), enemyId: "x", used: [], essays: 0, seed: 1 } as ReturnType<typeof T.startState> & { b?: undefined };
+    const up = B.upgradeRun(old, { effect: "strike" });
+    check("예전(1.0) 도전 → 2.0: 체력 · 층 그대로, 사유력 0 · 유물 없음", up.floor === 7 && up.hp === old.hp && up.enemyHp === old.enemyHp && up.b.focus === 0 && Object.keys(up.b.relics).length === 0 && up.b.v === 2);
+    const again = B.upgradeRun(up, { effect: "strike" });
+    check("이미 2.0 이면 그대로", JSON.stringify(again.b) === JSON.stringify(up.b));
+    const a = B.resolveAnswer(up, "correct", plain, ctx);
+    check("바꾼 상태로 바로 진행 가능", a.state.b.focus === 2 && a.state.enemyHp < up.enemyHp);
+  }
+  // 고유 패시브 (역할과 별개)
+  {
+    check("고유 패시브: 이름으로 찾고 없으면 없음", B.uniqueOf("칸트")?.skillBoost === 0.15 && B.uniqueOf("없는사람") === null);
+  }
+  // 밸런스 시뮬레이션: 팀 구성 × 정답률
+  {
+    const r = Sim.simulate(120);
+    const comps = Object.keys(r);
+    const avg = (k: string) => comps.reduce((a, c) => a + r[c][k], 0) / comps.length;
+    const weak = avg("약"), mid = avg("보통"), strong = avg("강");
+    const mids = comps.map((c) => r[c]["보통"]);
+    const spread = Math.max(...mids) / Math.min(...mids);
+    check("탑 2.0 난이도: 약 < 보통 < 강 · 보통 15~35층 · 강해도 60층 아래", weak < mid && mid < strong && mid > 15 && mid < 35 && strong < 60, `약 ${weak.toFixed(1)} · 보통 ${mid.toFixed(1)} · 강 ${strong.toFixed(1)}`);
+    check("탑 2.0 팀 구성: 어떤 구성도 압도적이지 않음 (보통 실력 최고/최저 < 1.5배)", spread < 1.5, comps.map((c) => `${c} ${r[c]["보통"]}`).join(" · "));
+    const qs = comps.map((c) => r[c]["보통 문제/층"]);
+    check("탑 2.0 층마다 푸는 문제 수: 평균 2문제 이상 (공부량 유지)", Math.min(...qs) >= 2, qs.join(","));
+    let none = 0, use = 0;
+    for (let i = 0; i < 120; i++) {
+      none += Sim.climb(team("strike", "guard", "heal"), Sim.ACC["보통"], 50 + i, { useSkills: false }).floors;
+      use += Sim.climb(team("strike", "guard", "heal"), Sim.ACC["보통"], 50 + i).floors;
+    }
+    check("필살기를 잘 쓰면 더 높이 (전략 선택이 의미 있음)", use > none * 1.3, `안 씀 ${(none / 120).toFixed(1)} · 씀 ${(use / 120).toFixed(1)}`);
+  }
+}
+if (failed) {
+  console.log(`\n${failed}개 실패`);
+  process.exit(1);
+}
 console.log("\n모두 통과");
