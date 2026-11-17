@@ -48,7 +48,7 @@ const todayLabel = () => new Intl.DateTimeFormat("ko-KR", { month: "long", day: 
 
 /**
  * ETHOS 메인: 개인 학습 대시보드.
- * 순서 — 인사 → 대표 사상가 → 오늘의 학습 → 빠른 메뉴 → 랭킹 → 나의 학습 현황 → 최근 기출 → 출제 분석 요약 → 데이터 현황
+ * 순서 — 인사 → 대표 사상가 → 오늘의 학습 → 빠른 메뉴 → 나의 학습 현황 → 최근 기출 → 출제 분석 요약 → 데이터 현황
  * 개인 지표(퀴즈 기록)와 전체 데이터 통계를 시각적으로 나눈다.
  */
 export default async function Home() {
@@ -123,11 +123,11 @@ export default async function Home() {
         })}
       </nav>
 
-      {/* 윤리 퀴즈 랭킹: 이번 주 · 오늘의 미션 한 묶음 (누르면 팝업에서 전체 순위) */}
-      {(weekly || daily) && <RankingHub weekly={weekly} daily={daily} />}
-
       {/* 5. 나의 학습 현황 */}
       {quiz?.profile && <MyStats d={quiz} />}
+
+      {/* 윤리 퀴즈 랭킹: 이번 주 · 오늘의 미션 한 묶음 (누르면 팝업에서 전체 순위) */}
+      {(weekly || daily) && <RankingHub weekly={weekly} daily={daily} />}
 
       {site.error || !data ? (
         <DataError error={site.error} />
