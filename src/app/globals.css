@@ -880,3 +880,10 @@ body {
 .tower-hop { animation: tower-hop .3s ease-in-out infinite alternate; }
 @keyframes tower-hop { from { transform: translateY(0); } to { transform: translateY(-5px); } }
 @media (prefers-reduced-motion: reduce) { .tower-hop { animation: none; } }
+.tower-star { animation: tower-star 3.6s ease-in-out infinite; }
+@keyframes tower-star { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.tower-here { animation: tower-here 1.8s ease-in-out infinite; }
+@keyframes tower-here { 0%, 100% { stroke-opacity: .55; } 50% { stroke-opacity: 1; } }
+.tower-orb { animation: tower-orb 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes tower-orb { 0%, 100% { opacity: .6; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .tower-star, .tower-here, .tower-orb { animation: none; } }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Swords, Ticket, Timer, Trophy } from "lucide-react";
+import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Swords, Timer, Trophy } from "lucide-react";
 import type { GameState } from "@/lib/game/data";
 import type { RunView, TowerAnswerResult, TowerHint, TowerOverview } from "@/lib/game/tower-data";
-import { EPIC_TICKET_FLOOR, floorCoins, isBossFloor, QUICK_SEC, TOWER_TEAM_SIZE } from "@/lib/game/tower";
+import { isBossFloor, QUICK_SEC, TIER_START, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
 import { slotOf, towerSlotFor, type ArtSlotKey } from "@/lib/game/art-slots";
 import { quizApi } from "@/lib/quiz/client";
 import { PracticeInput, type PublicPractice } from "@/components/quiz/PracticeParts";
@@ -12,10 +12,9 @@ import { SolutionView } from "@/components/quiz/SolutionView";
 import { byStrength } from "./GameApp";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { STRIKE_DURATION, STRIKE_IMPACT, TowerArena, type Strike } from "./TowerArena";
-import { TowerMap } from "./TowerMap";
+import { TowerMap, TowerScene } from "./TowerMap";
 
 const RARITY_KO = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" } as const;
-const RARITY_TONE = { common: "text-[#5d6673]", rare: "text-[#2a6fd6]", epic: "text-[#7b3fe4]", legendary: "text-[#b9780f]" } as const;
 
 /** 칸 그림 (올린 그림 → 없으면 기본 그라데이션) */
 function artBg(art: GameState["settings"]["art"], key: ArtSlotKey): React.CSSProperties {
@@ -124,6 +123,8 @@ function TowerMain({
   onQuit: (r: RunView) => void;
 }) {
   const owned = useMemo(() => [...state.owned].sort(byStrength), [state.owned]);
+  // 고른 탑 (구간): 처음엔 열린 탑 중 가장 높은 곳
+  const [pick, setPick] = useState<TowerTier>(() => ([4, 3, 2, 1] as TowerTier[]).find((t) => tierOpen(t, ov.best)) ?? 1);
   const [team, setTeam] = useState<string[]>(() => {
     const deck = state.deck.filter((id) => owned.some((o) => o.cardId === id));
     return (deck.length ? deck : owned.map((o) => o.cardId)).slice(0, TOWER_TEAM_SIZE);
@@ -147,7 +148,7 @@ function TowerMain({
   /** 탑 오르기 = 시작하고 바로 1층 입장 */
   const start = () =>
     call(async () => {
-      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team });
+      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team, startFloor: TIER_START[pick] });
       const e = r.run.awaiting ? await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "enter", runId: r.run.id }) : r;
       onEnter(e.run);
     });
@@ -248,9 +249,11 @@ function TowerMain({
               )}
             </>
           ) : null}
+          {!run && <TowerPicker ov={ov} pick={pick} onPick={setPick} />}
           <TowerMap
-            floor={run ? s!.floor : Math.max(1, ov.best)}
+            floor={run ? s!.floor : Math.min(TIER_START[pick] + 9, Math.max(TIER_START[pick], ov.best))}
             cleared={run ? (run.choices ? s!.floor : run.cleared) : ov.best}
+            epicTicketGiven={ov.epicTicketGiven}
             best={Math.max(ov.best, run?.cleared ?? 0)}
             from={climbFrom}
             team={run ? run.team : teamCards}
@@ -294,45 +297,13 @@ function TowerMain({
             </div>
           )}
           <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={busy || !team.length || left <= 0} onClick={start} data-tower-start>
-            {busy ? "탑 문을 여는 중…" : left <= 0 ? "오늘 도전을 모두 썼어요" : "탑 오르기"}
+            {busy ? "탑 문을 여는 중…" : left <= 0 ? "오늘 도전을 모두 썼어요" : `${ov.tiers[pick].name} · ${TIER_START[pick]}층부터 오르기`}
           </button>
           <p className="text-center text-[11px] text-faint">하루 {ov.tries.max - (ov.tries.attendBonus ? 1 : 0)}번 · 그날 출석하면 1번 더 · 그만둬도 깬 층 보상은 남아요</p>
         </section>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* 층 안내 · 보상 */}
-        <section className="card space-y-3 p-4">
-          <h3 className="font-bold">탑의 구간</h3>
-          <ol className="space-y-1.5">
-            {([4, 3, 2, 1] as const).map((t) => {
-              const ti = ov.tiers[t];
-              const reached = ov.best >= (t - 1) * 10 + 1;
-              return (
-                <li key={t} className={`flex items-center gap-3 rounded-xl border p-2.5 ${reached ? "border-navy/25 bg-navy-soft/40" : "border-line"}`}>
-                  <span className="w-14 shrink-0 text-center text-[11px] font-bold text-muted">{ti.floors}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold">{ti.name}</span>
-                    <span className="block truncate text-[11px] text-muted">{ti.questions}</span>
-                  </span>
-                  <span className={`shrink-0 text-[11px] font-bold ${RARITY_TONE[ti.enemy]}`}>{RARITY_KO[ti.enemy]} 적</span>
-                </li>
-              );
-            })}
-          </ol>
-          <ul className="space-y-1 rounded-xl bg-surface-2 p-3 text-[12px] leading-5">
-            <li className="flex gap-2"><CoinIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />층을 깰 때마다 코인 (1층 {floorCoins(1)} → 보스층 3배)</li>
-            <li className="flex gap-2"><Gem className="mt-0.5 h-3.5 w-3.5 shrink-0 text-navy" />10층마다 보스 · 강화석 (10층 1개, 20층 2개 …)</li>
-            <li className="flex gap-2">
-              <Ticket className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#7b3fe4]" />
-              처음 {EPIC_TICKET_FLOOR}층을 깨면 영웅 확정 뽑기권{ov.epicTicketGiven ? " (받음 ✓)" : ""}
-            </li>
-            <li className="flex gap-2"><Crown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#c99a2e]" />칭호: 탑의 순례자(10층) · 탑의 현자(30층) · 탑의 정복자(50층)</li>
-            <li className="flex gap-2"><Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />맞힌 문제는 윤리 퀴즈 기록 · 경험치 · 사상가 정복에도 반영돼요</li>
-          </ul>
-          {!ov.essayOk && <p className="text-[11px] text-faint">지금은 AI 채점을 쓸 수 없어 31층부터도 서술형 없이 진행됩니다.</p>}
-        </section>
-
+      <div className="grid gap-4">
         {/* 주간 랭킹 */}
         <section className="card p-4">
           <div className="mb-2 flex items-baseline justify-between">
@@ -367,6 +338,61 @@ function TowerMain({
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/** 탑 고르기: 구간마다 따로 들어가는 네 개의 탑 (그림 · 문제 · 보상 · 잠김) */
+function TowerPicker({ ov, pick, onPick }: { ov: TowerOverview; pick: TowerTier; onPick: (t: TowerTier) => void }) {
+  return (
+    <div className="space-y-1.5" data-tower-picker>
+      <p className="text-[11px] font-bold tracking-wider text-white/75">들어갈 탑을 고르세요</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {([1, 2, 3, 4] as TowerTier[]).map((t) => {
+          const ti = ov.tiers[t];
+          const open = tierOpen(t, ov.best);
+          const rw = tierRewards(t, ov.epicTicketGiven);
+          const from = TIER_START[t];
+          const on = pick === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              disabled={!open}
+              onClick={() => onPick(t)}
+              aria-pressed={on}
+              className={`group relative overflow-hidden rounded-2xl text-left transition ${on ? "ring-2 ring-[#ffd36b] shadow-[0_0_24px_rgba(255,211,107,.35)]" : "ring-1 ring-white/15 hover:ring-white/40"} ${open ? "" : "cursor-not-allowed"}`}
+              data-tower-tier={t}
+            >
+              <div className="h-24 overflow-hidden sm:h-28">
+                <div className="-mt-[12%]">
+                  <TowerScene floors={Array.from({ length: 5 }, (_, i) => from + i * 2 + (i === 4 ? 1 : 0))} stateOf={(f) => (f <= ov.best ? "done" : "next")} tier={t} compact showRewards={false} dim={!open} />
+                </div>
+              </div>
+              <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/60 to-transparent px-2 pb-4 pt-1.5">
+                <span className="block text-[10px] font-bold text-white/75">{ti.floors}</span>
+                <span className="block text-sm font-black text-white drop-shadow">{ti.name}</span>
+              </div>
+              <div className="space-y-0.5 bg-black/55 px-2 py-1.5 text-[10px] leading-4 text-white/85 backdrop-blur-sm">
+                <span className="block truncate">{ti.questions}</span>
+                <span className="flex flex-wrap items-center gap-x-1.5 font-bold text-[#ffe9a8]">
+                  <span>🪙 {rw.coins}</span>
+                  <span className="text-[#bfe3ff]">💎 {rw.stones}</span>
+                  {rw.ticket && <span className="text-[#e6b8ff]">🎟 영웅</span>}
+                  {rw.title && <span className="text-white/80">👑 {rw.title}</span>}
+                </span>
+              </div>
+              {!open && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-center text-white">
+                  <span className="text-lg">🔒</span>
+                  <span className="text-[10px] font-bold">{from - 1}층을 깨면 열림</span>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-white/60">🪙 코인 · 💎 강화석은 그 탑 10개 층을 모두 깼을 때의 합 · 층마다 받는 보상은 아래 탑 그림 오른쪽에</p>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   applyAnswer,
   applyBuff,
   BUFFS,
+  canStartAt,
   buffChoices,
   EPIC_TICKET_FLOOR,
   enemyForFloor,
@@ -344,9 +345,15 @@ async function namesFor(learners: string[]): Promise<Map<string, string>> {
   return out;
 }
 
-export async function startTower(learner: string, cardIds: string[]): Promise<RunView> {
+export async function startTower(learner: string, cardIds: string[], startFloor = 1): Promise<RunView> {
   const ids = [...new Set(cardIds)];
   if (!ids.length || ids.length > TOWER_TEAM_SIZE) throw new GameError(`카드를 1~${TOWER_TEAM_SIZE}장 고르세요.`);
+  // 고른 탑(구간): 그 아래 층을 깬 적이 있어야 열림
+  if (startFloor !== 1) {
+    const { data: prof } = await getAdminClient().from("game_tower_profiles").select("best_floor").eq("learner", learner).maybeSingle();
+    const best = (prof as { best_floor: number } | null)?.best_floor ?? 0;
+    if (!canStartAt(startFloor, best)) throw new GameError(`${startFloor - 1}층을 먼저 깨야 이 탑에 들어갈 수 있어요.`, 409);
+  }
   const [state, att] = await Promise.all([getGameState(learner), getAttendance(learner).catch(() => null)]);
   const team: TeamCard[] = ids.map((id) => {
     const o = state.owned.find((x) => x.cardId === id);
@@ -355,7 +362,7 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   });
   const enemies = await enemyOrder();
   const seed = hash(`${learner}:${Date.now()}`);
-  const first: Stored = { ...startState(team.reduce((s, c) => s + c.hp, 0)), enemyId: enemyForFloor(enemies, 1, seed)?.philosopherId ?? null, used: [], usedQ: [], essays: 0, seed };
+  const first: Stored = { ...startState(team.reduce((s, c) => s + c.hp, 0), startFloor), enemyId: enemyForFloor(enemies, startFloor, seed)?.philosopherId ?? null, used: [], usedQ: [], essays: 0, seed };
   const max = triesFor(Boolean(att?.ready && att.checkedToday));
   const { data, error } = await getAdminClient().rpc("game_tower_start", { p_learner: learner, p_day: kstDay(), p_max: max, p_team: team, p_state: first });
   if (error) {
@@ -366,7 +373,8 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   if ((data as { resumed: boolean }).resumed || run.current) return toView(run);
   const n = await serveNext(learner, run.state, false);
   if (!n.current) throw new GameError("탑에 낼 문제가 아직 없습니다. 관리자가 윤리 퀴즈 문제를 공개하면 열립니다.", 409);
-  return toView(await saveRun(run, { state: n.state, current: n.current }));
+  // 위 구간에서 시작했으면 그 아래 층은 이미 지나온 것으로 표시
+  return toView(await saveRun(run, { state: n.state, current: n.current, ...(startFloor > 1 ? { cleared: startFloor - 1 } : {}) }));
 }
 
 export interface TowerAnswerResult {

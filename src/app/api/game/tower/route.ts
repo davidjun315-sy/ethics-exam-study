@@ -10,7 +10,7 @@ import { GeminiError } from "@/lib/ai/gemini";
 export const maxDuration = 120;
 
 const Body = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("start"), cardIds: z.array(z.string().uuid()).min(1).max(3) }),
+  z.object({ action: z.literal("start"), cardIds: z.array(z.string().uuid()).min(1).max(3), startFloor: z.union([z.literal(1), z.literal(11), z.literal(21), z.literal(31)]).optional() }),
   z.object({ action: z.literal("answer"), runId: z.string().uuid(), itemId: z.string().uuid(), answer: z.string().max(5000) }),
   z.object({ action: z.literal("buff"), runId: z.string().uuid(), buff: z.enum(["heal", "power", "shield", "hint"]) }),
   z.object({ action: z.literal("hint"), runId: z.string().uuid() }),
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   try {
     switch (data.action) {
       case "start":
-        return NextResponse.json({ run: await startTower(learner, data.cardIds) });
+        return NextResponse.json({ run: await startTower(learner, data.cardIds, data.startFloor ?? 1) });
       case "answer":
         if (!rateLimit(`tower:${learner}`, 240, 60 * 60 * 1000) || !rateLimit(`tower-ip:${clientKey(req)}`, 480, 60 * 60 * 1000)) {
           return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 하세요." }, { status: 429 });

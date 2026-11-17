@@ -129,9 +129,34 @@ export function applyAnswer(s: RunState, v: Verdict, ctx: { teamAtk: number; qui
   return { state: next, dealt, taken, shieldUsed, floorCleared: next.enemyHp <= 0, dead: next.hp <= 0 };
 }
 
-export function startState(teamHpSum: number): RunState {
+export function startState(teamHpSum: number, floor = 1): RunState {
   const maxHp = teamMaxHp(teamHpSum);
-  return { floor: 1, hp: maxHp, maxHp, enemyHp: enemyMaxHp(1), enemyMax: enemyMaxHp(1), combo: 0, buffs: { ...NO_BUFFS }, correct: 0, answered: 0 };
+  return { floor, hp: maxHp, maxHp, enemyHp: enemyMaxHp(floor), enemyMax: enemyMaxHp(floor), combo: 0, buffs: { ...NO_BUFFS }, correct: 0, answered: 0 };
+}
+
+// ---------------------------------------------------------------------
+// 탑 고르기: 구간마다 따로 들어갈 수 있다 (아래 구간의 보스층을 깬 적이 있으면 열림)
+// ---------------------------------------------------------------------
+export const TIER_START: Record<TowerTier, number> = { 1: 1, 2: 11, 3: 21, 4: 31 };
+/** 이 구간에 들어갈 수 있나 (최고 기록 기준) */
+export const tierOpen = (tier: TowerTier, best: number) => best >= TIER_START[tier] - 1;
+/** 시작 층으로 쓸 수 있나 */
+export const canStartAt = (floor: number, best: number) => (Object.entries(TIER_START) as [string, number][]).some(([t, f]) => f === floor && tierOpen(Number(t) as TowerTier, best));
+
+/** 이 층을 깨면 받는 보상 */
+export function floorReward(floor: number, epicTicketGiven = false): { coins: number; stones: number; ticket: boolean } {
+  return { coins: floorCoins(floor), stones: floorStones(floor), ticket: floor === EPIC_TICKET_FLOOR && !epicTicketGiven };
+}
+/** 구간 전체 보상 (31층부터는 10층 단위로 표시) */
+export function tierRewards(tier: TowerTier, epicTicketGiven = false) {
+  const from = TIER_START[tier];
+  const floors = Array.from({ length: 10 }, (_, i) => from + i);
+  return {
+    coins: floors.reduce((s, f) => s + floorCoins(f), 0),
+    stones: floors.reduce((s, f) => s + floorStones(f), 0),
+    ticket: floors.includes(EPIC_TICKET_FLOOR) && !epicTicketGiven,
+    title: tier === 1 ? "탑의 순례자" : tier === 3 ? "탑의 현자" : tier === 4 ? "탑의 정복자 (50층)" : null,
+  };
 }
 
 /** 다음 층으로 (체력 · 강화 유지, 적 새로) */
