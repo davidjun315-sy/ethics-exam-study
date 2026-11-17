@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { DrawResult, GameState } from "@/lib/game/data";
+import { useEffect, useState } from "react";
+import type { DrawResult, GameState, MultiDrawResult } from "@/lib/game/data";
 import { RARITIES, RARITY_NAMES, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { Ticket } from "lucide-react";
@@ -34,15 +34,48 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
   const [result, setResult] = useState<(DrawResult & { ticket?: TicketKind }) | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 10+1 뽑기 결과 · 몇 장까지 뒤집었나
+  const [multi, setMulti] = useState<MultiDrawResult | null>(null);
+  const [shownN, setShownN] = useState(0);
   const cost = state.settings.drawCost;
+  const multiCost = cost * 10;
+  const enoughMulti = state.coins >= multiCost;
   // 무료 뽑기 결과를 받으면 상태를 다시 읽기 전에도 곧바로 일반 뽑기로 전환
   const free = state.freeDraw.available && !result?.free;
   const enough = free || state.coins >= cost;
+
+  // 11장을 차례로 뒤집기 (높은 등급은 조금 더 뜸을 들임)
+  useEffect(() => {
+    if (!multi || shownN >= multi.cards.length) return;
+    const next = multi.cards[shownN];
+    const t = setTimeout(() => setShownN((n) => n + 1), shownN === 0 ? 350 : next.rarity === "legendary" ? 700 : next.rarity === "epic" ? 450 : 170);
+    return () => clearTimeout(t);
+  }, [multi, shownN]);
+
+  async function drawTen() {
+    if (phase === "drawing") return;
+    setError(null);
+    setResult(null);
+    setMulti(null);
+    setShownN(0);
+    setPhase("drawing");
+    const requestId = crypto.randomUUID();
+    try {
+      const [r] = await Promise.all([postWithRetry<MultiDrawResult>("/api/game/draw", { requestId, multi: true }), new Promise((ok) => setTimeout(ok, 700))]);
+      setMulti(r);
+      setPhase("reveal");
+      reload().catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("idle");
+    }
+  }
 
   async function draw(ticket?: TicketKind) {
     if (phase === "drawing") return;
     setError(null);
     setResult(null);
+    setMulti(null);
     setFlipped(false);
     setPhase("drawing");
     const requestId = crypto.randomUUID();
@@ -66,7 +99,9 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
       <section className="card relative overflow-hidden p-5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_45%,color-mix(in_srgb,var(--navy)_14%,transparent),transparent)]" />
         <div className="relative flex min-h-[26rem] flex-col items-center justify-center gap-4 pb-2 pt-6 sm:pt-8">
-          {phase === "idle" && !result ? (
+          {multi ? (
+            <MultiReveal r={multi} shown={shownN} maxLevel={state.settings.maxLevel} onOpen={onOpen} onSkip={() => setShownN(multi.cards.length)} />
+          ) : phase === "idle" && !result ? (
             <div className="card-enter flex flex-col items-center">
               <CardBack className="card-float w-44 sm:w-52" />
               <p className="mt-4 text-sm text-muted">{free ? "첫 카드는 코인 없이 뽑을 수 있어요" : "퀴즈로 모은 코인으로 철학자를 영입하세요"}</p>
@@ -121,7 +156,19 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
           <div className="flex flex-wrap justify-center gap-2">
             {!free && (
               <button type="button" className="btn-primary px-6 py-3 text-base font-bold" disabled={!enough || phase === "drawing"} onClick={() => draw()}>
-                {phase === "drawing" ? "뽑는 중…" : result ? "한 번 더 뽑기" : "카드 뽑기"} · {cost}코인
+                {phase === "drawing" ? "뽑는 중…" : result ? "한 번 더 뽑기" : "1장 뽑기"} · {cost}코인
+              </button>
+            )}
+            {!free && (
+              <button
+                type="button"
+                className="relative rounded-xl bg-gradient-to-r from-[#c99a2e] via-[#ffd36b] to-[#e0a43a] px-6 py-3 text-base font-black text-[#3a2600] shadow-[0_6px_18px_-6px_rgba(201,154,46,.8)] transition hover:brightness-105 disabled:opacity-50"
+                disabled={!enoughMulti || phase === "drawing"}
+                onClick={drawTen}
+                data-draw-multi
+              >
+                10+1 뽑기 · {multiCost.toLocaleString()}코인
+                <span className="absolute -right-2 -top-2 rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-black text-white shadow">+1장 무료</span>
               </button>
             )}
             {result && flipped && (
@@ -151,6 +198,7 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
           )}
           {!free && <p className="text-[11px] text-faint">무료 뽑기 사용 완료 · 남은 무료 뽑기 0회</p>}
           {!enough && <p className="text-sm text-muted">코인이 {cost - state.coins} 부족합니다. 윤리 퀴즈 한 세트를 풀면 모을 수 있어요.</p>}
+          {!free && enough && !enoughMulti && <p className="text-[11px] text-faint">10+1 뽑기까지 코인 {(multiCost - state.coins).toLocaleString()} 남음 · 10장 값으로 11장</p>}
           {error && <p className="rounded bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         </div>
       </section>
@@ -201,10 +249,61 @@ export function DrawTab({ state, reload, onOpen }: { state: GameState; reload: (
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-faint">모든 철학자({state.cards.length}명)가 네 등급 모두로 나올 수 있습니다. 등급을 먼저 정하고 철학자를 고르며, 결과는 서버에서 정해집니다.</p>
+          <p className="mt-2 text-[11px] font-semibold text-[#8a5a00] dark:text-[#ffd36b]">10+1 뽑기: {(cost * 10).toLocaleString()}코인으로 11장 · 11장 모두 위 확률 그대로</p>
+          <p className="mt-1 text-[11px] text-faint">모든 철학자({state.cards.length}명)가 네 등급 모두로 나올 수 있습니다. 등급을 먼저 정하고 철학자를 고르며, 결과는 서버에서 정해집니다.</p>
           <p className="mt-1 text-[11px] text-faint">같은 카드가 또 나와도 카드로 보관됩니다. 같은 사상가의 같은 등급 카드 {state.settings.fusionCount}장을 합성하면 한 단계 위 등급으로 진화해요 (예: 일반 콜버그 {state.settings.fusionCount}장 → 희귀 콜버그).</p>
         </section>
       </aside>
+    </div>
+  );
+}
+
+const RARITY_RING: Record<Rarity, string> = { common: "ring-[#b9c0cb]/50", rare: "ring-[#5aa2ff]/70", epic: "ring-[#b07cff]/80", legendary: "ring-[#ffc94a]" };
+
+/** 10+1 뽑기 결과: 11장이 차례로 뒤집히고, 끝나면 등급별 요약 */
+function MultiReveal({ r, shown, maxLevel, onOpen, onSkip }: { r: MultiDrawResult; shown: number; maxLevel: number; onOpen: (id: string) => void; onSkip: () => void }) {
+  const done = shown >= r.cards.length;
+  const count = (k: Rarity) => r.cards.filter((c) => c.rarity === k).length;
+  const fresh = r.cards.filter((c) => c.isNewPhilosopher).length;
+  return (
+    <div className="w-full space-y-3" data-multi-reveal>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+        {r.cards.map((c, i) => {
+          const up = i < shown;
+          return (
+            <div key={c.cardId} className="relative" style={{ ["--burst" as string]: BURST[c.rarity] } as React.CSSProperties}>
+              {up && c.rarity !== "common" && <span className="card-burst" style={{ ["--burst" as string]: BURST[c.rarity] }} />}
+              {up && c.rarity === "legendary" && <span className="draw-pillar" aria-hidden />}
+              <button type="button" className={`flip-card block w-full rounded-[14px] ${up ? `is-flipped ring-2 ${RARITY_RING[c.rarity]}` : ""}`} style={{ aspectRatio: "3 / 4" }} onClick={() => up && onOpen(c.philosopherId)} aria-label={up ? `${RARITY_NAMES[c.rarity]} ${c.name}` : "아직 뒤집지 않은 카드"}>
+                <div className="flip-face">
+                  <CardBack />
+                </div>
+                <div className="flip-face front">
+                  <PhilosopherCard fx="lite" card={c} rarity={c.rarity} level={c.level} stats={{ atk: c.atk, hp: c.hp }} tilt={false} maxLevel={maxLevel} />
+                </div>
+              </button>
+              {up && c.isNewPhilosopher && <span className="absolute -left-1 -top-1 z-10 rounded-full bg-ok px-1.5 py-0.5 text-[9px] font-black text-white shadow">NEW</span>}
+              {c.bonus && <span className="absolute -right-1 -top-1 z-10 rounded-full bg-danger px-1.5 py-0.5 text-[9px] font-black text-white shadow">+1 보너스</span>}
+            </div>
+          );
+        })}
+      </div>
+      {done ? (
+        <div className="quiz-rise flex flex-wrap items-center justify-center gap-1.5 text-xs font-bold" aria-live="polite">
+          <span className="rounded-full bg-surface-2 px-2.5 py-1">11장 획득</span>
+          {(["legendary", "epic", "rare", "common"] as Rarity[]).filter((k) => count(k) > 0).map((k) => (
+            <span key={k} className={`rounded-full px-2.5 py-1 ${k === "legendary" ? "bg-[#ffd36b]/30 text-[#8a5a00] dark:text-[#ffd36b]" : k === "epic" ? "bg-[#b07cff]/20 text-[#7b3fe4] dark:text-[#d8b4ff]" : k === "rare" ? "bg-[#5aa2ff]/20 text-[#2a6fd6] dark:text-[#8fd0ff]" : "bg-surface-2 text-muted"}`}>
+              {RARITY_NAMES[k]} {count(k)}
+            </span>
+          ))}
+          {fresh > 0 && <span className="rounded-full bg-ok-soft px-2.5 py-1 text-ok">NEW {fresh}명</span>}
+          {r.autoFeatured && <span className="w-full text-center text-[11px] font-normal text-muted">첫 카드가 대표 카드로 설정되었습니다.</span>}
+        </div>
+      ) : (
+        <button type="button" className="mx-auto block text-xs text-muted underline" onClick={onSkip}>
+          모두 뒤집기
+        </button>
+      )}
     </div>
   );
 }

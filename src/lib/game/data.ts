@@ -612,6 +612,33 @@ export async function drawCard(learner: string, requestId: string, free: boolean
   return { card: await ownedCard(learner, r.cardId), isNewPhilosopher: Boolean(r.isNewPhilosopher), free: r.free, autoFeatured: Boolean(r.autoFeatured), coins: r.coins, replayed: r.replayed };
 }
 
+export const GAME_028_HINT = "10+1 뽑기 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/028_game_draw_multi.sql 을 실행하세요.";
+
+export interface MultiDrawResult {
+  cards: (OwnedCard & { isNewPhilosopher: boolean; bonus: boolean })[];
+  cost: number;
+  autoFeatured: boolean;
+  coins: number;
+  replayed: boolean;
+}
+
+/** 10+1 뽑기: 10장 값으로 11장 (비용 · 등급 · 사상가는 DB 함수가 정하고, 같은 요청은 처음 결과 그대로) */
+export async function drawMulti(learner: string, requestId: string): Promise<MultiDrawResult> {
+  const { data, error } = await getAdminClient().rpc("game_draw_multi", { p_learner: learner, p_ref: `multi:${requestId}`, p_day: kstDay() });
+  if (error) {
+    if (/game_draw_multi|schema cache|Could not find/i.test(error.message)) throw new GameError(GAME_028_HINT, 503);
+    throw gameError(error.message);
+  }
+  const r = data as { cards: { cardId: string; isNewPhilosopher: boolean; bonus: boolean }[]; cost: number; autoFeatured?: boolean; coins: number; replayed: boolean };
+  const s = await getGameState(learner);
+  const byId = new Map(s.owned.map((o) => [o.cardId, o]));
+  const cards = r.cards.flatMap((c) => {
+    const o = byId.get(c.cardId);
+    return o ? [{ ...o, isNewPhilosopher: c.isNewPhilosopher, bonus: c.bonus }] : [];
+  });
+  return { cards, cost: r.cost, autoFeatured: Boolean(r.autoFeatured), coins: r.coins, replayed: r.replayed };
+}
+
 /** 레벨업: 사상가별 강화 조각 + 코인 (확정 성공) */
 export async function levelUpCard(learner: string, cardId: string, requestId: string) {
   const db = getAdminClient();
