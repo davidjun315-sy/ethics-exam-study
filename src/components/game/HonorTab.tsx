@@ -99,7 +99,7 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
             return cur ? (
               <p className="rounded-lg bg-navy-soft/60 px-3 py-2 text-xs">
                 지금 효과 · 배틀에서 내 팀 <b className="text-navy">{bonusText(cur.bonus)}</b>
-                <span className="text-muted"> (도장깨기 · 빠른 대전)</span>
+                <span className="text-muted"> (도장깨기)</span>
               </p>
             ) : null;
           })()}
@@ -113,7 +113,8 @@ export function HonorTab({ state, reload }: { state: GameState; reload: () => Pr
             업적
           </h2>
           {GROUPS.map((g) => {
-            const list = state.achievements.filter((a) => a.group === g);
+            // 빠른 대전은 없어졌으므로 '대전' 업적은 이미 얻은 것만 (칭호는 계속 쓸 수 있음)
+            const list = state.achievements.filter((a) => a.group === g && (g !== "대전" || a.done));
             if (!list.length) return null;
             return (
               <div key={g}>

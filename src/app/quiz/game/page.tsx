@@ -14,8 +14,8 @@ export default async function GamePage({ searchParams }: PageProps<"/quiz/game">
   const sp = await searchParams;
   const tab = TABS.find((t) => t === sp.tab) ?? "draw";
   const base = typeof sp.base === "string" && /^[0-9a-f-]{36}$/i.test(sp.base) ? sp.base : null;
-  // 배틀 아레나 안의 모드 (도장깨기 · 사상의 탑 · 빠른 대전 · 카드 대전)
-  const mode = (["stage", "tower", "quick", "duel"] as ArenaMode[]).find((m) => m === sp.mode);
+  // 배틀 아레나 안의 모드 (도장깨기 · 사상의 탑). 예전 주소의 빠른 대전 · 카드 대전은 도장깨기로
+  const mode = (["stage", "tower"] as ArenaMode[]).find((m) => m === sp.mode);
   // 대표 카드 등에서 바로 카드 상세(도감에서 카드를 눌렀을 때의 화면)를 열 사상가
   const detail = typeof sp.detail === "string" && /^[0-9a-f-]{36}$/i.test(sp.detail) ? sp.detail : null;
   const loaded = await getGameState(learner).then(

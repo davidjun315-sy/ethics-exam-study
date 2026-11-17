@@ -8,7 +8,6 @@ import { artPrompt, faceFor, portraitSearchUrl } from "@/lib/game/suggestions";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { quizApi as api } from "@/lib/quiz/client";
 import { PhilosopherCard } from "@/components/game/PhilosopherCard";
-import { DuelRulesForm } from "./DuelRulesForm";
 import { BattleArtPanel } from "./BattleArtPanel";
 import { BattleBgForm } from "./BattleBgForm";
 import { ArtSlotsForm } from "./ArtSlotsForm";
@@ -91,7 +90,6 @@ export function GameAdmin({ candidates, settings, freeDraws }: { candidates: Can
       </ul>
 
       <SettingsForm initial={settings} />
-      <DuelRulesForm initial={settings.duel_rules} ready={settings.duel_rules_ready} />
       <BattleBgForm initial={settings.battle_bg} ready={settings.battle_bg_ready} />
       <ArtSlotsForm initial={settings.art} ready={settings.art_ready} />
       {freeDraws && (

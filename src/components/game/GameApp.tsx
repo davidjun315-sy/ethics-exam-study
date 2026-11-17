@@ -13,8 +13,6 @@ import { DrawTab } from "./DrawTab";
 import { CollectionTab } from "./CollectionTab";
 import { UpgradeTab } from "./UpgradeTab";
 import { FusionTab } from "./FusionTab";
-import { BattleTab } from "./BattleTab";
-import { DuelTab } from "./DuelTab";
 import { StageTab } from "./StageTab";
 import { TowerTab } from "./TowerTab";
 import { HonorTab, TitleBadge } from "./HonorTab";
@@ -42,7 +40,7 @@ export function Coins({ value, className = "" }: { value: number; className?: st
 export const byStrength = (a: OwnedCard, b: OwnedCard) => RARITIES.indexOf(b.rarity) - RARITIES.indexOf(a.rarity) || b.level - a.level;
 
 /** 철학자 대난투: 다섯 탭이 같은 상태(코인·보유 카드)를 나눠 쓴다. 변경 후에는 서버에서 다시 읽는다 */
-export type ArenaMode = "stage" | "tower" | "quick" | "duel";
+export type ArenaMode = "stage" | "tower";
 
 export function GameApp({ initial, initialTab, initialBase, initialDetail, initialMode }: { initial: GameState; initialTab: Tab; initialBase?: string | null; initialDetail?: string | null; initialMode?: ArenaMode }) {
   const [state, setState] = useState(initial);
@@ -435,7 +433,7 @@ export function gemStyle(r: OwnedCard["rarity"]): React.CSSProperties {
   return { ["--r1" as string]: c[0], ["--r2" as string]: c[1] };
 }
 
-/** 배틀 아레나: 도장깨기(내 카드 3장 vs 관 보스) · 사상의 탑(기출 퀴즈로 오르는 탑) · 빠른 대전(3 vs 3) · 카드 대전(턴제 카드 게임) */
+/** 배틀 아레나: 도장깨기(내 카드 3장 vs 관 보스) · 사상의 탑(기출 퀴즈로 오르는 탑) */
 function ArenaTab({ state, reload, goDraw, initialMode }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void; initialMode?: ArenaMode }) {
   const [mode, setModeState] = useState<ArenaMode>(initialMode ?? "stage");
   const setMode = (m: ArenaMode) => {
@@ -445,8 +443,6 @@ function ArenaTab({ state, reload, goDraw, initialMode }: { state: GameState; re
   const modes = [
     { key: "stage" as const, label: "도장깨기" },
     { key: "tower" as const, label: "사상의 탑" },
-    { key: "quick" as const, label: "빠른 대전" },
-    { key: "duel" as const, label: "카드 대전" },
   ];
   return (
     <div className="space-y-4">
@@ -465,12 +461,8 @@ function ArenaTab({ state, reload, goDraw, initialMode }: { state: GameState; re
       </div>
       {mode === "stage" ? (
         <StageTab state={state} reload={reload} goDraw={goDraw} />
-      ) : mode === "tower" ? (
-        <TowerTab state={state} reload={reload} goDraw={goDraw} />
-      ) : mode === "duel" ? (
-        <DuelTab state={state} reload={reload} goDraw={goDraw} />
       ) : (
-        <BattleTab state={state} reload={reload} goDraw={goDraw} />
+        <TowerTab state={state} reload={reload} goDraw={goDraw} />
       )}
     </div>
   );

@@ -41,7 +41,7 @@ export interface Achievement {
 }
 
 /**
- * 칭호 효과: 얻기 어려운 칭호일수록 큼 (도장깨기 · 빠른 대전의 내 팀, 하나만 달 수 있음)
+ * 칭호 효과: 얻기 어려운 칭호일수록 큼 (도장깨기의 내 팀, 하나만 달 수 있음)
  *  ★1 +1~2% · ★2 +2~3% · ★3 +3~5% · ★4 +5~7% · ★5 +8%
  */
 const TITLE_EFFECT: Record<string, { tier: number; atk: number; hp: number }> = {
