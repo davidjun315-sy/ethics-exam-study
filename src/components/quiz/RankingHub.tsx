@@ -95,7 +95,7 @@ function SummaryTile({ label, icon, onClick, disabled, rank, empty, detail, lead
         <span className="hidden min-w-0 flex-1 flex-col justify-center gap-1 border-l border-line/70 pl-4 sm:flex">
           {top.map((t) => (
             <span key={t.rank} className={`flex items-center gap-2 rounded-lg px-1.5 py-0.5 text-xs ${t.me ? "bg-navy-soft/70" : ""}`}>
-              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${MEDAL[t.rank - 1] ?? "text-muted"}`}>{t.rank}</span>
+              <RankNum rank={t.rank} size="sm" />
               <span className="min-w-0 flex-1 truncate font-semibold">
                 {t.name}
                 {t.me && <span className="ml-1 font-normal text-muted">(나)</span>}
@@ -129,17 +129,25 @@ function Progress({ answered, total, done }: { answered: number; total: number; 
   );
 }
 
+/** 순위 숫자: 1~3위는 금 · 은 · 동 금속 빛 글자 (배경 없이), 나머지는 차분한 회색 */
 const MEDAL = [
-  "bg-gradient-to-br from-[#ffe39a] to-[#e6b445] text-[#3a2600] shadow-[0_1px_4px_rgba(201,154,46,.45)]",
-  "bg-gradient-to-br from-[#f1f3f7] to-[#c3cad6] text-[#2a2f38] shadow-[0_1px_4px_rgba(120,130,150,.35)]",
-  "bg-gradient-to-br from-[#f3c79a] to-[#c9864a] text-[#3a1f00] shadow-[0_1px_4px_rgba(180,110,50,.35)]",
+  "bg-gradient-to-b from-[#e9c46a] via-[#c99a2e] to-[#9a6f12] bg-clip-text text-transparent dark:from-[#f6dc8f] dark:via-[#e0b64e] dark:to-[#b8892b]",
+  "bg-gradient-to-b from-[#a9b1be] via-[#7d8696] to-[#5b6372] bg-clip-text text-transparent dark:from-[#e6eaf0] dark:via-[#b9c1cd] dark:to-[#8d96a4]",
+  "bg-gradient-to-b from-[#d79a64] via-[#b06d34] to-[#80491d] bg-clip-text text-transparent dark:from-[#f0b98a] dark:via-[#cf8a4f] dark:to-[#a8693a]",
 ];
+function RankNum({ rank, size }: { rank: number; size: "sm" | "md" }) {
+  return (
+    <span className={`shrink-0 text-center font-black italic tabular-nums tracking-tight ${size === "md" ? "w-7 text-lg" : "w-5 text-sm"} ${MEDAL[rank - 1] ?? "!not-italic font-semibold text-faint"}`}>
+      {rank}
+    </span>
+  );
+}
 
 /** 두 순위표 공통 한 줄: 순위 메달 · 이름 · 칭호 · 오른쪽 값 */
 function RankRow({ rank, name, me, title, right }: { rank: number; name: string; me: boolean; title: string | null; right: ReactNode }) {
   return (
     <li className={`flex items-center gap-3 rounded-xl px-2.5 py-2 text-sm ${me ? "bg-navy-soft/70 ring-1 ring-navy/25" : ""}`}>
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black tabular-nums ${MEDAL[rank - 1] ?? "text-muted"}`}>{rank}</span>
+      <RankNum rank={rank} size="md" />
       <span className="min-w-0 flex-1 truncate">
         <span className="font-semibold">{name}</span>
         {me && <span className="ml-1 text-xs text-muted">(나)</span>}
