@@ -314,7 +314,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
             {allClear
               ? "모든 사상가를 이겼습니다! 깬 관은 다시 도전할 수 있습니다."
               : state.stones.ready
-                ? `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 강화석(어느 사상가에게나 쓰는 강화 재료)을 받습니다.`
+                ? `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 5관마다 · 특수 보스를 처음 이기면 강화석(어느 사상가에게나 쓰는 강화 재료)을 받습니다.`
                 : `내 카드 3장으로 관마다 사상가 한 명과 겨룹니다. 뒤로 갈수록 강해집니다. 처음 이기면 그 사상가의 강화 조각 ${STAGE_CLEAR_SHARDS}개.`}
             {lives.ready && " 도전할 때마다 생명력 ♥ 1개를 씁니다 (최대 5개, 30분마다 1개씩 다시 참)."}
             {" "}관 순서는 <b>빈출 순</b>입니다: 기출에 적게 나온 사상가부터, 자주 나온(정복 보상이 높은) 사상가가 뒤의 강한 관입니다.
@@ -381,7 +381,7 @@ export function StageTab({ state, reload, goDraw }: { state: GameState; reload: 
                 <Lock className="h-3.5 w-3.5" aria-hidden /> 앞 관을 깨면 열립니다
               </span>
             )}
-            {selStatus !== "cleared" && state.stones.ready && <span className="text-xs text-[#9fd8ff]">첫 클리어 ◆ 강화석 {stageStones(sel.no, Boolean(sel.pattern))}</span>}
+            {selStatus !== "cleared" && state.stones.ready && stageStones(sel.no, Boolean(sel.pattern)) > 0 && <span className="text-xs text-[#9fd8ff]">첫 클리어 ◆ 강화석 {stageStones(sel.no, Boolean(sel.pattern))}</span>}
             <button
               type="button"
               className={`ml-auto inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-black ${selStatus === "current" ? "bg-[#ffd36b] text-[#2a1d00] hover:bg-[#ffe08f]" : "bg-white/15 hover:bg-white/25"} disabled:opacity-40`}

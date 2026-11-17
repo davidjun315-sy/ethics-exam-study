@@ -54,6 +54,7 @@ export function TowerScene({
   epicTicketGiven = false,
   hereLabel,
   dim = false,
+  best = 0,
 }: {
   /** 아래 → 위 층 번호 */
   floors: number[];
@@ -65,6 +66,8 @@ export function TowerScene({
   hereLabel?: string | null;
   /** 잠긴 탑 (흐리게) */
   dim?: boolean;
+  /** 최고 기록 (강화석은 이보다 높은 보스층을 처음 깰 때만) */
+  best?: number;
 }) {
   const p = TOWER_PALETTES[tier];
   const n = floors.length;
@@ -225,7 +228,7 @@ export function TowerScene({
               </text>
             )}
             {/* 보상 (오른쪽) */}
-            {showRewards && !compact && <Reward f={f} x={cx + w0 / 2 + 8} y={yb - fh / 2} done={st === "done"} epicTicketGiven={epicTicketGiven} hide={st === "here" && Boolean(hereLabel)} />}
+            {showRewards && !compact && <Reward f={f} x={cx + w0 / 2 + 8} y={yb - fh / 2} done={st === "done"} epicTicketGiven={epicTicketGiven} best={best} hide={st === "here" && Boolean(hereLabel)} />}
           </g>
         );
       })}
@@ -460,9 +463,9 @@ function Roof({ tier, cx, topW, y, id, trim }: { tier: TowerTier; cx: number; to
   );
 }
 
-function Reward({ f, x, y, done, epicTicketGiven, hide }: { f: number; x: number; y: number; done: boolean; epicTicketGiven: boolean; hide: boolean }) {
+function Reward({ f, x, y, done, epicTicketGiven, best = 0, hide }: { f: number; x: number; y: number; done: boolean; epicTicketGiven: boolean; best?: number; hide: boolean }) {
   if (hide) return null;
-  const r = floorReward(f, epicTicketGiven);
+  const r = floorReward(f, epicTicketGiven, best);
   const o = done ? 0.45 : 1;
   const dx = 15 + String(r.coins).length * 7 + 5;
   return (
@@ -539,7 +542,7 @@ function TowerDrawn({
 
   return (
     <div className="relative mx-auto w-full max-w-[420px] select-none overflow-hidden rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,.6)] ring-1 ring-white/10" data-tower-map>
-      <TowerScene floors={floors} stateOf={stateOf} tier={tier} epicTicketGiven={epicTicketGiven} hereLabel={mode === "run" ? enemyName : best >= lo && best < lo + 10 ? "best" : null} />
+      <TowerScene floors={floors} stateOf={stateOf} tier={tier} epicTicketGiven={epicTicketGiven} best={best} hereLabel={mode === "run" ? enemyName : best >= lo && best < lo + 10 ? "best" : null} />
       {/* 위 구간 안내 */}
       <div className="pointer-events-none absolute right-3 top-2.5 text-right text-[10px] font-bold tracking-wider text-white/70">
         {lo + 10}층부터 다음 탑 ▲
@@ -648,7 +651,7 @@ function TowerIllustrated({
             const here = f === floor && mode === "run";
             const done = f <= cleared && !here;
             const boss = isBossFloor(f);
-            const r = floorReward(f, epicTicketGiven);
+            const r = floorReward(f, epicTicketGiven, best);
             const isBest = mode === "lobby" && f === best;
             return (
               <li

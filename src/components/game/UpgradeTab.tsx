@@ -183,7 +183,7 @@ export function UpgradeTab({ state, reload, initialCard }: { state: GameState; r
               <p className="text-xs text-muted">바꿀 수 있는 {unified ? "" : `${card.name} `}카드가 없습니다 (대표·잠금 카드는 제외).</p>
             ) : (
               <ul className="space-y-1">
-                {spare.map((o) => (
+                {spare.filter((o) => SHARDS_FOR_CARD[o.rarity] > 0).map((o) => (
                   <li key={o.cardId} className="flex flex-wrap items-center gap-2 text-sm">
                     <span>{unified && `${o.name} · `}{RARITY_NAMES[o.rarity]} Lv.{o.level}</span>
                     {state.deck.includes(o.cardId) && <span className="rounded bg-navy-soft px-1 text-[10px] text-navy">덱</span>}

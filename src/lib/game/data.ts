@@ -64,6 +64,7 @@ const MESSAGES: Record<string, string> = {
   GAME_FUSION_PHILOSOPHER: "같은 사상가의 같은 등급 카드끼리만 합성할 수 있습니다.",
   GAME_FUSION_LOCKED: "잠긴 카드는 재료로 쓸 수 없습니다. 잠금을 풀어 주세요.",
   GAME_FUSION_FEATURED: "대표 카드는 재료로 쓸 수 없습니다. 대표 카드를 바꾼 뒤 다시 시도하세요.",
+  GAME_DISMANTLE_COMMON: "일반 카드는 강화석으로 바꿀 수 없어요. 합성 재료로 쓰세요.",
   GAME_SWAP_SAME: "교환 합성은 다른 사상가 카드끼리 합니다. 같은 사상가끼리는 진화 합성을 쓰세요.",
 };
 
@@ -939,7 +940,7 @@ export async function playStage(learner: string, bossId: string, deckIds: string
     synergy,
     stage: { bossId, no: stage.no, total: stages.length, pattern: stage.pattern },
     firstClear,
-    reward: firstClear ? (state.stones.ready ? { kind: "stones", amount: stageStones(stage.no, Boolean(stage.pattern)) } : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
+    reward: firstClear ? (state.stones.ready ? (stageStones(stage.no, Boolean(stage.pattern)) > 0 ? { kind: "stones", amount: stageStones(stage.no, Boolean(stage.pattern)) } : null) : { kind: "shards", amount: STAGE_CLEAR_SHARDS }) : null,
     cleared: stages.filter((x) => cleared.has(x.bossId)).length,
     lives,
   };

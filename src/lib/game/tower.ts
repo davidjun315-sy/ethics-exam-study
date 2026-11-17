@@ -144,8 +144,8 @@ export const tierOpen = (tier: TowerTier, best: number) => best >= TIER_START[ti
 export const canStartAt = (floor: number, best: number) => (Object.entries(TIER_START) as [string, number][]).some(([t, f]) => f === floor && tierOpen(Number(t) as TowerTier, best));
 
 /** 이 층을 깨면 받는 보상 */
-export function floorReward(floor: number, epicTicketGiven = false): { coins: number; stones: number; ticket: boolean } {
-  return { coins: floorCoins(floor), stones: floorStones(floor), ticket: floor === EPIC_TICKET_FLOOR && !epicTicketGiven };
+export function floorReward(floor: number, epicTicketGiven = false, best = 0): { coins: number; stones: number; ticket: boolean } {
+  return { coins: floorCoins(floor), stones: floor > best ? floorStones(floor) : 0, ticket: floor === EPIC_TICKET_FLOOR && !epicTicketGiven };
 }
 /** 구간 전체 보상 (31층부터는 10층 단위로 표시) */
 export function tierRewards(tier: TowerTier, epicTicketGiven = false) {
@@ -200,7 +200,7 @@ export function applyBuff(s: RunState, b: BuffId): RunState {
 // ---------------------------------------------------------------------
 /** 층을 깰 때 코인: 5 + 층 (보스 ×3) */
 export const floorCoins = (floor: number) => (5 + floor) * (isBossFloor(floor) ? 3 : 1);
-/** 보스층을 깰 때 강화석: 10층 1 · 20층 2 · 30층 3 … */
+/** 보스층을 처음 깰 때 강화석: 10층 1 · 20층 2 · 30층 3 … (031: 최고 기록을 넘을 때만 · 다시 깨면 코인만) */
 export const floorStones = (floor: number) => (isBossFloor(floor) ? floor / 10 : 0);
 /** 처음으로 30층을 깨면 영웅 확정 뽑기권 한 장 (평생 한 번) */
 export const EPIC_TICKET_FLOOR = 30;

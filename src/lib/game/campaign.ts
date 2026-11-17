@@ -71,7 +71,15 @@ export const STAGE_CLEAR_SHARDS = 3;
  * 첫 관 클리어 보상 (017): 강화석. 1~10관 1개, 11~20관 2개, 21~30관 3개 …
  * 카드 한 장을 Lv.1 → 5 로 올리는 데 강화석 10개 (합성해도 레벨은 유지) → 10관마다 대략 카드 1~2장 분량
  */
-export const stageStones = (no: number, special = false) => 1 + Math.floor((Math.max(1, no) - 1) / 10) + (special ? 1 : 0);
+/**
+ * 첫 클리어 강화석 (031 조율): 5관마다 1~4개 (뒤로 갈수록 많이) + 특수 보스 +1, 나머지 관은 0.
+ * 전에는 모든 관이 1~8개라 필요(카드 한 장 최대 레벨까지 10개)에 비해 너무 많았다.
+ */
+export const stageStones = (no: number, special = false) => {
+  const n = Math.max(1, no);
+  const milestone = n % 5 === 0 ? 1 + Math.min(3, Math.floor((n - 1) / 20)) : 0;
+  return milestone + (special ? 1 : 0);
+};
 
 const TRADITION_ORDER = ["동양윤리", "한국윤리", "서양윤리", "사회사상"];
 

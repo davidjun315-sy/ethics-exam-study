@@ -398,7 +398,7 @@ export function PhilosopherSheet({
                               합성 → {RARITY_NAMES[nextRarity(c.rarity)!]}
                             </button>
                           )}
-                          {!featured && !c.locked && (
+                          {!featured && !c.locked && SHARDS_FOR_CARD[c.rarity] > 0 && (
                             confirm === c.cardId ? (
                               <span className="flex items-center gap-1 text-xs">
                                 <span className="text-warn">이 카드를 없애고 {state.settings.stonesUnified ? "강화석" : "조각"} {SHARDS_FOR_CARD[c.rarity]}개로?</span>

@@ -398,7 +398,7 @@ function TowerPicker({ ov, pick, onPick, art }: { ov: TowerOverview; pick: Tower
           );
         })}
       </div>
-      <p className="text-[10px] text-white/60">🪙 코인 · 💎 강화석은 그 탑 10개 층을 모두 깼을 때의 합 · 층마다 받는 보상은 아래 탑 그림 오른쪽에</p>
+      <p className="text-[10px] text-white/60">🪙 코인 · 💎 강화석은 그 탑 10개 층을 모두 깼을 때의 합 (강화석은 보스층을 처음 깰 때만) · 층마다 받는 보상은 아래 탑 그림 오른쪽에</p>
     </div>
   );
 }

@@ -42,7 +42,7 @@ check("등급 배율: 일반 1.00 · 희귀 1.20 · 영웅 1.45 · 전설 1.75",
 check("같은 사상가·같은 레벨이면 등급이 오를수록 능력치 증가 (모든 레벨)", [1, 2, 3, 4, 5].every((lv) => RARITIES.slice(1).every((r, i) => { const lo = statsFor(base, RARITIES[i], lv); const hi = statsFor(base, r, lv); return hi.atk > lo.atk && hi.hp > lo.hp; })));
 check("레벨과 등급은 독립 (희귀 Lv.3 = 기본×1.2×1.24)", JSON.stringify(statsFor(base, "rare", 3)) === JSON.stringify(statsAt({ atk: 48, hp: 360 }, 3)));
 check("진화 단계: 일반→희귀→영웅→전설, 전설은 끝", nextRarity("common") === "rare" && nextRarity("rare") === "epic" && nextRarity("epic") === "legendary" && nextRarity("legendary") === null);
-check("카드→조각: 1·2·4·8", SHARDS_FOR_CARD.common === 1 && SHARDS_FOR_CARD.legendary === 8);
+check("카드 분해 → 강화석: 일반 불가 · 희귀 1 · 영웅 2 · 전설 4", SHARDS_FOR_CARD.common === 0 && SHARDS_FOR_CARD.rare === 1 && SHARDS_FOR_CARD.legendary === 4);
 const fp = (b: Parameters<typeof fusionProblem>[0], m: Parameters<typeof fusionProblem>[1], featured: string | null = null) => fusionProblem(b, m, { fusionCount: 2, featuredId: featured, coins: 0, cost: 0 });
 const C = (id: string, rarity: "common" | "rare" | "epic" | "legendary", locked = false, philosopherId = "kohlberg") => ({ cardId: id, rarity, locked, philosopherId });
 check("합성 가능: 같은 사상가 · 같은 등급 2장 (일반 콜버그 + 일반 콜버그)", fp(C("a", "common"), [C("b", "common")]) === null);
@@ -459,5 +459,12 @@ if (failed) {
   check("교환 합성 재료: 같은 등급 · 다른 사상가만 (같은 사상가 · 다른 등급 · 잠금 · 대표 제외)", swapMaterials(owned[0], owned, "r").map((o) => o.cardId).join(",") === "m");
   check("교환 합성: 다른 사상가 OK · 같은 사상가는 진화로 · 다른 등급 불가", swapProblem(owned[0], [owned[2]], opt) === null && /진화/.test(swapProblem(owned[0], [owned[1]], opt) ?? "") && /같은 등급/.test(swapProblem(owned[0], [owned[4]], opt) ?? ""));
   check("교환 합성: 전설끼리도 가능 · 잠긴 기준은 불가", canSwapCard(owned[6], owned, null, 2) && /잠긴/.test(swapProblem(owned[5], [owned[2]], opt) ?? ""));
+}
+{
+  const { stageStones } = await import("../src/lib/game/campaign.ts");
+  const T = await import("../src/lib/game/tower.ts");
+  const total78 = Array.from({ length: 78 }, (_, i) => stageStones(i + 1)).reduce((a, b) => a + b, 0);
+  check("도장깨기 강화석: 5관마다만 (1~4개) · 특수 보스 +1 · 78관 전체 40개 안팎", stageStones(1) === 0 && stageStones(4) === 0 && stageStones(5) === 1 && stageStones(25) === 2 && stageStones(65) === 4 && stageStones(3, true) === 1 && total78 >= 30 && total78 <= 45, `78관 합 ${total78} (특수 보스 별도)`);
+  check("탑 강화석: 최고 기록 아래 보스층은 0 (코인만)", T.floorReward(10, false, 12).stones === 0 && T.floorReward(20, false, 12).stones === 2 && T.floorReward(10, false, 12).coins === T.floorCoins(10));
 }
 console.log("\n모두 통과");

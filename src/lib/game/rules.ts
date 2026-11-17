@@ -19,7 +19,8 @@ export function nextRarity(r: Rarity): Rarity | null {
 }
 
 /** 카드를 강화 조각으로 바꿀 때 얻는 조각 (등급이 높을수록 많이) — DB 함수와 같은 값 */
-export const SHARDS_FOR_CARD: Record<Rarity, number> = { common: 1, rare: 2, epic: 4, legendary: 8 };
+/** 카드 분해 → 강화석 (031): 일반은 분해 불가 (합성 재료로) */
+export const SHARDS_FOR_CARD: Record<Rarity, number> = { common: 0, rare: 1, epic: 2, legendary: 4 };
 
 export type SkillEffect = "strike" | "sweep" | "heal" | "guard" | "stun";
 export const SKILL_EFFECTS: Record<SkillEffect, { name: string; desc: string }> = {
