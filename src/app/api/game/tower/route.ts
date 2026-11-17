@@ -3,7 +3,7 @@ import { z } from "zod";
 import { clientKey, parseBody, rateLimit } from "@/lib/http";
 import { requireLearner } from "@/lib/quiz/api";
 import { gameJsonError } from "@/lib/game/api";
-import { answerTower, chooseTowerBuff, getTower, quitTower, startTower, spendTowerHint } from "@/lib/game/tower-data";
+import { answerTower, chooseTowerBuff, enterTowerFloor, getTower, quitTower, startTower, spendTowerHint } from "@/lib/game/tower-data";
 import { GeminiError } from "@/lib/ai/gemini";
 
 // 서술형 층은 AI 채점 (무료 등급이 느리면 예비 모델로 다시)
@@ -14,6 +14,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("answer"), runId: z.string().uuid(), itemId: z.string().uuid(), answer: z.string().max(5000) }),
   z.object({ action: z.literal("buff"), runId: z.string().uuid(), buff: z.enum(["heal", "power", "shield", "hint"]) }),
   z.object({ action: z.literal("hint"), runId: z.string().uuid() }),
+  z.object({ action: z.literal("enter"), runId: z.string().uuid() }),
   z.object({ action: z.literal("quit"), runId: z.string().uuid() }),
 ]);
 
@@ -45,6 +46,8 @@ export async function POST(req: Request) {
         return NextResponse.json(await answerTower(learner, data.runId, data.itemId, data.answer));
       case "buff":
         return NextResponse.json({ run: await chooseTowerBuff(learner, data.runId, data.buff) });
+      case "enter":
+        return NextResponse.json({ run: await enterTowerFloor(learner, data.runId) });
       case "hint":
         return NextResponse.json({ run: await spendTowerHint(learner, data.runId) });
       case "quit":

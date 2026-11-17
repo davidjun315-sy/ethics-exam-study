@@ -105,6 +105,8 @@ interface Current {
   essay: boolean;
   /** 힌트를 이미 썼으면 그 내용 (다시 열어도 같은 힌트) */
   hint?: TowerHint | null;
+  /** false = 새 층에 아직 들어가지 않음 (탑 화면에서 '입장'을 누르면 문제 공개 · 빠른 정답 시계 시작). 예전 도전은 없음 = 들어감 */
+  entered?: boolean;
 }
 type RunRow = {
   id: string;
@@ -143,6 +145,8 @@ export interface RunView {
   team: TeamCard[];
   teamAtk: number;
   item: (ItemView & { essay: boolean; servedAt: string; hint: TowerHint | null }) | null;
+  /** 새 층 입장 전 (탑 화면) */
+  awaiting: boolean;
   choices: { id: BuffId; name: string; desc: string }[] | null;
   cleared: number;
   coins: number;
@@ -197,7 +201,8 @@ async function toView(r: RunRow): Promise<RunView> {
     r.state.floor,
   );
   let item: RunView["item"] = null;
-  if (r.status === "active" && r.current) {
+  const awaiting = r.status === "active" && r.current?.entered === false;
+  if (r.status === "active" && r.current && !awaiting) {
     const v = await getItemView(r.current.itemId).catch(() => null);
     if (v) item = { ...v, essay: r.current.essay, servedAt: r.current.servedAt, hint: r.current.hint ?? null };
   }
@@ -216,6 +221,7 @@ async function toView(r: RunRow): Promise<RunView> {
     team: r.team,
     teamAtk: teamAtk(r.team),
     item,
+    awaiting,
     choices: r.choices?.length ? r.choices.map((id) => ({ id, ...BUFFS[id] })) : null,
     cleared: r.cleared,
     coins: r.coins,
@@ -255,13 +261,13 @@ async function enemyNames(enemyId: string | null): Promise<string[]> {
 }
 
 /** 다음 문제 정하기 (없으면 null → 이 층은 문제 없이 통과시키지 않고 도전 끝) */
-async function serveNext(s: Stored): Promise<{ current: Current | null; state: Stored }> {
+async function serveNext(s: Stored, entered = true): Promise<{ current: Current | null; state: Stored }> {
   const [items, names] = await Promise.all([towerItems(), enemyNames(s.enemyId)]);
   const it = pickItem(items, { floor: s.floor, names, used: new Set(s.used), essayOk: isGeminiConfigured(), essaysThisFloor: s.essays, seed: s.seed + s.answered });
   if (!it) return { current: null, state: s };
   const essay = !it.auto;
   return {
-    current: { itemId: it.id, servedAt: new Date().toISOString(), essay, hint: null },
+    current: { itemId: it.id, servedAt: new Date().toISOString(), essay, hint: null, entered },
     state: { ...s, used: [...s.used, it.id].slice(-400), essays: s.essays + (essay ? 1 : 0) },
   };
 }
@@ -339,7 +345,7 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   }
   const run = (await loadRun(learner, (data as { id: string }).id))!;
   if ((data as { resumed: boolean }).resumed || run.current) return toView(run);
-  const n = await serveNext(run.state);
+  const n = await serveNext(run.state, false);
   if (!n.current) throw new GameError("탑에 낼 문제가 아직 없습니다. 관리자가 윤리 퀴즈 문제를 공개하면 열립니다.", 409);
   return toView(await saveRun(run, { state: n.state, current: n.current }));
 }
@@ -373,6 +379,7 @@ export async function answerTower(learner: string, runId: string, itemId: string
   const run = await loadRun(learner, runId);
   if (!run || run.status !== "active") throw new GameError("끝난 도전입니다.", 409);
   if (!run.current || run.current.itemId !== itemId) throw new GameError("지금 문제가 아닙니다. 새로고침해 주세요.", 409);
+  if (run.current.entered === false) throw new GameError("먼저 층에 입장하세요.", 409);
   const cur = run.current;
   const quick = !cur.essay && Date.now() - new Date(cur.servedAt).getTime() <= QUICK_SEC * 1000;
 
@@ -443,9 +450,17 @@ export async function chooseTowerBuff(learner: string, runId: string, buff: Buff
   const enemies = await enemyOrder();
   const up = nextFloor(applyBuff(run.state, buff));
   let state: Stored = { ...run.state, ...up, enemyId: enemyForFloor(enemies, up.floor)?.philosopherId ?? null, essays: 0 };
-  const n = await serveNext(state);
+  const n = await serveNext(state, false);
   state = n.state;
   return toView(await saveRun(run, n.current ? { state, current: n.current, choices: null } : { state, current: null, choices: null, status: "over" }));
+}
+
+/** 탑 화면에서 새 층 입장: 이때 문제가 공개되고 빠른 정답 시계가 시작된다 */
+export async function enterTowerFloor(learner: string, runId: string): Promise<RunView> {
+  const run = await loadRun(learner, runId);
+  if (!run || run.status !== "active") throw new GameError("끝난 도전입니다.", 409);
+  if (!run.current || run.current.entered !== false) return toView(run);
+  return toView(await saveRun(run, { current: { ...run.current, entered: true, servedAt: new Date().toISOString() } }));
 }
 
 /** 힌트권 사용: 보기 하나 지우기 · 진술 하나 분류 공개 · 첫 글자 */
