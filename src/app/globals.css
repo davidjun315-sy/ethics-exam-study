@@ -887,3 +887,14 @@ body {
 .tower-orb { animation: tower-orb 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes tower-orb { 0%, 100% { opacity: .6; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .tower-star, .tower-here, .tower-orb { animation: none; } }
+.tower-cloud { animation: tower-cloud 14s ease-in-out infinite alternate; }
+@keyframes tower-cloud { from { transform: translateX(-8px); } to { transform: translateX(10px); } }
+.tower-bird { animation: tower-bird 1.1s ease-in-out infinite alternate; }
+@keyframes tower-bird { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+.tower-bolt { opacity: 0; animation: tower-bolt 5s linear infinite; }
+@keyframes tower-bolt { 0%, 88%, 100% { opacity: 0; } 90% { opacity: 1; } 92% { opacity: .2; } 94% { opacity: .9; } 96% { opacity: 0; } }
+.tower-aurora { animation: tower-aurora 9s ease-in-out infinite alternate; }
+@keyframes tower-aurora { from { transform: translateX(-12px); opacity: .8; } to { transform: translateX(12px); opacity: 1; } }
+.tower-armillary { animation: tower-armillary 12s linear infinite; }
+@keyframes tower-armillary { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tower-cloud, .tower-bird, .tower-bolt, .tower-aurora, .tower-armillary { animation: none; } .tower-bolt { opacity: .6; } }

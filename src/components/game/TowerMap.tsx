@@ -136,8 +136,13 @@ export function TowerScene({
       {stars.map((s, k) => (
         <circle key={k} cx={s.x} cy={s.y} r={s.s} fill="#fff" className="tower-star" style={{ animationDelay: `${s.d}s` }} />
       ))}
-      <circle cx={compact ? 58 : 62} cy={compact ? 46 : 64} r={compact ? 34 : 46} fill={`url(#${id}-moon)`} opacity=".5" />
-      <circle cx={compact ? 58 : 62} cy={compact ? 46 : 64} r={compact ? 13 : 17} fill="#fffaf0" opacity=".92" />
+      {tier !== 2 && (
+        <>
+          <circle cx={compact ? 58 : 62} cy={compact ? 46 : 64} r={compact ? 34 : 46} fill={`url(#${id}-moon)`} opacity=".5" />
+          <circle cx={compact ? 58 : 62} cy={compact ? 46 : 64} r={compact ? 13 : 17} fill="#fffaf0" opacity=".92" />
+        </>
+      )}
+      <SkyExtras tier={tier} H={H} compact={compact} id={id} />
 
       {/* 먼 산 */}
       <path d={`M0 ${H - 150} L46 ${H - 196} L96 ${H - 160} L148 ${H - 214} L208 ${H - 168} L262 ${H - 206} L318 ${H - 166} L360 ${H - 188} L360 ${H} L0 ${H} Z`} fill={p.mount} opacity=".55" />
@@ -171,22 +176,16 @@ export function TowerScene({
             <line x1={cx - w0 / 2 + 2} y1={yb - fh / 2} x2={cx + w0 / 2 - 2} y2={yb - fh / 2} stroke="#000" strokeOpacity=".07" />
             {/* 지금 층: 금빛 띠 */}
             {st === "here" && <rect x={cx - w0 / 2 - 7} y={yt - 3} width={w0 + 14} height={fh + 6} rx={6} fill="none" stroke="#ffd36b" strokeWidth={2.5} className="tower-here" filter={`url(#${id}-glow)`} />}
-            {/* 창 */}
+            {/* 탑마다 다른 장식: 기둥 · 붉은 기둥 · 버팀벽 · 금빛 띠 */}
+            <FloorDecor tier={tier} cx={cx} w0={w0} w1={w1} yb={yb} yt={yt} fh={fh} left={left} span={span} wins={wins} trim={p.trim} />
+            {/* 창 (탑마다 모양이 다름) */}
             {Array.from({ length: wins }, (_, k) => {
               const x = x0 + span * k + span / 2 - winW / 2;
               const y = yb - fh / 2 - winH / 2 + 2;
               return (
                 <g key={k}>
                   {lit && <ellipse cx={x + winW / 2} cy={y + winH / 2} rx={winW} ry={winH * 0.8} fill={p.glow} opacity={st === "here" ? 0.45 : 0.22} filter={`url(#${id}-blur)`} />}
-                  <path
-                    d={`M${x} ${y + winH} L${x} ${y + winW / 2} A${winW / 2} ${winW / 2} 0 0 1 ${x + winW} ${y + winW / 2} L${x + winW} ${y + winH} Z`}
-                    fill={lit ? `url(#${id}-lit)` : "#141a33"}
-                    stroke={lit ? "#fff3cf" : "#00000055"}
-                    strokeWidth={0.8}
-                    className={lit ? "tower-window" : ""}
-                    style={{ animationDelay: `${(f * 3 + k) * 0.31}s` }}
-                  />
-                  <line x1={x + winW / 2} y1={y + 3} x2={x + winW / 2} y2={y + winH} stroke={lit ? "#9a5a1a" : "#00000066"} strokeWidth={0.8} strokeOpacity=".6" />
+                  <Window tier={tier} x={x} y={y} w={winW} h={winH} lit={lit} litFill={`url(#${id}-lit)`} delay={(f * 3 + k) * 0.31} />
                 </g>
               );
             })}
@@ -204,9 +203,21 @@ export function TowerScene({
                 })}
               </>
             )}
-            {/* 처마 (층 위 테두리) */}
-            <rect x={cx - w1 / 2 - 8} y={yt - 5} width={w1 + 16} height={7} rx={2.5} fill={p.trim} />
-            <rect x={cx - w1 / 2 - 8} y={yt + 2} width={w1 + 16} height={2} fill="#000" opacity=".18" />
+            {/* 처마 (층 위 테두리) · 논증의 계단은 끝이 들린 기와 처마 */}
+            {tier === 2 ? (
+              <g>
+                <path
+                  d={`M${cx - w1 / 2 - 26} ${yt - 9} Q${cx - w1 / 2 - 12} ${yt + 3} ${cx - w1 / 2 + 8} ${yt + 2} L${cx + w1 / 2 - 8} ${yt + 2} Q${cx + w1 / 2 + 12} ${yt + 3} ${cx + w1 / 2 + 26} ${yt - 9} L${cx + w1 / 2 + 14} ${yt - 9} Q${cx} ${yt - 14} ${cx - w1 / 2 - 14} ${yt - 9} Z`}
+                  fill={`url(#${id}-roof)`}
+                />
+                <path d={`M${cx - w1 / 2 - 26} ${yt - 9} Q${cx - w1 / 2 - 12} ${yt + 3} ${cx - w1 / 2 + 8} ${yt + 2} L${cx + w1 / 2 - 8} ${yt + 2} Q${cx + w1 / 2 + 12} ${yt + 3} ${cx + w1 / 2 + 26} ${yt - 9}`} fill="none" stroke={p.trim} strokeWidth={1.4} />
+              </g>
+            ) : (
+              <>
+                <rect x={cx - w1 / 2 - 8} y={yt - 5} width={w1 + 16} height={tier === 3 ? 5 : 7} rx={tier === 4 ? 3.5 : 2.5} fill={tier === 4 ? "#e8c977" : p.trim} />
+                <rect x={cx - w1 / 2 - 8} y={yt + 2} width={w1 + 16} height={2} fill="#000" opacity=".18" />
+              </>
+            )}
             {/* 층 번호 */}
             {!compact && (
               <text x={cx - w0 / 2 + 10} y={yb - fh / 2 + 5} fontSize="12.5" fontWeight="800" fill={st === "here" ? "#7a4b00" : boss ? "#ffe9c2" : "#3a3125"} opacity={st === "next" || st === "locked" ? 0.55 : 1}>
@@ -219,17 +230,8 @@ export function TowerScene({
         );
       })}
 
-      {/* 지붕 · 첨탑 */}
-      <g>
-        <path
-          d={`M${cx - topW / 2 - 30} ${roofBase - 2} Q${cx - topW / 2 + 6} ${roofBase - 16} ${cx - topW / 4} ${roofBase - 40} L${cx} ${roofBase - 74} L${cx + topW / 4} ${roofBase - 40} Q${cx + topW / 2 - 6} ${roofBase - 16} ${cx + topW / 2 + 30} ${roofBase - 2} Z`}
-          fill={`url(#${id}-roof)`}
-        />
-        <path d={`M${cx - topW / 2 - 30} ${roofBase - 2} Q${cx} ${roofBase - 12} ${cx + topW / 2 + 30} ${roofBase - 2}`} stroke={p.trim} strokeWidth={2} fill="none" opacity=".9" />
-        <rect x={cx - 2} y={roofBase - 112} width={4} height={40} rx={2} fill={p.trim} />
-        <circle cx={cx} cy={roofBase - 116} r={20} fill={`url(#${id}-halo)`} className="tower-orb" />
-        <circle cx={cx} cy={roofBase - 116} r={6.5} fill="#fffbe6" filter={`url(#${id}-glow)`} />
-      </g>
+      {/* 지붕 (탑마다 다름) */}
+      <Roof tier={tier} cx={cx} topW={topW} y={roofBase} id={id} trim={p.trim} />
 
       {/* 받침 · 계단 · 문 */}
       <g>
@@ -245,6 +247,216 @@ export function TowerScene({
       <ellipse cx={cx - 90} cy={H - 18} rx={130} ry={22} fill="#fff" opacity=".1" filter={`url(#${id}-blur)`} />
       <ellipse cx={cx + 110} cy={H - 8} rx={150} ry={20} fill="#fff" opacity=".09" filter={`url(#${id}-blur)`} />
     </svg>
+  );
+}
+
+/** 하늘 꾸밈: 구름 · 노을 해와 새 · 폭풍과 번개 · 오로라 */
+function SkyExtras({ tier, H, compact, id }: { tier: TowerTier; H: number; compact: boolean; id: string }) {
+  if (tier === 1)
+    return (
+      <g opacity=".85">
+        {[
+          [70, 150, 1],
+          [270, 110, 0.8],
+          [300, 230, 0.7],
+        ].map(([x, y, k], i) => (
+          <g key={i} className="tower-cloud" style={{ animationDelay: `${i * 3}s` }} opacity={0.16}>
+            <ellipse cx={x} cy={y * (compact ? 0.6 : 1)} rx={44 * k} ry={12 * k} fill="#fff" />
+            <ellipse cx={x - 18 * k} cy={y * (compact ? 0.6 : 1) - 8 * k} rx={22 * k} ry={12 * k} fill="#fff" />
+            <ellipse cx={x + 14 * k} cy={y * (compact ? 0.6 : 1) - 10 * k} rx={26 * k} ry={14 * k} fill="#fff" />
+          </g>
+        ))}
+      </g>
+    );
+  if (tier === 2)
+    return (
+      <g>
+        <circle cx={compact ? 58 : 66} cy={compact ? 46 : 70} r={compact ? 34 : 52} fill="#ffb36b" opacity=".35" filter={`url(#${id}-blur)`} />
+        <circle cx={compact ? 58 : 66} cy={compact ? 46 : 70} r={compact ? 15 : 24} fill="#ffcf8a" opacity=".9" />
+        {[
+          [70, 120],
+          [92, 108],
+          [110, 128],
+        ].map(([x, y], i) => (
+          <path key={i} d={`M${x - 6} ${y} q6 -5 6 0 q0 -5 6 0`} fill="none" stroke="#2a1520" strokeWidth={1.4} opacity=".7" className="tower-bird" style={{ animationDelay: `${i * 0.4}s` }} />
+        ))}
+      </g>
+    );
+  if (tier === 3)
+    return (
+      <g>
+        {[30, 70, 110].map((y, i) => (
+          <ellipse key={i} cx={i % 2 ? 260 : 90} cy={y} rx={150} ry={26} fill="#0a0820" opacity=".45" filter={`url(#${id}-blur)`} />
+        ))}
+        <polyline points={compact ? "300,10 286,46 298,46 280,86" : "300,20 280,80 296,80 270,150"} fill="none" stroke="#efe2ff" strokeWidth={2.4} strokeLinejoin="round" className="tower-bolt" filter={`url(#${id}-glow)`} />
+      </g>
+    );
+  return (
+    <g className="tower-aurora">
+      {[0, 1, 2].map((k) => (
+        <path
+          key={k}
+          d={`M-20 ${70 + k * 26} C 80 ${30 + k * 30}, 160 ${120 + k * 18}, 240 ${60 + k * 24} S 380 ${40 + k * 28}, 400 ${80 + k * 20}`}
+          fill="none"
+          stroke={["#6dffc6", "#7fd0ff", "#c08bff"][k]}
+          strokeWidth={compact ? 14 : 22}
+          opacity=".22"
+          filter={`url(#${id}-blur)`}
+        />
+      ))}
+    </g>
+  );
+}
+
+/** 층 장식 */
+function FloorDecor({ tier, cx, w0, w1, yb, yt, fh, left, span, wins, trim }: { tier: TowerTier; cx: number; w0: number; w1: number; yb: number; yt: number; fh: number; left: number; span: number; wins: number; trim: string }) {
+  if (tier === 1)
+    // 기둥 (창 사이)
+    return (
+      <g opacity=".85">
+        {Array.from({ length: wins + 1 }, (_, k) => {
+          const x = left + span * k - 2.5;
+          return (
+            <g key={k}>
+              <rect x={x} y={yt + 6} width={5} height={fh - 10} fill={trim} opacity=".75" />
+              <rect x={x - 1.5} y={yt + 4} width={8} height={3} fill={trim} />
+              <rect x={x - 1.5} y={yb - 5} width={8} height={3} fill={trim} />
+            </g>
+          );
+        })}
+      </g>
+    );
+  if (tier === 2)
+    // 붉은 기둥 (양 끝)
+    return (
+      <g>
+        <rect x={cx - w0 / 2 + 2} y={yt + 2} width={6} height={fh - 2} fill="#9e2b23" />
+        <rect x={cx + w0 / 2 - 8} y={yt + 2} width={6} height={fh - 2} fill="#9e2b23" />
+        <line x1={cx - w0 / 2 + 8} y1={yb - 4} x2={cx + w0 / 2 - 8} y2={yb - 4} stroke="#9e2b23" strokeWidth={2} />
+      </g>
+    );
+  if (tier === 3)
+    // 버팀벽
+    return (
+      <g fill="#3a3160" opacity=".9">
+        <path d={`M${cx - w0 / 2} ${yb} L${cx - w0 / 2 - 11} ${yb} L${cx - w1 / 2} ${yt + 8} Z`} />
+        <path d={`M${cx + w0 / 2} ${yb} L${cx + w0 / 2 + 11} ${yb} L${cx + w1 / 2} ${yt + 8} Z`} />
+      </g>
+    );
+  // 금빛 띠
+  return <line x1={cx - w0 / 2 + 4} y1={yb - 6} x2={cx + w0 / 2 - 4} y2={yb - 6} stroke="#e8c977" strokeWidth={1.2} opacity=".8" />;
+}
+
+/** 창: 아치 · 격자 · 뾰족 아치 · 둥근 창 */
+function Window({ tier, x, y, w, h, lit, litFill, delay }: { tier: TowerTier; x: number; y: number; w: number; h: number; lit: boolean; litFill: string; delay: number }) {
+  const fill = lit ? litFill : "#141a33";
+  const stroke = lit ? "#fff3cf" : "#00000055";
+  const cls = lit ? "tower-window" : "";
+  const style = { animationDelay: `${delay}s` };
+  const bar = lit ? "#9a5a1a" : "#00000066";
+  if (tier === 2)
+    return (
+      <g>
+        <rect x={x - 1} y={y + 2} width={w + 2} height={h - 2} fill={fill} stroke={stroke} strokeWidth={0.8} className={cls} style={style} />
+        <line x1={x + w / 2} y1={y + 2} x2={x + w / 2} y2={y + h} stroke={bar} strokeWidth={0.8} />
+        <line x1={x - 1} y1={y + h / 2 + 1} x2={x + w + 1} y2={y + h / 2 + 1} stroke={bar} strokeWidth={0.8} />
+      </g>
+    );
+  if (tier === 3)
+    return (
+      <g>
+        <path d={`M${x} ${y + h} L${x} ${y + h * 0.42} Q${x} ${y + 2} ${x + w / 2} ${y - 3} Q${x + w} ${y + 2} ${x + w} ${y + h * 0.42} L${x + w} ${y + h} Z`} fill={fill} stroke={stroke} strokeWidth={0.8} className={cls} style={style} />
+        <line x1={x + w / 2} y1={y + 2} x2={x + w / 2} y2={y + h} stroke={bar} strokeWidth={0.8} strokeOpacity=".6" />
+      </g>
+    );
+  if (tier === 4)
+    return (
+      <g>
+        <circle cx={x + w / 2} cy={y + h / 2 + 1} r={w * 0.62} fill={fill} stroke={lit ? "#fff3cf" : "#e8c97766"} strokeWidth={1.2} className={cls} style={style} />
+        <line x1={x + w / 2 - w * 0.62} y1={y + h / 2 + 1} x2={x + w / 2 + w * 0.62} y2={y + h / 2 + 1} stroke={bar} strokeWidth={0.7} />
+      </g>
+    );
+  return (
+    <g>
+      <path d={`M${x} ${y + h} L${x} ${y + w / 2} A${w / 2} ${w / 2} 0 0 1 ${x + w} ${y + w / 2} L${x + w} ${y + h} Z`} fill={fill} stroke={stroke} strokeWidth={0.8} className={cls} style={style} />
+      <line x1={x + w / 2} y1={y + 3} x2={x + w / 2} y2={y + h} stroke={bar} strokeWidth={0.8} strokeOpacity=".6" />
+    </g>
+  );
+}
+
+/** 지붕: 박공(신전) · 겹지붕(누각) · 첨탑(고딕) · 돔과 혼천의(천문대) */
+function Roof({ tier, cx, topW, y, id, trim }: { tier: TowerTier; cx: number; topW: number; y: number; id: string; trim: string }) {
+  const orb = (oy: number, r = 6.5) => (
+    <>
+      <circle cx={cx} cy={oy} r={r * 3} fill={`url(#${id}-halo)`} className="tower-orb" />
+      <circle cx={cx} cy={oy} r={r} fill="#fffbe6" filter={`url(#${id}-glow)`} />
+    </>
+  );
+  if (tier === 1) {
+    const w = topW + 34;
+    return (
+      <g>
+        <rect x={cx - w / 2} y={y - 12} width={w} height={10} fill={trim} />
+        <rect x={cx - w / 2 + 6} y={y - 8} width={w - 12} height={2} fill="#000" opacity=".15" />
+        <path d={`M${cx - w / 2 - 6} ${y - 12} L${cx} ${y - 58} L${cx + w / 2 + 6} ${y - 12} Z`} fill={`url(#${id}-roof)`} />
+        <path d={`M${cx - w / 2 + 14} ${y - 16} L${cx} ${y - 48} L${cx + w / 2 - 14} ${y - 16} Z`} fill={trim} opacity=".35" />
+        <circle cx={cx - w / 2 - 4} cy={y - 16} r={4} fill={trim} />
+        <circle cx={cx + w / 2 + 4} cy={y - 16} r={4} fill={trim} />
+        <rect x={cx - 1.5} y={y - 84} width={3} height={28} fill={trim} />
+        {orb(y - 88, 5.5)}
+      </g>
+    );
+  }
+  if (tier === 2) {
+    const tierRoof = (w: number, by: number, h: number, k: number) => (
+      <g key={k}>
+        <path d={`M${cx - w / 2 - 22} ${by - 6} Q${cx - w / 2} ${by + 4} ${cx - w / 2 + 14} ${by} L${cx} ${by - h} L${cx + w / 2 - 14} ${by} Q${cx + w / 2} ${by + 4} ${cx + w / 2 + 22} ${by - 6} Z`} fill={`url(#${id}-roof)`} />
+        <path d={`M${cx - w / 2 - 22} ${by - 6} Q${cx - w / 2} ${by + 4} ${cx - w / 2 + 14} ${by} L${cx + w / 2 - 14} ${by} Q${cx + w / 2} ${by + 4} ${cx + w / 2 + 22} ${by - 6}`} fill="none" stroke={trim} strokeWidth={1.6} />
+      </g>
+    );
+    return (
+      <g>
+        {tierRoof(topW + 10, y - 2, 36, 0)}
+        <rect x={cx - topW / 4} y={y - 46} width={topW / 2} height={14} fill="#9e2b23" />
+        {tierRoof(topW * 0.62, y - 40, 30, 1)}
+        {[0, 1, 2, 3].map((k) => (
+          <circle key={k} cx={cx} cy={y - 76 - k * 7} r={3.4 - k * 0.5} fill={trim} />
+        ))}
+        {orb(y - 108, 5)}
+      </g>
+    );
+  }
+  if (tier === 3)
+    return (
+      <g>
+        <path d={`M${cx - topW / 2 - 8} ${y - 2} L${cx} ${y - 112} L${cx + topW / 2 + 8} ${y - 2} Z`} fill={`url(#${id}-roof)`} />
+        <path d={`M${cx} ${y - 112} L${cx + topW / 2 + 8} ${y - 2} L${cx + 6} ${y - 2} Z`} fill="#000" opacity=".22" />
+        {[-1, 1].map((d) => (
+          <g key={d}>
+            <path d={`M${cx + d * (topW / 2 - 4) - 7} ${y - 2} L${cx + d * (topW / 2 - 4)} ${y - 46} L${cx + d * (topW / 2 - 4) + 7} ${y - 2} Z`} fill={`url(#${id}-roof)`} stroke={trim} strokeWidth={0.8} />
+          </g>
+        ))}
+        <line x1={cx - topW / 2 - 8} y1={y - 2} x2={cx + topW / 2 + 8} y2={y - 2} stroke={trim} strokeWidth={2} />
+        {orb(y - 116, 4.5)}
+      </g>
+    );
+  // 천문대: 돔 + 갈빗대 + 혼천의
+  const r = topW / 2 + 6;
+  return (
+    <g>
+      <path d={`M${cx - r} ${y - 2} A${r} ${r * 0.9} 0 0 1 ${cx + r} ${y - 2} Z`} fill={`url(#${id}-roof)`} />
+      {[-0.5, 0, 0.5].map((k) => (
+        <path key={k} d={`M${cx + k * r} ${y - 2} Q${cx + k * r * 0.5} ${y - r * 0.85} ${cx} ${y - r * 0.9}`} fill="none" stroke="#e8c977" strokeWidth={1} opacity=".7" />
+      ))}
+      <rect x={cx - r} y={y - 6} width={r * 2} height={5} fill="#e8c977" />
+      <rect x={cx - 1.5} y={y - r * 0.9 - 26} width={3} height={26} fill="#e8c977" />
+      <g className="tower-armillary" style={{ transformOrigin: `${cx}px ${y - r * 0.9 - 40}px` }}>
+        <ellipse cx={cx} cy={y - r * 0.9 - 40} rx={20} ry={7} fill="none" stroke="#e8c977" strokeWidth={1.4} />
+        <ellipse cx={cx} cy={y - r * 0.9 - 40} rx={7} ry={20} fill="none" stroke="#e8c977" strokeWidth={1.4} />
+        <ellipse cx={cx} cy={y - r * 0.9 - 40} rx={17} ry={17} fill="none" stroke="#e8c977" strokeWidth={1} opacity=".7" transform={`rotate(35 ${cx} ${y - r * 0.9 - 40})`} />
+      </g>
+      {orb(y - r * 0.9 - 40, 5)}
+    </g>
   );
 }
 
