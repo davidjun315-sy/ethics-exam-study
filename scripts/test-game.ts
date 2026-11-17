@@ -451,4 +451,13 @@ if (failed) {
   const weak = climb((t) => [0, 0.6, 0.5, 0.4, 0.3][t]);
   check("탑 난이도 곡선: 약 < 보통 < 강 · 보통 10~30층 · 강해도 60층 아래", weak < mid && mid < strong && mid > 10 && mid < 30 && strong < 60, `약 ${weak.toFixed(1)} · 보통 ${mid.toFixed(1)} · 강 ${strong.toFixed(1)}층`);
 }
+{
+  const { swapMaterials, swapProblem, canSwapCard } = await import("../src/lib/game/rules.ts");
+  const c = (cardId: string, philosopherId: string, rarity: "common" | "rare" | "epic" | "legendary" = "common", locked = false) => ({ cardId, philosopherId, rarity, locked, level: 1 });
+  const owned = [c("a", "kant"), c("b", "kant"), c("m", "mill"), c("r", "rawls"), c("x", "mill", "rare"), c("l", "rawls", "common", true), c("L1", "kant", "legendary"), c("L2", "mill", "legendary")];
+  const opt = { fusionCount: 2, featuredId: "r", coins: 0, cost: 0 };
+  check("교환 합성 재료: 같은 등급 · 다른 사상가만 (같은 사상가 · 다른 등급 · 잠금 · 대표 제외)", swapMaterials(owned[0], owned, "r").map((o) => o.cardId).join(",") === "m");
+  check("교환 합성: 다른 사상가 OK · 같은 사상가는 진화로 · 다른 등급 불가", swapProblem(owned[0], [owned[2]], opt) === null && /진화/.test(swapProblem(owned[0], [owned[1]], opt) ?? "") && /같은 등급/.test(swapProblem(owned[0], [owned[4]], opt) ?? ""));
+  check("교환 합성: 전설끼리도 가능 · 잠긴 기준은 불가", canSwapCard(owned[6], owned, null, 2) && /잠긴/.test(swapProblem(owned[5], [owned[2]], opt) ?? ""));
+}
 console.log("\n모두 통과");

@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import type { GameState, OwnedCard } from "@/lib/game/data";
-import { canFuseCard, fusionMaterials, fusionProblem, nextRarity, RARITIES, RARITY_NAMES, statsFor, type Rarity } from "@/lib/game/rules";
+import { canFuseCard, canSwapCard, fusionMaterials, fusionProblem, nextRarity, RARITIES, RARITY_NAMES, statsFor, swapMaterials, swapProblem, type Rarity } from "@/lib/game/rules";
 import { quizApi } from "@/lib/quiz/client";
 import { PhilosopherCard } from "./PhilosopherCard";
 import { byStrength, Coins, gemStyle } from "./GameApp";
 
 type Pick = "base" | "material";
+/** evolve = 진화 합성 (같은 사상가 → 윗등급) · swap = 교환 합성 (다른 사상가 → 같은 등급 무작위) */
+type Mode = "evolve" | "swap";
 interface Show {
+  mode: Mode;
   base: OwnedCard;
   materials: OwnedCard[];
   result: OwnedCard;
@@ -18,15 +21,18 @@ interface Show {
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /**
- * 카드 합성(진화): 같은 사상가 · 같은 등급 카드 N장 → 기준 카드가 한 단계 위 등급 (확정 성공).
- * 예: 일반 콜버그 2장 → 희귀 콜버그. 일반 콜버그 + 일반 루소는 불가.
- * 기준 카드의 id·레벨·대표·덱 자리는 그대로, 재료 카드는 사라진다.
+ * 카드 합성 두 가지:
+ *  - 진화 합성: 같은 사상가 · 같은 등급 N장 → 기준 카드가 한 단계 위 등급 (예: 일반 콜버그 2장 → 희귀 콜버그)
+ *  - 교환 합성: 같은 등급 · 다른 사상가 N장 → 기준 카드가 같은 등급의 다른 사상가로 (무작위 · 넣은 사상가 제외 · 레벨은 넣은 카드 중 최고)
+ * 기준 카드의 id·대표·덱 자리는 그대로, 재료 카드는 사라진다.
  */
 export function FusionTab({ state, reload, initialBase }: { state: GameState; reload: () => Promise<GameState>; initialBase?: string | null }) {
   const { fusionCount, fusionCost, rarityMult, maxLevel } = state.settings;
   const need = fusionCount - 1;
-  const materialsFor = (b: OwnedCard) => fusionMaterials(b, state.owned, state.featuredId);
-  const canFuse = (b: OwnedCard) => canFuseCard(b, state.owned, state.featuredId, fusionCount);
+  const [mode, setMode] = useState<Mode>("evolve");
+  const swap = mode === "swap";
+  const materialsFor = (b: OwnedCard) => (swap ? swapMaterials(b, state.owned, state.featuredId) : fusionMaterials(b, state.owned, state.featuredId));
+  const canFuse = (b: OwnedCard) => (swap ? canSwapCard(b, state.owned, state.featuredId, fusionCount) : canFuseCard(b, state.owned, state.featuredId, fusionCount));
   // 자동 선택: 레벨 낮은 카드부터, 덱 카드는 피해서
   const autoMaterials = (b: OwnedCard) =>
     materialsFor(b)
@@ -59,15 +65,17 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
 
   const base = state.owned.find((o) => o.cardId === baseId) ?? null;
   const materials = materialIds.map((id) => state.owned.find((o) => o.cardId === id)).filter((o): o is OwnedCard => Boolean(o));
-  const problem = fusionProblem(base, materials, { fusionCount, featuredId: state.featuredId, coins: state.coins, cost: fusionCost });
-  const to = base ? nextRarity(base.rarity) : null;
+  const opts = { fusionCount, featuredId: state.featuredId, coins: state.coins, cost: fusionCost };
+  const problem = swap ? swapProblem(base, materials, opts) : fusionProblem(base, materials, opts);
+  const to = base ? (swap ? base.rarity : nextRarity(base.rarity)) : null;
+  const swapLevel = base ? Math.max(base.level, ...materials.map((m) => m.level)) : 1;
   const preview = base && to ? statsFor({ atk: base.baseAtk, hp: base.baseHp }, to, base.level, rarityMult) : null;
 
   if (!state.owned.length) return <p className="card p-8 text-center text-sm text-muted">보유한 카드가 없습니다. 카드 뽑기로 첫 철학자를 영입하세요.</p>;
 
   const fusableCount = state.owned.filter(canFuse).length;
   const baseList = state.owned
-    .filter((o) => nextRarity(o.rarity))
+    .filter((o) => (swap ? !o.locked : nextRarity(o.rarity)))
     .filter((o) => rarity === "all" || o.rarity === rarity)
     .filter((o) => !onlyFusable || canFuse(o))
     .sort((a, b) => Number(canFuse(b)) - Number(canFuse(a)) || byStrength(a, b) || a.name.localeCompare(b.name));
@@ -93,7 +101,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
     if (!base || problem || busy) return;
     setBusy(true);
     setError(null);
-    const body = { baseId: base.cardId, materialIds, requestId: crypto.randomUUID() };
+    const body = { baseId: base.cardId, materialIds, requestId: crypto.randomUUID(), mode };
     const snapshot = { base, materials };
     try {
       // 네트워크가 끊겼다면 같은 requestId로 한 번 더 (서버는 처음 결과를 돌려주고 다시 소모하지 않음)
@@ -101,7 +109,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
         if (e instanceof TypeError) return quizApi<{ card: OwnedCard }>("/api/game/fuse", "POST", body);
         throw e;
       });
-      setShow({ ...snapshot, result: r.card, phase: reducedMotion() ? "reveal" : "merge" });
+      setShow({ ...snapshot, mode, result: r.card, phase: reducedMotion() ? "reveal" : "merge" });
       setMaterialIds([]);
       setConfirm(false);
       await reload();
@@ -120,8 +128,31 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
       {/* 합성 슬롯: 기준(왼쪽) + 재료(오른쪽) ↓ 결과 미리보기 */}
       <section className="card p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-bold">카드 합성 <span className="font-normal text-muted">같은 사상가 · 같은 등급 {fusionCount}장 → 한 단계 위 등급 (확정 성공)</span></h2>
+          <h2 className="text-sm font-bold">카드 합성</h2>
           <span className="ml-auto"><Coins value={state.coins} /></span>
+        </div>
+        <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1" role="tablist" aria-label="합성 방식">
+          {(["evolve", "swap"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => {
+                setMode(m);
+                setBaseId(null);
+                setMaterialIds([]);
+                setPicking("base");
+                setConfirm(false);
+                setError(null);
+              }}
+              className={`rounded-lg px-2 py-2 text-left text-sm transition-colors ${mode === m ? "bg-surface font-semibold text-ink shadow-soft" : "text-muted hover:text-ink"}`}
+              data-fuse-mode={m}
+            >
+              <span className="block font-bold">{m === "evolve" ? "진화 합성" : "교환 합성"}</span>
+              <span className="block text-[11px] font-normal text-muted">{m === "evolve" ? `같은 사상가 · 같은 등급 ${fusionCount}장 → 윗등급` : `같은 등급 · 다른 사상가 ${fusionCount}장 → 같은 등급 다른 사상가 (무작위)`}</span>
+            </button>
+          ))}
         </div>
         <div className="mx-auto grid max-w-xl grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
           <Slot label="기준 카드" active={picking === "base"} onClick={() => setPicking("base")}>
@@ -134,14 +165,23 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
                 {materials.map((m) => <MiniCard key={m.cardId} o={m} maxLevel={maxLevel} />)}
               </div>
             ) : (
-              <Empty text={base ? `${RARITY_NAMES[base.rarity]} ${base.name} ${need}장` : "기준 카드를 먼저"} />
+              <Empty text={base ? (swap ? `다른 사상가의 ${RARITY_NAMES[base.rarity]} 카드 ${need}장` : `${RARITY_NAMES[base.rarity]} ${base.name} ${need}장`) : "기준 카드를 먼저"} />
             )}
           </Slot>
         </div>
         {base && (
           <div className="mx-auto mt-3 max-w-xl text-center">
             <div className="text-xl text-faint" aria-hidden>↓</div>
-            {to && preview ? (
+            {swap ? (
+              <div className="mt-1 rounded-xl bg-surface-2 p-3">
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <span className="pcard-gem inline-block text-[8px]" style={gemStyle(base.rarity)} />
+                  <b className="text-base">{RARITY_NAMES[base.rarity]} ? ? ? Lv.{swapLevel}</b>
+                </div>
+                <p className="mt-1 text-sm">같은 등급의 <b>다른 사상가</b>가 무작위로 나와요 ({[base, ...materials].map((m) => m.name).filter((n, i, a) => a.indexOf(n) === i).join(" · ")} 제외)</p>
+                <p className="mt-1.5 text-[11px] text-faint">레벨은 넣은 카드 중 가장 높은 Lv.{swapLevel} · 대표·덱 자리는 그대로, 재료 카드는 사라집니다.{fusionCost ? ` 비용 ${fusionCost}코인.` : " 비용 없음."}</p>
+              </div>
+            ) : to && preview ? (
               <div className="mt-1 rounded-xl bg-surface-2 p-3">
                 <div className="flex items-center justify-center gap-2 text-sm">
                   <span className="pcard-gem inline-block text-[8px]" style={gemStyle(to)} />
@@ -167,7 +207,8 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
           {confirm ? (
             <div className="rounded-xl border border-danger/40 p-3 text-center">
               <p className="text-sm">
-                {materials.map((m) => `${RARITY_NAMES[m.rarity]} ${m.name} Lv.${m.level}`).join(", ")} 카드가 <b>사라지고</b>, {base && to ? `${RARITY_NAMES[to]} ${base.name}` : ""}(으)로 진화합니다. 되돌릴 수 없어요.
+                {materials.map((m) => `${RARITY_NAMES[m.rarity]} ${m.name} Lv.${m.level}`).join(", ")} 카드가 <b>사라지고</b>,{" "}
+                {swap ? `${base?.name ?? ""} 카드가 같은 등급의 다른 사상가로 바뀝니다` : `${base && to ? `${RARITY_NAMES[to]} ${base.name}` : ""}(으)로 진화합니다`}. 되돌릴 수 없어요.
               </p>
               <div className="mt-2 flex justify-center gap-2">
                 <button type="button" className="btn-primary px-5 py-2 font-bold" disabled={busy} onClick={fuse}>{busy ? "합성 중…" : "합성 확정"}</button>
@@ -176,7 +217,7 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
             </div>
           ) : (
             <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={Boolean(problem) || busy} onClick={() => setConfirm(true)}>
-              {problem ? `합성 불가 · ${problem}` : "합성하기"}
+              {problem ? `합성 불가 · ${problem}` : swap ? "교환하기" : "진화하기"}
             </button>
           )}
           {error && <p className="text-center text-sm font-semibold text-danger">{error}</p>}
@@ -208,17 +249,21 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
               </label>
               <select className="input !w-auto !py-1 text-xs" value={rarity} onChange={(e) => setRarity(e.target.value as Rarity | "all")} aria-label="등급">
                 <option value="all">모든 등급</option>
-                {RARITIES.slice(0, 3).map((r) => <option key={r} value={r}>{RARITY_NAMES[r]}</option>)}
+                {(swap ? RARITIES : RARITIES.slice(0, 3)).map((r) => <option key={r} value={r}>{RARITY_NAMES[r]}</option>)}
               </select>
             </div>
           ) : (
-            base && <span className="ml-auto text-xs text-muted">{RARITY_NAMES[base.rarity]} {base.name} 카드만 · 대표·잠금 카드 제외 · 약한 카드부터</span>
+            base && <span className="ml-auto text-xs text-muted">{swap ? `${base.name} 말고 다른 사상가의 ${RARITY_NAMES[base.rarity]} 카드` : `${RARITY_NAMES[base.rarity]} ${base.name} 카드만`} · 대표·잠금 카드 제외 · 약한 카드부터</span>
           )}
         </div>
         {picking === "base" ? (
           baseList.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
-              {onlyFusable ? `같은 사상가의 같은 등급 카드가 ${fusionCount}장 이상 모이면 합성할 수 있습니다 (예: 일반 콜버그 ${fusionCount}장). 카드를 더 뽑아 보세요.` : "합성할 수 있는 카드가 없습니다 (전설은 최고 등급)."}
+              {swap
+                ? `같은 등급의 다른 사상가 카드가 ${fusionCount}장 이상 있으면 교환할 수 있습니다 (예: 일반 칸트 + 일반 밀). 잠긴 카드는 제외됩니다.`
+                : onlyFusable
+                  ? `같은 사상가의 같은 등급 카드가 ${fusionCount}장 이상 모이면 진화할 수 있습니다 (예: 일반 콜버그 ${fusionCount}장). 카드를 더 뽑아 보세요.`
+                  : "합성할 수 있는 카드가 없습니다 (전설은 최고 등급)."}
             </p>
           ) : (
             <Grid>
@@ -233,14 +278,14 @@ export function FusionTab({ state, reload, initialBase }: { state: GameState; re
                     featured={o.cardId === state.featuredId}
                     locked2={o.locked}
                     tilt={false}
-                    badge={canFuse(o) ? <span className="rounded-full bg-ok px-1.5 py-0.5 text-[9px] font-bold text-white">합성</span> : undefined}
+                    badge={canFuse(o) ? <span className="rounded-full bg-ok px-1.5 py-0.5 text-[9px] font-bold text-white">{swap ? "교환" : "진화"}</span> : undefined}
                   />
                 </Pickable>
               ))}
             </Grid>
           )
         ) : materialList.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted">재료로 쓸 수 있는 {base ? `${RARITY_NAMES[base.rarity]} ${base.name}` : ""} 카드가 없습니다. 같은 사상가 · 같은 등급 카드만 재료가 됩니다 (대표·잠금 카드는 제외).</p>
+          <p className="py-6 text-center text-sm text-muted">{swap ? `재료로 쓸 수 있는 다른 사상가의 ${base ? RARITY_NAMES[base.rarity] : ""} 카드가 없습니다 (대표·잠금 카드는 제외).` : `재료로 쓸 수 있는 ${base ? `${RARITY_NAMES[base.rarity]} ${base.name}` : ""} 카드가 없습니다. 같은 사상가 · 같은 등급 카드만 재료가 됩니다 (대표·잠금 카드는 제외).`}</p>
         ) : (
           <Grid>
             {materialList.map((o) => (
@@ -300,9 +345,17 @@ function FusionShow({ show, maxLevel, onSkip, onClose }: { show: Show; maxLevel:
                 <PhilosopherCard card={result} rarity={result.rarity} level={result.level} stats={{ atk: result.atk, hp: result.hp }} maxLevel={maxLevel} tilt={false} />
               </div>
             </div>
-            <h2 className="mt-4 text-3xl font-black text-[#ffd36b]" aria-live="polite">진화 성공!</h2>
+            <h2 className="mt-4 text-3xl font-black text-[#ffd36b]" aria-live="polite">{show.mode === "swap" ? "교환 성공!" : "진화 성공!"}</h2>
             <p className="mt-1 text-sm text-white/80">
-              {RARITY_NAMES[base.rarity]} → <b>{RARITY_NAMES[result.rarity]}</b> {result.name} Lv.{result.level} · 공격력 {base.atk}→{result.atk} · 체력 {base.hp}→{result.hp}
+              {show.mode === "swap" ? (
+                <>
+                  {base.name} → <b>{RARITY_NAMES[result.rarity]} {result.name}</b> Lv.{result.level} · 공격력 {result.atk} · 체력 {result.hp}
+                </>
+              ) : (
+                <>
+                  {RARITY_NAMES[base.rarity]} → <b>{RARITY_NAMES[result.rarity]}</b> {result.name} Lv.{result.level} · 공격력 {base.atk}→{result.atk} · 체력 {base.hp}→{result.hp}
+                </>
+              )}
             </p>
             <button type="button" autoFocus className="btn-primary mt-4 w-full max-w-xs py-2.5 font-bold" onClick={onClose}>확인</button>
           </div>
@@ -315,7 +368,7 @@ function FusionShow({ show, maxLevel, onSkip, onClose }: { show: Show; maxLevel:
               </div>
               {phase === "flash" && <span className="fuse-flash z-20" style={{ ["--burst" as string]: glow }} aria-hidden />}
             </div>
-            <p className="mt-4 text-sm text-white/70" aria-live="polite">{phase === "merge" ? "카드를 합치는 중…" : "진화!"}</p>
+            <p className="mt-4 text-sm text-white/70" aria-live="polite">{phase === "merge" ? "카드를 합치는 중…" : show.mode === "swap" ? "새 사상가!" : "진화!"}</p>
             <button type="button" autoFocus className="mt-3 rounded-full bg-white/10 px-4 py-1.5 text-sm hover:bg-white/20" onClick={onSkip}>건너뛰기</button>
           </div>
         )}

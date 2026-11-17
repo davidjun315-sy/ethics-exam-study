@@ -64,6 +64,7 @@ const MESSAGES: Record<string, string> = {
   GAME_FUSION_PHILOSOPHER: "같은 사상가의 같은 등급 카드끼리만 합성할 수 있습니다.",
   GAME_FUSION_LOCKED: "잠긴 카드는 재료로 쓸 수 없습니다. 잠금을 풀어 주세요.",
   GAME_FUSION_FEATURED: "대표 카드는 재료로 쓸 수 없습니다. 대표 카드를 바꾼 뒤 다시 시도하세요.",
+  GAME_SWAP_SAME: "교환 합성은 다른 사상가 카드끼리 합니다. 같은 사상가끼리는 진화 합성을 쓰세요.",
 };
 
 export class GameError extends Error {
@@ -721,6 +722,19 @@ export async function levelUpCard(learner: string, cardId: string, requestId: st
 }
 
 /** 합성(진화): 기준 카드 + 같은 사상가 · 같은 등급 재료 → 기준 카드가 한 단계 위 등급 (확정) */
+export const GAME_030_HINT = "교환 합성 업데이트가 아직 적용되지 않았습니다. 관리자: Supabase SQL Editor 에서 supabase/migrations/030_game_fuse_swap.sql 을 실행하세요.";
+
+/** 교환 합성: 같은 등급 · 다른 사상가 → 기준 카드가 같은 등급의 다른 사상가로 (무작위 · 레벨은 넣은 카드 중 최고) */
+export async function swapCards(learner: string, baseId: string, materialIds: string[], requestId: string) {
+  const { data, error } = await getAdminClient().rpc("game_fuse_swap", { p_learner: learner, p_base: baseId, p_materials: materialIds, p_ref: `swap:${requestId}`, p_day: kstDay() });
+  if (error) {
+    if (/game_fuse_swap|schema cache|Could not find/i.test(error.message)) throw new GameError(GAME_030_HINT, 503);
+    throw gameError(error.message);
+  }
+  const r = data as { cardId: string; from: string; isNewPhilosopher: boolean; coins: number; replayed: boolean };
+  return { ...r, card: await ownedCard(learner, r.cardId) };
+}
+
 export async function fuseCards(learner: string, baseId: string, materialIds: string[], requestId: string) {
   // 같은 사상가끼리만 (DB 함수 010 도 같은 조건을 확인 — 010 적용 전에도 여기서 막는다).
   // 이미 소모된 카드(재시도)는 DB 가 처음 결과를 돌려주도록 그대로 넘긴다.

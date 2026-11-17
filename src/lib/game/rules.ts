@@ -117,6 +117,33 @@ export function fusionProblem(
   return null;
 }
 
+// ---------------------------------------------------------------------
+// 교환 합성: 같은 등급 · 다른 사상가 → 같은 등급의 다른 사상가 (무작위, DB 함수 030 이 정함)
+// ---------------------------------------------------------------------
+/** 교환 재료 후보: 같은 등급 · 기준과 다른 사상가 · 잠금/대표 제외 */
+export function swapMaterials<T extends FusionCard>(base: FusionCard, owned: T[], featuredId: string | null): T[] {
+  return owned.filter((o) => o.cardId !== base.cardId && o.rarity === base.rarity && o.philosopherId !== base.philosopherId && !o.locked && o.cardId !== featuredId);
+}
+export function canSwapCard(base: FusionCard, owned: FusionCard[], featuredId: string | null, fusionCount: number): boolean {
+  return !base.locked && swapMaterials(base, owned, featuredId).length >= fusionCount - 1;
+}
+export function swapProblem(
+  base: { cardId: string; rarity: Rarity; philosopherId: string; locked: boolean } | null,
+  materials: { cardId: string; rarity: Rarity; locked: boolean; philosopherId: string }[],
+  opts: { fusionCount: number; featuredId: string | null; coins: number; cost: number },
+): string | null {
+  if (!base) return "기준 카드를 고르세요";
+  if (base.locked) return "잠긴 카드는 바꿀 수 없습니다";
+  if (materials.length !== opts.fusionCount - 1) return `재료 카드 ${opts.fusionCount - 1}장을 고르세요`;
+  if (materials.some((m) => m.cardId === base.cardId) || new Set(materials.map((m) => m.cardId)).size !== materials.length) return "같은 카드를 두 번 쓸 수 없습니다";
+  if (materials.some((m) => m.rarity !== base.rarity)) return "같은 등급끼리만 교환할 수 있습니다";
+  if (materials.some((m) => m.philosopherId === base.philosopherId)) return "교환은 다른 사상가 카드끼리 합니다 (같은 사상가는 진화)";
+  if (materials.some((m) => m.locked)) return "잠긴 카드는 재료로 쓸 수 없습니다";
+  if (materials.some((m) => m.cardId === opts.featuredId)) return "대표 카드는 재료로 쓸 수 없습니다";
+  if (opts.coins < opts.cost) return "코인이 부족합니다";
+  return null;
+}
+
 /** level → level+1 에 필요한 강화 조각·코인 (확정 성공) */
 export function upgradeCost(level: number): { shards: number; coins: number } {
   const coins = [0, 50, 100, 150, 250, 350, 450, 550, 650, 750][level] ?? 750 + (level - 9) * 100;
