@@ -4,6 +4,7 @@ import {
   BookOpenText,
   ChartLine,
   CircleCheck,
+  Coins,
   Flame,
   RotateCcw,
   Sparkles,
@@ -87,6 +88,18 @@ export default async function Home() {
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <p className="eyebrow !text-navy/80">{todayLabel()}</p>
             {attendance?.ready && <AttendanceWidget day={attendance.day} checkedToday={attendance.checkedToday} tickets={totalTickets(attendance.tickets)} />}
+            {game && (
+              <Link
+                href="/quiz/game?tab=draw"
+                className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-navy/15 bg-white/45 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-navy/80 backdrop-blur-sm transition hover:border-navy/35 hover:bg-white/70 hover:text-navy dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
+                aria-label={`보유 코인 ${game.coins.toLocaleString("ko-KR")} · 카드 뽑기로 가기`}
+                data-home-coins
+              >
+                <Coins className="h-3.5 w-3.5 text-[#a07a2c] opacity-80 transition group-hover:opacity-100 dark:text-[#e3c27a]" aria-hidden />
+                <span className="font-bold tabular-nums text-navy">{game.coins.toLocaleString("ko-KR")}</span>
+                <span className="opacity-70">코인</span>
+              </Link>
+            )}
           </div>
           <h1 className="mt-1.5 text-[1.35rem] font-bold leading-snug tracking-tight sm:text-2xl">{greeting(name)}</h1>
           <p className="mt-1 text-sm text-muted">ETHOS · 도덕·윤리 학습 플랫폼</p>
