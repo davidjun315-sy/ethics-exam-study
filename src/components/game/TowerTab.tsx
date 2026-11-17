@@ -1,17 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Swords, Timer, Trophy } from "lucide-react";
+import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Sparkles, Swords, Timer, Trophy } from "lucide-react";
 import type { GameState } from "@/lib/game/data";
 import type { RunView, TowerAnswerResult, TowerHint, TowerOverview } from "@/lib/game/tower-data";
-import { isBossFloor, QUICK_SEC, TIER_START, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
+import { isBossFloor, TIER_START, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
 import { slotOf, towerKindSlot, towerSlotFor, type ArtSlotKey } from "@/lib/game/art-slots";
 import { quizApi } from "@/lib/quiz/client";
 import { PracticeInput, type PublicPractice } from "@/components/quiz/PracticeParts";
 import { SolutionView } from "@/components/quiz/SolutionView";
 import { byStrength } from "./GameApp";
 import { PhilosopherCard } from "./PhilosopherCard";
-import { STRIKE_DURATION, STRIKE_IMPACT, TowerArena, type Strike } from "./TowerArena";
+import { TowerArena, type ArenaFloat, type Strike } from "./TowerArena";
+import { toSteps } from "./towerPlayback";
+import { ROLE_NAMES, ROLE_PASSIVE_DESC, ROLE_SKILL, type BattleEvent } from "@/lib/game/tower-battle";
 import { TowerMap, TowerScene } from "./TowerMap";
 
 const RARITY_KO = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" } as const;
@@ -43,8 +45,8 @@ export function TowerTab({ state, reload, goDraw }: { state: GameState; reload: 
         if (!alive) return;
         setOv(v);
         setRun(v.run);
-        // 문제를 풀던 중에 다시 들어왔으면 게임 화면으로
-        if (v.run && !v.run.awaiting && !v.run.choices) setView("game");
+        // 문제를 풀던 중 · 필살기 선택 · 이벤트 · 일반 층 강화 고르기 중에 다시 들어왔으면 게임 화면으로
+        if (v.run && showsGame(v.run)) setView("game");
         setError(null);
       })
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
@@ -161,6 +163,8 @@ function TowerMain({
     call(async () => {
       const n = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "buff", runId: r.id, buff });
       if (n.run.status !== "active") return onQuit(n.run);
+      // 일반 층이면 바로 다음 문제 (게임 화면), 보스층을 깬 뒤면 탑 화면에서 입장
+      if (showsGame(n.run)) return onEnter(n.run);
       onRun(n.run, r.state.floor);
     });
   const quit = (r: RunView) =>
@@ -185,7 +189,7 @@ function TowerMain({
           <div>
             <p className="text-[11px] font-bold tracking-[0.25em] text-white/70">THE TOWER OF THOUGHT{run ? ` · ${run.tier.name}` : ""}</p>
             <h2 className="mt-0.5 text-2xl font-black tracking-tight drop-shadow sm:text-3xl" data-tower-title>
-              {run ? (run.choices ? `${s!.floor}층 돌파!` : run.cleared > 0 ? `${run.cleared}층 돌파 → ${s!.floor}층` : `${s!.floor}층 앞`) : "사상의 탑"}
+              {run ? (run.choices ? (run.clearedKind === "boss" ? `👑 ${s!.floor}층 보스 돌파!` : `${s!.floor}층 돌파!`) : run.cleared > 0 ? `${run.cleared}층 돌파 → ${s!.floor}층` : `${s!.floor}층 앞`) : "사상의 탑"}
             </h2>
             <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold">
               <Chip icon={<Crown className="h-3.5 w-3.5" />} text={`최고 ${ov.best}층`} />
@@ -222,6 +226,10 @@ function TowerMain({
                     {s!.buffs.power > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`피해 +${Math.round(s!.buffs.power * 100)}%`} tone="bg-white/20" />}
                     {s!.buffs.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`방어 ${s!.buffs.shield}`} tone="bg-white/20" />}
                     {s!.buffs.hints > 0 && <Tag icon={<Lightbulb className="h-3 w-3" />} text={`힌트 ${s!.buffs.hints}`} tone="bg-white/20" />}
+                    <Tag icon={<Sparkles className="h-3 w-3" />} text={`사유력 ${run.battle.focus}/${run.battle.focusMax}`} tone="bg-white/20" />
+                    {run.battle.relics.map((r) => (
+                      <Tag key={r.id} icon={<span>{r.icon}</span>} text={r.count > 1 ? `${r.name} ×${r.count}` : r.name} tone="bg-[#6a35d8]/45" />
+                    ))}
                   </div>
                 </div>
                 {!run.choices && (
@@ -235,7 +243,7 @@ function TowerMain({
                 )}
               </div>
               {run.choices ? (
-                <BuffPick run={run} busy={busy} onChoose={(b) => choose(run, b)} />
+                <ChoicePanel run={run} busy={busy} onChoose={(b) => choose(run, b)} tone="dark" />
               ) : (
                 <button
                   type="button"
@@ -277,6 +285,20 @@ function TowerMain({
             <h3 className="font-bold">함께 오를 카드 {team.length}/{TOWER_TEAM_SIZE}</h3>
             <span className="text-[11px] text-muted">공격 합 {atk} · 카드가 강할수록 정답 피해 ↑ (최대 1.4배)</span>
           </div>
+          {team.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 text-[11px]" data-tower-team-roles>
+              {team.map((id) => {
+                const o = owned.find((x) => x.cardId === id);
+                if (!o) return null;
+                return (
+                  <span key={id} className="rounded-full border border-line bg-surface-2 px-2 py-0.5">
+                    <b style={{ color: ROLE_TONE[o.skillEffect] }}>{ROLE_NAMES[o.skillEffect]}</b> {o.name} · {ROLE_PASSIVE_DESC[o.skillEffect]}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[11px] leading-4 text-muted">정답 +2 · 부분 정답 +1 사유력(최대 6) → 답을 낸 뒤 필살기를 쓸지 고릅니다. 역할마다 효과 · 필살기가 달라요. 10층마다 보스는 몇 턴 뒤 행동을 미리 보여 줍니다.</p>
           {owned.length === 0 ? (
             <div className="rounded-xl bg-surface-2 p-4 text-sm">
               카드가 있어야 오를 수 있어요.{" "}
@@ -292,6 +314,9 @@ function TowerMain({
                   <div key={o.cardId} className={`relative rounded-[16px] p-0.5 transition ${at >= 0 ? "ring-2 ring-navy" : "opacity-80 hover:opacity-100"}`} data-tower-card>
                     <PhilosopherCard fx="full" card={o} rarity={o.rarity} level={o.level} stats={{ atk: o.atk, hp: o.hp }} maxLevel={state.settings.maxLevel} featured={o.cardId === state.featuredId} tilt={false} onClick={() => toggle(o.cardId)} />
                     {at >= 0 && <span className="absolute -left-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-xs font-bold text-on-accent shadow">{at + 1}</span>}
+                    <span className="mt-1 block truncate text-center text-[10px] font-bold" style={{ color: ROLE_TONE[o.skillEffect] }} title={`${ROLE_PASSIVE_DESC[o.skillEffect]} · 필살기 ${ROLE_SKILL[o.skillEffect].title} (사유력 ${ROLE_SKILL[o.skillEffect].cost})`} data-tower-role>
+                      {ROLE_NAMES[o.skillEffect]} · {ROLE_SKILL[o.skillEffect].title}
+                    </span>
                   </div>
                 );
               })}
@@ -415,150 +440,296 @@ function Chip({ icon, text }: { icon: React.ReactNode; text: string }) {
 // ---------------------------------------------------------------------
 // 오르는 중
 // ---------------------------------------------------------------------
+type Shown = { hp: number; maxHp: number; enemyHp: number; enemyMax: number; shield: number; bossShield: number; focus: number; combo: number };
+const fromRun = (r: RunView): Shown => ({ hp: r.state.hp, maxHp: r.state.maxHp, enemyHp: r.state.enemyHp, enemyMax: r.state.enemyMax, shield: r.battle.shield, bossShield: r.battle.bossShield, focus: r.battle.focus, combo: r.state.combo });
+const reducedMotion = () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+type ItemKind = "exam" | "expected" | "practice";
+
+/** 게임 화면에서 이 상태면 탑 화면으로 (보스층을 깬 뒤 · 새 층 입장 전 · 끝남) */
+export const showsGame = (r: RunView) => r.status === "active" && (r.phase === "battle" || r.phase === "skill" || r.phase === "event" || (r.phase === "choice" && r.clearedKind !== "boss"));
+
 function TowerGame({ run, setRun, art, onBack }: { run: RunView; setRun: (r: RunView) => void; art: GameState["settings"]["art"]; onBack: (r: RunView) => void }) {
-  const [outcome, setOutcome] = useState<TowerAnswerResult | null>(null);
+  const [outcome, setOutcome] = useState<{ r: TowerAnswerResult; kind: ItemKind; turn: TowerAnswerResult | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [picks, setPicks] = useState<number[]>([]);
   const [assign, setAssign] = useState<(number | null)[]>([]);
   const [strike, setStrike] = useState<Strike | null>(null);
-  // 체력바는 맞는 순간에 바뀜 (연출보다 먼저 줄지 않게)
-  const [shown, setShown] = useState(run.state);
+  const [floats, setFloats] = useState<ArenaFloat[]>([]);
+  // 연출 중에는 서버 결과가 아니라 '맞는 순간'의 상태를 보여 줌 (null = 지금 도전 상태)
+  const [shown, setShown] = useState<Shown | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [moving, setMoving] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [showSol, setShowSol] = useState(false);
   const [now, setNow] = useState<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
+  const timers = useRef<number[]>([]);
+  const endRef = useRef<(() => void) | null>(null);
   const item = run.item;
   const practice = (item?.practice ?? null) as PublicPractice | null;
   const picking = practice && practice.mode !== "fill" ? practice : null;
   const ready = picking ? (picking.mode === "classify" ? (picking.statements ?? []).every((_, i) => assign[i] !== null && assign[i] !== undefined) : picks.length > 0) : answer.trim().length > 0;
+  const disp = shown ?? fromRun(run);
+  const asking = !outcome && run.phase === "battle" && Boolean(item) && !playing && moving === null;
 
   // 빠른 정답 시계 (서버가 문제를 낸 시각 기준 · 판정은 서버)
   useEffect(() => {
-    if (!item || item.essay || outcome) return;
+    if (!item || item.essay || !asking) return;
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
-  }, [item, outcome]);
-  const leftMs = item && now ? new Date(item.servedAt).getTime() + QUICK_SEC * 1000 - now : null;
-  // 시작하면 무대가 보이게 (입구 화면에서 내려와 있던 위치에서 바로 무대로)
+  }, [item, asking]);
+  const leftMs = item && now ? new Date(item.servedAt).getTime() + run.battle.quickSec * 1000 - now : null;
+  // 시작하면 무대가 보이게
   useEffect(() => {
     topRef.current?.scrollIntoView({ block: "start" });
   }, []);
+  useEffect(
+    () => () => {
+      timers.current.forEach((t) => clearTimeout(t));
+    },
+    [],
+  );
 
-  const play = (r: TowerAnswerResult) => {
-    const after = r.run.state;
-    const kind: Strike["kind"] = r.verdict === "wrong" ? (r.shieldUsed ? "shield" : "enemy") : r.quick || after.combo >= 3 || r.floorCleared ? "skill" : "attack";
-    const st: Strike = { id: Date.now(), kind, actor: (after.answered - 1) % Math.max(1, run.team.length), dealt: r.dealt, taken: r.taken, quick: r.quick, combo: after.combo, cleared: r.floorCleared, dead: r.dead };
-    setStrike(st);
-    setTimeout(() => setShown(after), STRIKE_IMPACT[kind]);
-    setTimeout(() => setStrike((cur) => (cur?.id === st.id ? null : cur)), STRIKE_DURATION + STRIKE_IMPACT[kind]);
-  };
+  /** 서버가 정한 사건을 순서대로 재생 (체력 · 보호막 · 사유력은 맞는 순간에 바뀜) */
+  function play(events: BattleEvent[], before: RunView, done?: () => void) {
+    timers.current.forEach((t) => clearTimeout(t));
+    timers.current = [];
+    const steps = toSteps(events, { reduced: reducedMotion(), teamSize: run.team.length });
+    const end = () => {
+      timers.current.forEach((t) => clearTimeout(t));
+      timers.current = [];
+      endRef.current = null;
+      setStrike(null);
+      setFloats([]);
+      setShown(null);
+      setPlaying(false);
+      done?.();
+    };
+    if (!steps.length) return end();
+    endRef.current = end;
+    setPlaying(true);
+    setShown(fromRun(before));
+    let t = 0;
+    for (const st of steps) {
+      timers.current.push(
+        window.setTimeout(() => {
+          if (st.strike) setStrike(st.strike);
+          if (st.float) setFloats((f) => [...f.slice(-3), st.float!]);
+        }, t),
+      );
+      timers.current.push(window.setTimeout(() => setShown((cur) => ({ ...(cur ?? fromRun(before)), ...st.snap })), t + st.impact));
+      t += st.dur;
+    }
+    timers.current.push(window.setTimeout(end, t + 120));
+  }
+  const skip = () => endRef.current?.();
 
-  async function submit() {
-    if (!item) return;
-    const payload = picking ? (picking.mode === "classify" ? JSON.stringify(assign.map((x) => x ?? -1)) : picking.mode === "choice" ? String(picks[0]) : JSON.stringify(picks)) : answer;
+  const call = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErr(null);
     try {
-      const r = await quizApi<TowerAnswerResult>("/api/game/tower", "POST", { action: "answer", runId: run.id, itemId: item.id, answer: payload });
-      setOutcome(r);
-      // 답 버튼 근처까지 내려와 있으므로 전장을 먼저 보여 주고 공격 연출
-      const arena = topRef.current;
-      const visible = arena ? arena.getBoundingClientRect().top > -40 : true;
-      if (!visible) arena?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setTimeout(() => play(r), visible ? 0 : 320);
-      setRun({ ...r.run, item: run.item }); // 해설을 보는 동안 문제는 그대로
-      setShowSol(r.verdict !== "correct");
+      await fn();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }
-  function next() {
-    if (!outcome) return;
-    const r = outcome.run;
+  };
+  const showArena = () => {
+    const arena = topRef.current;
+    const visible = arena ? arena.getBoundingClientRect().top > -40 : true;
+    if (!visible) arena?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return visible ? 0 : 320;
+  };
+
+  const submit = () =>
+    call(async () => {
+      if (!item) return;
+      const payload = picking ? (picking.mode === "classify" ? JSON.stringify(assign.map((x) => x ?? -1)) : picking.mode === "choice" ? String(picks[0]) : JSON.stringify(picks)) : answer;
+      const r = await quizApi<TowerAnswerResult>("/api/game/tower", "POST", { action: "answer", runId: run.id, itemId: item.id, answer: payload });
+      const before = run;
+      setOutcome({ r, kind: item.kind, turn: null });
+      setShowSol(r.verdict !== "correct");
+      setShown(fromRun(before));
+      setRun(r.run);
+      const wait = showArena();
+      timers.current.push(window.setTimeout(() => play(r.events, before), wait));
+    });
+  /** 필살기 쓰기 (팀 순서) 또는 넘기기 (null) */
+  const resolve = (skill: number | null) =>
+    call(async () => {
+      const turn = run.battle.pending?.turn ?? 0;
+      const r = await quizApi<TowerAnswerResult>("/api/game/tower", "POST", { action: "resolve", runId: run.id, turn, skill });
+      const before = run;
+      setOutcome((o) => (o ? { ...o, turn: r } : o));
+      setRun(r.run);
+      const wait = showArena();
+      timers.current.push(window.setTimeout(() => play(r.events, before), wait));
+    });
+  const reset = () => {
     setOutcome(null);
     setAnswer("");
     setPicks([]);
     setAssign([]);
     setShowSol(false);
-    // 층을 깼거나(강화 고르기) 쓰러졌으면 탑 화면으로
-    if (r.status !== "active" || r.choices) return onBack(r);
-    setRun(r);
-    setShown(r.state);
+    setShown(null);
     setStrike(null);
+  };
+  function next() {
+    reset();
+    if (run.status !== "active") return onBack(run);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  async function hint() {
-    setBusy(true);
-    setErr(null);
-    try {
+  /** 다음 층으로 걸어 올라가는 연출 뒤 새 층 */
+  const climbTo = (r: RunView) => {
+    if (r.status !== "active" || r.awaiting) return onBack(r);
+    reset();
+    setMoving(r.state.floor);
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    timers.current.push(
+      window.setTimeout(
+        () => {
+          setMoving(null);
+          setRun(r);
+        },
+        reducedMotion() ? 250 : 950,
+      ),
+    );
+  };
+  const choose = (id: string) =>
+    call(async () => {
+      const n = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "buff", runId: run.id, buff: id });
+      climbTo(n.run);
+    });
+  const pickEvent = (option: string) =>
+    call(async () => {
+      const n = await quizApi<{ run: RunView; text: string }>("/api/game/tower", "POST", { action: "event", runId: run.id, option });
+      setNote(n.text);
+      timers.current.push(window.setTimeout(() => setNote(null), 2600));
+      if (n.run.state.floor === run.state.floor) {
+        // 특수 전투: 같은 층에서 싸움
+        reset();
+        setRun(n.run);
+      } else climbTo(n.run);
+    });
+  const hint = () =>
+    call(async () => {
       const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "hint", runId: run.id });
       setRun(r.run);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+    });
+
   const s = run.state;
+  const bt = run.battle;
   const boss = isBossFloor(s.floor);
+  const elite = bt.kind === "elite";
+  const enemyDown = run.phase === "choice" && (!playing || Boolean(strike?.cleared));
+  const teamDown = run.status === "over" && s.hp <= 0 && (!playing || Boolean(strike?.dead));
+
+  let panel: React.ReactNode = null;
+  let footer = false;
+  if (playing)
+    panel = (
+      <button type="button" className="btn w-full py-2.5 text-sm" onClick={skip} data-tower-skip>
+        ⏩ 연출 건너뛰기
+      </button>
+    );
+  else if (run.phase === "skill") panel = <SkillBar run={run} busy={busy} onUse={resolve} />;
+  else if (run.phase === "choice" && run.clearedKind === "boss") {
+    footer = true;
+    panel = (
+      <button type="button" className="w-full rounded-xl bg-gradient-to-r from-[#ffd36b] to-[#ffb36b] py-3.5 text-base font-black text-[#3a2600] shadow-lg" onClick={() => onBack(run)} data-tower-next>
+        👑 보스 돌파! 탑으로 돌아가 유물 고르기
+      </button>
+    );
+  }
+  else if (run.phase === "choice") panel = <ChoicePanel run={run} busy={busy} onChoose={choose} tone="light" />;
+  else if (run.phase === "event") panel = <EventPanel run={run} busy={busy} onPick={pickEvent} />;
+  else if (run.status !== "active") {
+    footer = true;
+    panel = (
+      <button type="button" className="btn-primary w-full py-3 text-base font-bold" onClick={() => onBack(run)} data-tower-next>
+        탑으로 돌아가기
+      </button>
+    );
+  } else if (outcome) {
+    footer = true;
+    panel = (
+      <button type="button" className="btn-primary w-full py-3 text-base font-bold" onClick={next} data-tower-next>
+        다음 문제
+      </button>
+    );
+  }
 
   return (
-    <div ref={topRef} className="scroll-mt-20 space-y-3" data-tower-run>
+    <div ref={topRef} className="scroll-mt-20 space-y-3" data-tower-run data-phase={playing ? "playing" : run.phase}>
       {/* 무대 */}
       <section className="relative overflow-hidden rounded-2xl border border-line text-white shadow-soft">
         <div className="absolute inset-0 scale-105" style={artBg(art, towerSlotFor(s.floor))} aria-hidden />
-        <div className={`absolute inset-0 ${boss ? "bg-gradient-to-b from-[#3a0b16]/55 via-black/35 to-black/70" : "bg-gradient-to-b from-black/35 via-black/25 to-black/65"}`} aria-hidden />
-        <div className="relative space-y-3 p-4 sm:p-5">
+        <div className={`absolute inset-0 ${boss ? "bg-gradient-to-b from-[#3a0b16]/55 via-black/35 to-black/70" : elite ? "bg-gradient-to-b from-[#2a1450]/55 via-black/35 to-black/70" : "bg-gradient-to-b from-black/35 via-black/25 to-black/65"}`} aria-hidden />
+        <div className="relative space-y-2.5 p-3 sm:space-y-3 sm:p-5">
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-bold tracking-[0.2em] text-white/70">{run.tier.name}</p>
               <h2 className="flex items-center gap-2 text-2xl font-black tracking-tight">
                 {s.floor}층
                 {boss && <span className="rounded-full bg-[#ff6b5a] px-2 py-0.5 text-[11px] font-black tracking-wider">BOSS</span>}
+                {elite && <span className="rounded-full bg-[#8a4dff] px-2 py-0.5 text-[11px] font-black tracking-wider">특수 전투</span>}
+                {run.phase === "event" && <span className="rounded-full bg-[#2f9e6b] px-2 py-0.5 text-[11px] font-black tracking-wider">이벤트</span>}
               </h2>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-semibold backdrop-blur-sm">
                 깬 층 {run.cleared} · <CoinIcon className="inline h-3 w-3" /> {run.coins}
               </span>
-              <button type="button" onClick={() => onBack(outcome ? outcome.run : run)} disabled={busy} className="rounded-full border border-white/30 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10" data-tower-back>
+              <button type="button" onClick={() => onBack(run)} disabled={busy || playing} className="rounded-full border border-white/30 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10" data-tower-back>
                 ← 탑
               </button>
             </div>
           </div>
 
-          <TowerArena team={run.team} enemy={run.enemy} state={shown} boss={boss} strike={strike} enemyDown={Boolean(outcome?.floorCleared)} teamDown={Boolean(outcome?.dead)} />
+          <TowerArena
+            team={run.team}
+            enemy={run.phase === "event" ? null : run.enemy}
+            state={{ ...s, hp: disp.hp, enemyHp: disp.enemyHp }}
+            boss={boss}
+            strike={strike}
+            enemyDown={enemyDown}
+            teamDown={teamDown}
+            floats={floats}
+            teamShield={disp.shield}
+            bossShield={disp.bossShield}
+            enraged={bt.enraged}
+            elite={elite}
+            sealed={bt.sealed > 0}
+            moving={moving}
+          />
 
-          <div className="grid grid-cols-2 gap-3 sm:gap-6">
-            <div className="space-y-1">
-              <Bar value={shown.hp} max={shown.maxHp} tone="team" label="내 팀" />
-              <div className="flex flex-wrap gap-1 text-[10px] font-semibold">
-                {shown.combo > 1 && <Tag icon={<Flame className="h-3 w-3" />} text={`${shown.combo}콤보`} tone="bg-[#ff8a3d]/80" />}
-                {s.buffs.power > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`피해 +${Math.round(s.buffs.power * 100)}%`} tone="bg-white/20" />}
-                {s.buffs.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`방어 ${s.buffs.shield}`} tone="bg-white/20" />}
-                {s.buffs.hints > 0 && <Tag icon={<Lightbulb className="h-3 w-3" />} text={`힌트 ${s.buffs.hints}`} tone="bg-white/20" />}
-              </div>
+          {run.phase !== "event" && (
+            <div className="grid grid-cols-2 gap-3 sm:gap-6">
+              <TeamHud run={run} d={disp} />
+              <BossHud run={run} d={disp} />
             </div>
-            <div className="space-y-1 text-right">
-              <Bar value={shown.enemyHp} max={shown.enemyMax} tone="enemy" label={run.enemy?.name ?? "적"} />
-              <div className="text-xs font-bold drop-shadow">
-                {run.enemy?.name ?? "수수께끼의 사상가"}
-                {run.enemy && <span className="ml-1 text-[10px] font-semibold text-white/75">{RARITY_KO[run.enemy.rarity]}</span>}
-              </div>
-            </div>
-          </div>
-          {run.enemy?.quote && !outcome && <p className="truncate text-center text-[11px] italic text-white/70">“{run.enemy.quote}”</p>}
+          )}
+          <RoleStrip run={run} focus={disp.focus} />
+          {note && <p className="rise-in rounded-lg bg-black/45 px-3 py-1.5 text-center text-sm font-bold text-[#ffe9a8]">{note}</p>}
+          {run.enemy?.quote && asking && run.phase === "battle" && <p className="truncate text-center text-[11px] italic text-white/70">“{run.enemy.quote}”</p>}
         </div>
       </section>
 
-      {err && <p className="card p-3 text-sm text-danger" role="alert">{err}</p>}
+      {err && (
+        <p className="card p-3 text-sm text-danger" role="alert">
+          {err}
+        </p>
+      )}
 
-      {outcome ? (
-        <OutcomeCard r={outcome} kind={item?.kind ?? "exam"} showSol={showSol} setShowSol={setShowSol} onNext={next} />
-      ) : item ? (
+      {/* 고를 것 (필살기 · 층 사이 선택 · 이벤트 · 연출 건너뛰기)은 해설보다 위에 */}
+      {panel && !footer && <div className={busy ? "pointer-events-none opacity-70" : ""}>{panel}</div>}
+
+      {outcome && <OutcomeCard r={outcome.r} turn={outcome.turn} kind={outcome.kind} showSol={showSol} setShowSol={setShowSol} />}
+
+      {asking && item ? (
         <article className="card space-y-3 p-4 sm:p-5" data-tower-item>
           <header className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className={`rounded px-2 py-0.5 font-semibold ${item.full ? "bg-[#7b3fe4] text-white" : item.kind === "exam" ? "bg-navy text-on-accent" : item.kind === "practice" ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`}>
@@ -606,10 +777,247 @@ function TowerGame({ run, setRun, art, onBack }: { run: RunView; setRun: (r: Run
             </button>
           </div>
         </article>
-      ) : (
+      ) : !outcome && run.phase === "skill" ? (
+        <p className="card p-3 text-center text-sm text-muted">답을 냈어요. 필살기를 쓰거나 넘기면 적이 움직입니다.</p>
+      ) : !outcome && run.phase === "battle" && !moving ? (
         <p className="card p-6 text-center text-sm text-muted">다음 문제를 준비하는 중…</p>
+      ) : null}
+
+      {/* 다음으로 (다음 문제 · 탑으로)는 해설 아래 */}
+      {panel && footer && <div className={busy ? "pointer-events-none opacity-70" : ""}>{panel}</div>}
+    </div>
+  );
+}
+
+/** 사유력 칸 */
+function FocusPips({ n, max }: { n: number; max: number }) {
+  return (
+    <div className="flex items-center gap-1" role="meter" aria-label="사유력" aria-valuenow={n} aria-valuemin={0} aria-valuemax={max} data-tower-focus={n}>
+      <Sparkles className="h-3 w-3 text-[#ffd36b]" aria-hidden />
+      {Array.from({ length: max }, (_, i) => (
+        <span key={`${i}-${i < n}`} className={`tower2-pip h-2.5 w-2.5 rounded-sm ring-1 ring-white/30 sm:h-3 sm:w-3 ${i < n ? "tower2-pip-on tower2-pip-gain" : "bg-black/40"}`} />
+      ))}
+      <span className="ml-0.5 text-[10px] font-bold tabular-nums text-white/85">{n}/{max}</span>
+    </div>
+  );
+}
+
+function TeamHud({ run, d }: { run: RunView; d: Shown }) {
+  const s = run.state;
+  const bt = run.battle;
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-1" data-tower-teamhud>
+      <Bar value={d.hp} max={d.maxHp} tone="team" label="내 팀" extra={d.shield} />
+      <FocusPips n={d.focus} max={bt.focusMax} />
+      <div className="flex flex-wrap gap-1 text-[10px] font-semibold">
+        {d.combo > 1 && <Tag icon={<Flame className="h-3 w-3" />} text={`${d.combo}콤보`} tone="bg-[#ff8a3d]/80" />}
+        {d.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`보호막 ${d.shield}`} tone="bg-[#3b7dd8]/70" />}
+        {s.buffs.power > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`피해 +${Math.round(s.buffs.power * 100)}%`} tone="bg-white/20" />}
+        {s.buffs.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`반론 대비 ${s.buffs.shield}`} tone="bg-white/20" />}
+        {s.buffs.hints > 0 && <Tag icon={<Lightbulb className="h-3 w-3" />} text={`힌트 ${s.buffs.hints}`} tone="bg-white/20" />}
+        {bt.halfNext && <Tag icon={<Shield className="h-3 w-3" />} text="다음 공격 절반" tone="bg-[#3b7dd8]/70" />}
+      </div>
+      {bt.relics.length > 0 && (
+        <div className="relative">
+          <button type="button" onClick={() => setOpen((v) => !v)} className="flex flex-wrap items-center gap-0.5 rounded-lg bg-black/30 px-1.5 py-0.5 text-sm" aria-expanded={open} aria-label="유물 보기" data-tower-relics>
+            {bt.relics.map((r) => (
+              <span key={r.id} title={`${r.name} — ${r.desc}`}>
+                {r.icon}
+                {r.count > 1 && <sub className="text-[9px] font-black">{r.count}</sub>}
+              </span>
+            ))}
+          </button>
+          {open && (
+            <ul className="absolute left-0 top-full z-50 mt-1 w-64 space-y-1 rounded-xl border border-white/20 bg-[#111626]/95 p-2 text-[11px] shadow-xl backdrop-blur">
+              {bt.relics.map((r) => (
+                <li key={r.id}>
+                  <b>
+                    {r.icon} {r.name}
+                    {r.max > 1 ? ` ${r.count}/${r.max}` : ""}
+                  </b>
+                  <span className="block text-white/70">{r.desc}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
+  );
+}
+
+function BossHud({ run, d }: { run: RunView; d: Shown }) {
+  const bt = run.battle;
+  const special = bt.kind !== "normal";
+  const hot = bt.gauge <= 1 && bt.intent === "강타";
+  return (
+    <div className="space-y-1 text-right" data-tower-bosshud>
+      <Bar value={d.enemyHp} max={d.enemyMax} tone="enemy" label={run.enemy?.name ?? "적"} extra={d.bossShield} marks={special ? [0.6, 0.25] : []} />
+      <div className="text-xs font-bold drop-shadow">
+        {run.enemy?.name ?? "수수께끼의 사상가"}
+        {run.enemy && <span className="ml-1 text-[10px] font-semibold text-white/75">{RARITY_KO[run.enemy.rarity]}</span>}
+        {special && <span className="ml-1 rounded bg-white/15 px-1 text-[10px] font-semibold">{bt.patternName}</span>}
+      </div>
+      {special && (
+        <div className="flex items-center justify-end gap-1 text-[10px] font-bold" aria-label={`${bt.phase}단계`}>
+          {[1, 2, 3].map((p) => (
+            <span key={p} className={`rounded px-1 ${p === bt.phase ? (p === 3 ? "bg-[#ff6b5a] text-white" : "bg-[#ffd36b] text-[#3a2600]") : p < bt.phase ? "bg-white/30" : "bg-black/30 text-white/50"}`}>
+              {p}단계
+            </span>
+          ))}
+        </div>
+      )}
+      {bt.intentText && (
+        <div className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${hot ? "tower2-intent-hot bg-[#b3122a]/85" : "bg-black/40"}`} title={bt.patternDesc} data-tower-intent>
+          <span>{bt.intent === "강타" ? "⚔" : bt.intent === "방벽" ? "🛡" : bt.intent === "회복" ? "💚" : "🔮"}</span>
+          {bt.intentText}
+          <span className="ml-0.5 flex gap-0.5">
+            {Array.from({ length: bt.interval }, (_, i) => (
+              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < bt.interval - bt.gauge ? "bg-[#ff9d8a]" : "bg-white/25"}`} />
+            ))}
+          </span>
+        </div>
+      )}
+      <div className="flex flex-wrap justify-end gap-1 text-[10px] font-semibold">
+        {d.bossShield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`방벽 ${d.bossShield}`} tone="bg-[#3b7dd8]/70" />}
+        {bt.weaken > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`약화 ${bt.weaken}턴`} tone="bg-[#6a35d8]/70" />}
+        {bt.enraged && <Tag icon={<Flame className="h-3 w-3" />} text="폭주" tone="bg-[#b3122a]/80" />}
+      </div>
+    </div>
+  );
+}
+
+const ROLE_TONE: Record<string, string> = { strike: "#ff7a6b", sweep: "#ffb05a", stun: "#c99bff", heal: "#6fe0a0", guard: "#7fc4ff" };
+
+/** 팀 역할 · 필살기 준비 (늘 보임 · 누르면 설명) */
+function RoleStrip({ run, focus }: { run: RunView; focus: number }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const r = open !== null ? run.battle.roles[open] : null;
+  return (
+    <div className="space-y-1" data-tower-roles>
+      <div className="grid grid-cols-3 gap-1.5">
+        {run.battle.roles.map((x) => {
+          const readyNow = focus >= x.cost && run.battle.sealed <= 0;
+          return (
+            <button key={x.index} type="button" onClick={() => setOpen(open === x.index ? null : x.index)} className={`min-w-0 rounded-lg bg-black/35 px-1.5 py-1 text-left backdrop-blur-sm ${readyNow ? "tower2-ready" : ""}`} aria-expanded={open === x.index}>
+              <span className="flex items-center gap-1 text-[10px] font-black" style={{ color: ROLE_TONE[x.effect] }}>
+                {x.role}
+                <span className="ml-auto rounded bg-black/40 px-1 text-[9px] text-[#ffe9a8]">✨{x.cost}</span>
+              </span>
+              <span className="block truncate text-[10px] font-semibold text-white/85">{x.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      {r && (
+        <p className="rounded-lg bg-black/45 px-2.5 py-1.5 text-[11px] leading-4 text-white/85">
+          <b style={{ color: ROLE_TONE[r.effect] }}>{r.role}</b> · 역할 효과: {r.passive}
+          {r.unique && (
+            <>
+              <br />
+              <b className="text-[#ffe9a8]">고유 「{r.unique.title}」</b> {r.unique.desc}
+            </>
+          )}
+          <br />
+          <b>필살기 {r.skillName}</b> (사유력 {r.cost}) — {r.skillDesc}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** 답을 낸 뒤 필살기 선택 (쓰기 · 넘기기) */
+function SkillBar({ run, busy, onUse }: { run: RunView; busy: boolean; onUse: (i: number | null) => void }) {
+  const bt = run.battle;
+  return (
+    <section className="card space-y-2 border-[#ffd36b]/50 p-3" data-tower-skillbar>
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-black">필살기를 쓸까요?</h3>
+        <span className="text-[11px] text-muted">
+          사유력 {bt.focus}/{bt.focusMax}
+          {bt.intentText ? ` · 적: ${bt.intentText}` : ""}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {bt.roles.map((x) => (
+          <button key={x.index} type="button" disabled={busy || Boolean(x.problem)} onClick={() => onUse(x.index)} title={x.skillDesc} className={`min-w-0 rounded-xl border p-2 text-left transition disabled:opacity-45 ${x.problem ? "border-line" : "tower2-ready border-[#ffd36b]/60 bg-[#ffd36b]/10 hover:-translate-y-0.5"}`} data-tower-skill={x.index}>
+            <span className="flex items-center gap-1 text-[10px] font-black sm:text-[11px]" style={{ color: ROLE_TONE[x.effect] }}>
+              <span className="truncate">{x.role}<span className="hidden sm:inline"> · {x.name}</span></span>
+              <span className="ml-auto shrink-0 rounded bg-[#ffd36b]/25 px-1 text-[10px] text-[#8a5a00] dark:text-[#ffd36b]">✨{x.cost}</span>
+            </span>
+            <span className="mt-0.5 block truncate text-[13px] font-bold sm:text-sm">{x.skillName}</span>
+            <span className="block text-[10px] leading-[14px] text-muted sm:text-[11px] sm:leading-4">{x.problem ?? x.skillDesc}</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="btn w-full py-2.5 text-sm font-semibold" disabled={busy} onClick={() => onUse(null)} data-tower-skillskip>
+        넘기기 (사유력 아끼기)
+      </button>
+    </section>
+  );
+}
+
+/** 층을 깬 뒤 고르기 (기본 강화 + 유물) */
+function ChoicePanel({ run, busy, onChoose, tone }: { run: RunView; busy: boolean; onChoose: (id: string) => void; tone: "dark" | "light" }) {
+  const dark = tone === "dark";
+  return (
+    <div className={dark ? "space-y-2" : "card space-y-2 p-3"} data-tower-buffs>
+      <p className={`text-center text-xs ${dark ? "text-white/80" : "text-muted"}`}>
+        {run.clearedKind === "boss" ? "👑 보스 돌파! 유물 하나를 고르세요" : `${run.state.floor}층 돌파! 다음 층(${run.state.floor + 1}층)으로 가기 전에 하나를 고르세요`}
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {(run.choices ?? []).map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            disabled={busy}
+            onClick={() => onChoose(c.id)}
+            className={`relative rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 disabled:opacity-50 ${c.kind === "relic" ? (dark ? "border-[#e6b8ff]/60 bg-[#6a35d8]/25" : "border-[#b37bff]/60 bg-[#b37bff]/10") : dark ? "border-white/25 bg-white/10 backdrop-blur-sm hover:bg-white/20" : "border-line bg-surface-2"}`}
+            data-buff={c.id}
+          >
+            {c.kind === "relic" && <span className="absolute right-1.5 top-1.5 rounded bg-[#8a4dff] px-1 text-[9px] font-black text-white">유물</span>}
+            <span className="text-xl leading-none">{c.icon}</span>
+            <span className="mt-1 block text-sm font-bold leading-5">{c.name}</span>
+            <span className={`block text-[10px] leading-4 ${dark ? "text-white/75" : "text-muted"}`}>{c.desc}</span>
+            {c.kind === "relic" && (c.max ?? 1) > 1 && <span className={`mt-0.5 block text-[10px] font-bold ${dark ? "text-[#e6b8ff]" : "text-[#7b3fe4]"}`}>보유 {c.count ?? 0}/{c.max}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 이벤트 층 */
+function EventPanel({ run, busy, onPick }: { run: RunView; busy: boolean; onPick: (id: string) => void }) {
+  const e = run.battle.event;
+  if (!e) return null;
+  return (
+    <section className="card space-y-2.5 p-4" data-tower-event={e.kind}>
+      <div className="flex items-center gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-3xl">{e.icon}</span>
+        <div>
+          <h3 className="text-lg font-black">{e.title}</h3>
+          <p className="text-xs text-muted">{e.desc}</p>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        {e.options.map((o) => (
+          <button key={o.id} type="button" disabled={busy || Boolean(o.disabled)} onClick={() => onPick(o.id)} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition disabled:opacity-45 ${o.id === "leave" ? "border-line" : "border-navy/30 bg-navy-soft/30 hover:-translate-y-0.5"}`} data-event-option={o.id}>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold">{o.label}</span>
+              {(o.desc || o.disabled) && <span className="block text-[11px] leading-4 text-muted">{o.disabled ?? o.desc}</span>}
+            </span>
+            {o.cost !== undefined && (
+              <span className="shrink-0 rounded-full bg-[#ffd36b]/25 px-2 py-0.5 text-xs font-black text-[#8a5a00] dark:text-[#ffd36b]">
+                <CoinIcon className="inline h-3 w-3" /> {o.cost}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      {e.kind === "merchant" && <p className="text-[10px] text-faint">값은 지갑 코인에서 빠집니다 (한 층에서 하나만).</p>}
+    </section>
   );
 }
 
@@ -622,15 +1030,23 @@ function Tag({ icon, text, tone }: { icon: React.ReactNode; text: string; tone: 
   );
 }
 
-function Bar({ value, max, tone, label }: { value: number; max: number; tone: "team" | "enemy"; label: string }) {
+/** 체력 바 · extra = 보호막(방벽) 만큼 푸른 칸 · marks = 단계가 바뀌는 곳 (0~1) */
+function Bar({ value, max, tone, label, extra = 0, marks = [] }: { value: number; max: number; tone: "team" | "enemy"; label: string; extra?: number; marks?: number[] }) {
   const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+  const ext = Math.max(0, Math.min(100 - pct, (extra / Math.max(1, max)) * 100));
+  const side = tone === "team" ? "left" : "right";
   return (
     <div role="meter" aria-label={`${label} 체력`} aria-valuenow={value} aria-valuemin={0} aria-valuemax={max}>
       <div className="relative h-2.5 overflow-hidden rounded-full bg-black/40 ring-1 ring-white/20">
         <div className={`absolute inset-y-0 rounded-full transition-[width] duration-500 ${tone === "team" ? "left-0 bg-gradient-to-r from-[#3ad19a] to-[#9ff2c9]" : "right-0 bg-gradient-to-l from-[#ff6b5a] to-[#ffb36b]"}`} style={{ width: `${pct}%` }} />
+        {ext > 0 && <div className="absolute inset-y-0 bg-gradient-to-r from-[#7fc6ff] to-[#d6efff] transition-all duration-500" style={{ [side]: `${pct}%`, width: `${ext}%` }} />}
+        {marks.map((m) => (
+          <span key={m} className="absolute inset-y-0 w-px bg-white/70" style={{ [side]: `${m * 100}%` }} aria-hidden />
+        ))}
       </div>
       <div className={`mt-0.5 text-[10px] font-semibold tabular-nums text-white/80 ${tone === "enemy" ? "text-right" : ""}`}>
         {value} / {max}
+        {extra > 0 && <span className="text-[#bfe3ff]"> +{extra}</span>}
       </div>
     </div>
   );
@@ -651,20 +1067,13 @@ function HintLine({ h, p }: { h: TowerHint; p: PublicPractice | null }) {
   );
 }
 
-function OutcomeCard({
-  r,
-  kind,
-  showSol,
-  setShowSol,
-  onNext,
-}: {
-  r: TowerAnswerResult;
-  kind: "exam" | "expected" | "practice";
-  showSol: boolean;
-  setShowSol: (v: boolean) => void;
-  onNext: () => void;
-}) {
-  const v = r.verdict;
+function OutcomeCard({ r, turn, kind, showSol, setShowSol }: { r: TowerAnswerResult; turn: TowerAnswerResult | null; kind: ItemKind; showSol: boolean; setShowSol: (v: boolean) => void }) {
+  const v = r.verdict ?? "wrong";
+  const last = turn ?? r;
+  const cleared = r.floorCleared || Boolean(turn?.floorCleared);
+  const dead = r.dead || Boolean(turn?.dead);
+  const reward = turn?.reward ?? r.reward;
+  const skill = turn?.events.find((e) => e.t === "skill");
   return (
     <div className="space-y-3" data-tower-outcome>
       <section className={`card overflow-hidden ${v === "correct" ? "border-ok/40" : v === "partial" ? "border-warn/40" : "border-danger/40"}`}>
@@ -672,15 +1081,18 @@ function OutcomeCard({
           <div>
             <p className={`text-lg font-black ${v === "correct" ? "text-ok" : v === "partial" ? "text-warn" : "text-danger"}`}>
               {v === "correct" ? (r.quick ? "정답! 빠른 일격" : "정답!") : v === "partial" ? "부분 정답" : "오답…"}
+              <span className="ml-2 text-xs font-bold text-[#8a5a00] dark:text-[#ffd36b]">✨ +{v === "correct" ? 2 : v === "partial" ? 1 : 0}</span>
             </p>
             <p className="text-xs text-muted">
-              {r.dealt ? `적에게 ${r.dealt} 피해` : r.shieldUsed ? "반론 대비로 공격을 막았어요" : `내 팀이 ${r.taken} 피해`}
+              {r.dealt ? `적에게 ${r.dealt} 피해` : r.shieldUsed ? "반론 대비로 공격을 막았어요" : r.taken ? `내 팀이 ${r.taken} 피해` : v === "wrong" ? "이번 턴 적의 패턴 공격이 오답 공격을 대신해요" : ""}
+              {skill && skill.t === "skill" && ` · ${skill.title}${skill.dmg ? ` ${skill.dmg} 피해` : skill.heal ? ` +${skill.heal} 회복` : skill.shield ? ` 보호막 +${skill.shield}` : ""}`}
+              {turn && turn.taken > 0 && ` · 적의 행동으로 ${turn.taken} 피해`}
               {r.attempt && r.attempt.xp > 0 && ` · +${r.attempt.xp} XP`}
               {r.attempt && r.attempt.coins > 0 && ` · +${r.attempt.coins} 코인`}
             </p>
           </div>
-          {r.floorCleared && <span className="rounded-full bg-[#ffd36b] px-3 py-1 text-xs font-black text-[#3a2600]">{r.run.state.floor}층 돌파!</span>}
-          {r.dead && <span className="rounded-full bg-danger px-3 py-1 text-xs font-black text-white">쓰러짐</span>}
+          {cleared && <span className="rounded-full bg-[#ffd36b] px-3 py-1 text-xs font-black text-[#3a2600]">{last.run.state.floor}층 돌파!</span>}
+          {dead && <span className="rounded-full bg-danger px-3 py-1 text-xs font-black text-white">쓰러짐</span>}
         </div>
         {r.essayGrading && (
           <div className="space-y-1 border-t border-line px-4 py-3 text-sm">
@@ -703,35 +1115,13 @@ function OutcomeCard({
           </div>
         )}
       </section>
-      {r.floorCleared && r.reward && (
+      {cleared && reward && (
         <p className="rounded-xl bg-[#ffd36b]/15 px-3 py-2 text-center text-sm">
-          <CoinIcon className="inline h-4 w-4 text-warn" /> +{r.reward.coins}
-          {r.reward.stones > 0 && <> · 강화석 +{r.reward.stones}</>}
-          {r.reward.ticket && <b className="ml-1 text-[#7b3fe4]">· 🎟 영웅 확정 뽑기권!</b>}
+          <CoinIcon className="inline h-4 w-4 text-warn" /> +{reward.coins}
+          {reward.stones > 0 && <> · 강화석 +{reward.stones}</>}
+          {reward.ticket && <b className="ml-1 text-[#7b3fe4]">· 🎟 영웅 확정 뽑기권!</b>}
         </p>
       )}
-      <button type="button" className="btn-primary w-full py-3 text-base font-bold" onClick={onNext} data-tower-next>
-        {r.floorCleared ? "탑으로 돌아가 강화 고르기" : r.dead || r.run.status !== "active" ? "탑으로 돌아가기" : "다음 문제"}
-      </button>
-    </div>
-  );
-}
-
-function BuffPick({ run, busy, onChoose }: { run: RunView; busy: boolean; onChoose: (b: string) => void }) {
-  return (
-    <div className="space-y-2" data-tower-buffs>
-      <p className="text-center text-xs text-white/80">다음 층({run.state.floor + 1}층)으로 가기 전에 하나를 고르세요</p>
-      <div className="grid grid-cols-3 gap-2">
-        {(run.choices ?? []).map((c) => (
-          <button key={c.id} type="button" disabled={busy} onClick={() => onChoose(c.id)} className="rounded-xl border border-white/25 bg-white/10 p-2.5 text-left backdrop-blur-sm transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50" data-buff={c.id}>
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#ffd36b] text-[#3a2600]">
-              {c.id === "heal" ? <Flame className="h-4 w-4" /> : c.id === "power" ? <Swords className="h-4 w-4" /> : c.id === "shield" ? <Shield className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
-            </span>
-            <span className="mt-1.5 block text-sm font-bold">{c.name}</span>
-            <span className="block text-[10px] leading-4 text-white/75">{c.desc}</span>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Rarity } from "@/lib/game/rules";
+import type { Rarity, SkillEffect } from "@/lib/game/rules";
 import type { RunState } from "@/lib/game/tower";
 import type { EnemyView, TeamCard } from "@/lib/game/tower-data";
 import { fxTheme, type FxTheme } from "@/lib/game/skillFx";
@@ -14,7 +14,8 @@ import { Burst, Motif, RING, type Box } from "./BattleStage";
  */
 export interface Strike {
   id: number;
-  kind: "attack" | "skill" | "enemy" | "shield";
+  /** support = 수호 · 지원 필살기 / boss = 보스 행동 · 단계 변화 · 유물 되돌림 */
+  kind: "attack" | "skill" | "enemy" | "shield" | "support" | "boss";
   /** 공격하는 아군 (attack · skill) */
   actor: number;
   dealt: number;
@@ -23,13 +24,38 @@ export interface Strike {
   combo: number;
   cleared: boolean;
   dead: boolean;
+  /** 광역형 추가타 (작게) */
+  small?: boolean;
+  /** 2.0 필살기 */
+  ult?: boolean;
+  role?: SkillEffect;
+  title?: string;
+  hits?: number;
+  heal?: number;
+  guard?: number;
+  delay?: number;
+  /** 보호막이 막은 피해 · 패턴 공격인가 */
+  absorbed?: number;
+  pattern?: boolean;
+  banner?: { text: string; tone: "gold" | "red" | "blue" | "green" | "purple" };
+  bossFx?: "barrier" | "mend" | "drain" | "seal" | "enrage" | "phase" | "reflect";
+}
+export interface ArenaFloat {
+  id: number;
+  text: string;
+  tone: "gold" | "green" | "blue" | "purple" | "red" | "white";
+  side: "team" | "enemy";
 }
 
 /** 맞는 순간 (ms): 돌진이 가장 앞에 나간 때 · 기술이 날아가 닿는 때 */
-export const STRIKE_IMPACT = { attack: 230, skill: 720, enemy: 260, shield: 260 } as const;
+export const STRIKE_IMPACT = { attack: 230, skill: 720, enemy: 260, shield: 260, support: 420, boss: 300 } as const;
 const STRIKE_LEN = 1500;
 
 const SHIELD_THEME: FxTheme = { colors: ["#7fc6ff", "#3b7dd8", "#e6f6ff"], motif: "sigil", glyph: "盾" };
+const HEAL_THEME: FxTheme = { colors: ["#7dffb4", "#2faa6a", "#eafff2"], motif: "sigil", glyph: "癒" };
+const DARK_THEME: FxTheme = { colors: ["#c99bff", "#6a35d8", "#f1e6ff"], motif: "sigil", glyph: "封" };
+const RAGE_THEME: FxTheme = { colors: ["#ff6b5a", "#b3122a", "#ffe1d6"], motif: "sigil", glyph: "怒" };
+const TONE: Record<string, string> = { gold: "#ffd36b", red: "#ff6b5a", blue: "#7fc6ff", green: "#7dffb4", purple: "#c99bff", white: "#ffffff" };
 
 export function TowerArena({
   team,
@@ -39,6 +65,13 @@ export function TowerArena({
   strike,
   enemyDown,
   teamDown,
+  floats = [],
+  teamShield = 0,
+  bossShield = 0,
+  enraged = false,
+  elite = false,
+  sealed = false,
+  moving = null,
 }: {
   team: TeamCard[];
   enemy: EnemyView | null;
@@ -48,6 +81,16 @@ export function TowerArena({
   /** 이 층 적이 쓰러짐 (해설 · 강화 고르기 동안 유지) */
   enemyDown: boolean;
   teamDown: boolean;
+  /** 떠오르는 숫자 · 글자 (회복 · 보호막 · 사유력 · 유물) */
+  floats?: ArenaFloat[];
+  /** 지금 걸린 상태 (늘 보임) */
+  teamShield?: number;
+  bossShield?: number;
+  enraged?: boolean;
+  elite?: boolean;
+  sealed?: boolean;
+  /** 다음 층으로 이동 중 (몇 층으로) */
+  moving?: number | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ W: 360, H: 230 });
@@ -70,7 +113,7 @@ export function TowerArena({
     return { x, y: feet - h * 0.5, feet, top: feet - h, w, h };
   };
   const enemyBox: Box = (() => {
-    const h = H * (boss ? 0.74 : 0.64);
+    const h = H * (boss || elite ? 0.74 : 0.64);
     const w = h * 0.82;
     const feet = H * 0.95;
     const x = W * 0.77;
@@ -78,15 +121,33 @@ export function TowerArena({
   })();
 
   const k = strike?.kind;
-  const actor = strike && (k === "attack" || k === "skill") ? Math.min(strike.actor, team.length - 1) : -1;
+  const actor = strike && (k === "attack" || k === "skill" || (k === "support" && strike.ult)) ? Math.min(strike.actor, team.length - 1) : -1;
   const actorTheme = actor >= 0 ? fxTheme(team[actor].name, team[actor].skillName ?? "") : null;
   const enemyTheme = enemy ? fxTheme(enemy.name) : SHIELD_THEME;
-  const impact = k ? STRIKE_IMPACT[k] : 0;
+  const impact = k ? Math.round(STRIKE_IMPACT[k] * (strike?.small ? 0.85 : 1)) : 0;
+  const supportTheme = strike?.role === "guard" ? SHIELD_THEME : HEAL_THEME;
+  const bossTheme = strike?.bossFx === "barrier" || strike?.bossFx === "reflect" ? SHIELD_THEME : strike?.bossFx === "mend" ? HEAL_THEME : strike?.bossFx === "drain" || strike?.bossFx === "seal" ? DARK_THEME : RAGE_THEME;
+  const teamMid: Box = (() => {
+    const a = allyBox(0);
+    const z = allyBox(Math.max(0, team.length - 1));
+    return { ...a, x: (a.x + z.x) / 2, w: a.x - z.x + a.w };
+  })();
 
   return (
-    <div ref={ref} className={`relative h-[220px] select-none sm:h-[290px] ${strike && (k === "skill" || (k === "enemy" && strike.taken > 0)) ? "fx-shake-big" : strike ? "fx-shake" : ""}`} style={{ animationDelay: `${impact}ms` }} data-tower-arena>
+    <div ref={ref} className={`relative h-[220px] select-none sm:h-[290px] ${strike && (k === "skill" || (k === "enemy" && (strike.pattern || strike.taken > 0)) || strike.bossFx === "enrage" || strike.bossFx === "phase") ? "fx-shake-big" : strike && !strike.small && k !== "support" ? "fx-shake" : ""}`} style={{ animationDelay: `${impact}ms` }} data-tower-arena>
       {/* 바닥 그림자 */}
       <div className="pointer-events-none absolute inset-x-[4%] bottom-[2%] h-[12%] rounded-[50%] bg-black/35 blur-md" aria-hidden />
+
+      {/* 늘 보이는 상태: 폭주 · 방벽 · 보호막 · 봉인 */}
+      {enemy && !enemyDown && (enraged || elite) && (
+        <div className={`pointer-events-none absolute ${enraged ? "tower2-rage" : "tower2-elite"}`} style={{ left: enemyBox.x, top: enemyBox.y, width: enemyBox.w * 1.6, height: enemyBox.h * 1.15 }} aria-hidden />
+      )}
+      {teamShield > 0 && !teamDown && <div className="tower2-bubble pointer-events-none absolute z-[15]" style={{ left: teamMid.x, top: teamMid.y + teamMid.h * 0.05, width: teamMid.w * 1.25, height: teamMid.h * 1.12 }} aria-hidden />}
+      {sealed && !teamDown && (
+        <div className="pointer-events-none absolute z-[16] rounded-full bg-[#6a35d8]/80 px-2 py-0.5 text-[10px] font-black text-white shadow" style={{ left: teamMid.x, top: Math.max(2, allyBox(0).top - 18), transform: "translateX(-50%)" }}>
+          🔒 필살기 봉인
+        </div>
+      )}
 
       {/* 아군 (뒤 → 앞 순서로 그려 앞 캐릭터가 위에) */}
       {[...team.keys()].reverse().map((i) => {
@@ -94,7 +155,7 @@ export function TowerArena({
         const b = allyBox(i);
         const isActor = i === actor;
         const hit = k === "enemy" && strike!.taken > 0;
-        const anim = isActor ? (k === "skill" ? "bs-cast bs-aura" : "bs-lunge-r") : hit ? "bs-hit" : k === "skill" ? "bs-aura" : teamDown ? "" : "bs-idle";
+        const anim = moving !== null ? "tower-hop" : isActor ? (k === "skill" || k === "support" ? "bs-cast bs-aura" : "bs-lunge-r") : hit ? "bs-hit" : k === "skill" || k === "support" ? "bs-aura" : teamDown ? "" : "bs-idle";
         return (
           <div key={c.cardId} className="absolute" style={{ left: b.x, top: b.top, height: b.h, transform: "translateX(-50%)", zIndex: 10 - i }}>
             <div className={`h-full ${teamDown ? "bs-faint" : ""}`} style={{ animationDelay: strike?.dead ? `${impact + 420 + i * 120}ms` : "0ms" }}>
@@ -109,15 +170,34 @@ export function TowerArena({
       {/* 적 (바깥: 자리 · 가운데: 쓰러짐 · 안: 맞음/돌진/숨쉬기) */}
       {enemy && (
         <div key="enemy" className="absolute" style={{ left: enemyBox.x, top: enemyBox.top, height: enemyBox.h, transform: "translateX(-50%)", zIndex: 5 }}>
-          <div className={`h-full ${enemyDown ? "bs-faint" : ""}`} style={{ animationDelay: strike?.cleared ? `${impact + 420}ms` : "0ms" }}>
+          <div className={`h-full ${enemyDown ? "bs-faint" : ""} ${moving !== null ? "tower2-gone" : ""}`} style={{ animationDelay: strike?.cleared ? `${impact + 420}ms` : "0ms" }}>
             <div
               key={strike?.id ?? 0}
-              className={`h-full ${k === "enemy" || k === "shield" ? "bs-lunge-l" : k === "attack" || k === "skill" ? `bs-hit ${k === "skill" ? "bs-hit-big" : ""}` : enemyDown ? "" : "bs-idle"}`}
-              style={{ animationDelay: k === "attack" || k === "skill" ? `${impact}ms` : "0ms" }}
+              className={`h-full ${k === "enemy" || k === "shield" ? "bs-lunge-l" : k === "attack" || k === "skill" || strike?.bossFx === "reflect" ? `bs-hit ${k === "skill" ? "bs-hit-big" : ""}` : k === "boss" ? "bs-cast bs-aura" : enemyDown ? "" : "bs-idle"}`}
+              style={{ animationDelay: k === "attack" || k === "skill" || strike?.bossFx === "reflect" ? `${impact}ms` : "0ms", ["--aura" as string]: bossTheme.colors[0] } as CSSProperties}
             >
               <Fighter img={enemy.battleArtUrl} art={enemy.artUrl} name={enemy.name} rarity={enemy.rarity} flip boss={boss} />
             </div>
           </div>
+        </div>
+      )}
+
+      {enemy && bossShield > 0 && !enemyDown && <div className="tower2-barrier pointer-events-none absolute z-[6]" style={{ left: enemyBox.x, top: enemyBox.y, width: enemyBox.w * 1.35, height: enemyBox.h * 1.08 }} aria-hidden />}
+
+      {/* 떠오르는 숫자 (회복 · 보호막 · 사유력 · 유물) */}
+      {floats.map((f, i) => {
+        const b = f.side === "team" ? allyBox(0) : enemyBox;
+        return (
+          <span key={f.id} className="tower-float absolute z-30 whitespace-nowrap text-sm font-black drop-shadow-[0_2px_2px_rgba(0,0,0,.7)] sm:text-base" style={{ left: b.x, top: b.top + 4 + (i % 3) * 18, color: TONE[f.tone], transform: "translateX(-50%)" }} aria-hidden>
+            {f.text}
+          </span>
+        );
+      })}
+
+      {/* 다음 층으로 이동 */}
+      {moving !== null && (
+        <div className="tower2-move pointer-events-none absolute inset-0 z-40 flex items-center justify-center" aria-live="polite">
+          <span className="rounded-full bg-black/55 px-4 py-1.5 text-base font-black text-[#ffe9a8] shadow-lg backdrop-blur-sm sm:text-lg">▲ {moving}층으로</span>
         </div>
       )}
 
@@ -126,12 +206,13 @@ export function TowerArena({
         <div key={strike.id} className="pointer-events-none absolute inset-0 z-20 overflow-visible" aria-hidden>
           {k === "attack" && actorTheme && (
             <>
-              {[0, 1].map((n) => (
+              {(strike.small ? [0] : [0, 1]).map((n) => (
                 <span key={n} className="fx-crescent" style={{ left: enemyBox.x, top: enemyBox.y, width: enemyBox.w * 1.3, height: enemyBox.w * 1.3, ["--c0" as string]: actorTheme.colors[0], ["--c1" as string]: actorTheme.colors[1], ["--c2" as string]: actorTheme.colors[2], ["--r" as string]: `${-30 + n * 70}deg`, animationDelay: `${impact - 40 + n * 90}ms` } as CSSProperties} />
               ))}
               <Burst b={enemyBox} theme={actorTheme} big={false} delay={impact} />
             </>
           )}
+          {k === "skill" && actorTheme && (strike.hits ?? 1) > 1 && [1, 2].slice(0, (strike.hits ?? 1) - 1).map((n) => <Burst key={`h${n}`} b={{ ...enemyBox, x: enemyBox.x + (n % 2 ? -1 : 1) * enemyBox.w * 0.18 }} theme={actorTheme} big={false} delay={impact + n * 170} />)}
           {k === "skill" && actorTheme && (
             <>
               {/* 시전: 발밑 마법진 + 아군 전원 빛 */}
@@ -143,7 +224,7 @@ export function TowerArena({
               ))}
               {/* 기술 이름 */}
               <div className="tower-skillname absolute left-1/2 top-[6%] -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-1 text-sm font-black text-white sm:text-base" style={{ background: `linear-gradient(90deg, transparent, ${actorTheme.colors[1]}, ${actorTheme.colors[0]}, transparent)` }}>
-                {team[actor].skillName || `${team[actor].name}의 일격`}
+                {strike.title || team[actor].skillName || `${team[actor].name}의 일격`}
               </div>
               <Motif theme={actorTheme} from={allyBox(actor)} to={[enemyBox]} H={H} delay={impact - 420} />
               <Burst b={enemyBox} theme={actorTheme} big delay={impact} />
@@ -167,9 +248,66 @@ export function TowerArena({
             </>
           )}
 
+          {k === "support" && (
+            <>
+              <div className="fx-sigil fx-sigil-cast" style={{ left: teamMid.x, top: teamMid.feet - teamMid.h * 0.08, width: teamMid.w * 1.3, height: teamMid.w * 1.3, ["--c0" as string]: supportTheme.colors[0], ["--c1" as string]: supportTheme.colors[1], ["--c2" as string]: supportTheme.colors[2] } as CSSProperties}>
+                <span style={{ fontSize: teamMid.w * 0.18 }}>{supportTheme.glyph}</span>
+              </div>
+              {team.map((_, i) => (
+                <div key={i} className="fx-ally-glow" style={{ left: allyBox(i).x, top: allyBox(i).y, width: allyBox(i).w * 1.8, height: allyBox(i).h * 1.1, ["--c2" as string]: supportTheme.colors[0], animationDelay: `${impact - 120 + i * 70}ms` } as CSSProperties} />
+              ))}
+              {strike.title && (
+                <div className="tower-skillname absolute left-1/2 top-[6%] -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-1 text-sm font-black text-white sm:text-base" style={{ background: `linear-gradient(90deg, transparent, ${supportTheme.colors[1]}, ${supportTheme.colors[0]}, transparent)` }}>
+                  {strike.title}
+                </div>
+              )}
+              {(strike.heal ?? 0) > 0 && (
+                <span className="fx-dmg fx-dmg-big" style={{ left: teamMid.x, top: allyBox(0).top - 6, ["--c0" as string]: "#7dffb4", animationDelay: `${impact}ms` } as CSSProperties}>
+                  +{strike.heal}
+                </span>
+              )}
+              {(strike.guard ?? 0) > 0 && (
+                <span className="fx-dmg fx-dmg-big" style={{ left: teamMid.x, top: allyBox(0).top - 6, ["--c0" as string]: "#9fd8ff", animationDelay: `${impact}ms` } as CSSProperties}>
+                  🛡 +{strike.guard}
+                </span>
+              )}
+            </>
+          )}
+          {k === "boss" && (
+            <>
+              <div className="fx-ally-glow" style={{ left: enemyBox.x, top: enemyBox.y, width: enemyBox.w * 2, height: enemyBox.h * 1.2, ["--c2" as string]: bossTheme.colors[0] } as CSSProperties} />
+              {(strike.bossFx === "barrier" || strike.bossFx === "mend") && (
+                <div className="fx-sigil fx-sigil-cast" style={{ left: enemyBox.x, top: enemyBox.feet - enemyBox.w * 0.12, width: enemyBox.w * 1.5, height: enemyBox.w * 1.5, ["--c0" as string]: bossTheme.colors[0], ["--c1" as string]: bossTheme.colors[1], ["--c2" as string]: bossTheme.colors[2] } as CSSProperties}>
+                  <span style={{ fontSize: enemyBox.w * 0.3 }}>{bossTheme.glyph}</span>
+                </div>
+              )}
+              {strike.bossFx === "reflect" && <Burst b={enemyBox} theme={SHIELD_THEME} big={false} delay={impact} />}
+              {strike.bossFx === "drain" && <Motif theme={DARK_THEME} from={allyBox(0)} to={[enemyBox]} H={H} delay={impact - 200} />}
+              {strike.bossFx === "seal" && (
+                <div className="fx-sigil fx-sigil-cast" style={{ left: teamMid.x, top: teamMid.feet - teamMid.h * 0.08, width: teamMid.w * 1.3, height: teamMid.w * 1.3, ["--c0" as string]: DARK_THEME.colors[0], ["--c1" as string]: DARK_THEME.colors[1], ["--c2" as string]: DARK_THEME.colors[2] } as CSSProperties}>
+                  <span style={{ fontSize: teamMid.w * 0.18 }}>{DARK_THEME.glyph}</span>
+                </div>
+              )}
+              {(strike.bossFx === "enrage" || strike.bossFx === "phase") && <div className="tower-redflash absolute inset-0" style={{ animationDelay: `${impact}ms`, background: strike.bossFx === "phase" ? "radial-gradient(circle at 75% 55%, rgba(255, 211, 107, .45), transparent 65%)" : undefined }} />}
+            </>
+          )}
+          {strike.banner && (
+            <div className="tower2-banner absolute left-1/2 top-[30%] z-30 -translate-x-1/2 whitespace-nowrap rounded-xl px-4 py-1.5 text-base font-black text-white sm:text-xl" style={{ background: `linear-gradient(90deg, transparent, ${TONE[strike.banner.tone]}cc 18%, ${TONE[strike.banner.tone]}cc 82%, transparent)`, color: strike.banner.tone === "gold" || strike.banner.tone === "green" || strike.banner.tone === "blue" ? "#1b1300" : "#fff" }}>
+              {strike.banner.text}
+            </div>
+          )}
+          {k === "enemy" && strike.pattern && (
+            <div className="tower2-banner absolute left-[72%] top-[8%] z-30 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[#b3122a]/85 px-3 py-0.5 text-sm font-black text-white">패턴 공격!</div>
+          )}
+          {k === "enemy" && (strike.absorbed ?? 0) > 0 && (
+            <span className="fx-dmg" style={{ left: teamMid.x, top: allyBox(0).top + 18, ["--c0" as string]: "#9fd8ff", animationDelay: `${impact}ms` } as CSSProperties}>
+              🛡 -{strike.absorbed}
+            </span>
+          )}
+
           {/* 피해 숫자 */}
           {strike.dealt > 0 && (
-            <span className={`fx-dmg ${k === "skill" ? "fx-dmg-big" : ""} ${strike.quick ? "fx-dmg-crit" : ""}`} style={{ left: enemyBox.x, top: enemyBox.top - 6, ["--c0" as string]: strike.quick ? "#ffd36b" : "#fff3c4", animationDelay: `${impact}ms` } as CSSProperties}>
+            <span className={`fx-dmg ${k === "skill" ? "fx-dmg-big" : ""} ${strike.quick ? "fx-dmg-crit" : ""} ${strike.small ? "text-base" : ""}`} style={{ left: enemyBox.x, top: enemyBox.top - 6, ["--c0" as string]: strike.quick ? "#ffd36b" : "#fff3c4", animationDelay: `${impact}ms` } as CSSProperties}>
               {strike.quick && <span className="fx-crit-tag">빠른 일격!</span>}-{strike.dealt}
             </span>
           )}
@@ -183,7 +321,7 @@ export function TowerArena({
               막음!
             </span>
           )}
-          {strike.combo >= 2 && strike.dealt > 0 && (
+          {strike.combo >= 2 && strike.dealt > 0 && !strike.small && !strike.ult && (
             <span className="tower-combo absolute left-[4%] top-[6%] text-lg font-black italic text-[#ffb36b] sm:text-2xl" style={{ animationDelay: `${impact}ms` }}>
               {strike.combo} COMBO
             </span>

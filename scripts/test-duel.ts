@@ -477,12 +477,12 @@ check("입력 상태는 바뀌지 않음 (순수 함수)", (() => {
     check("키울수록 멀리 감: 조금 키운 팀 < 희귀 Lv.3 < 전설 Lv.5 (전설은 65% 이상)", light < rare3 && rare3 < leg5 && leg5 >= 26, `${light} · ${rare3} · ${leg5} /40`);
   }
   check(
-    "첫 클리어 강화석: 1~10관 1개 · 11~20관 2개 … (뒤 관일수록 많음)",
-    stageStones(1) === 1 && stageStones(10) === 1 && stageStones(11) === 2 && stageStones(25) === 3 && Array.from({ length: 60 }, (_, i) => i + 1).every((n) => n === 1 || stageStones(n) >= stageStones(n - 1)),
+    "첫 클리어 강화석 (031 조율): 5관마다만 · 뒤 관일수록 많음 (5관 1개 · 25관 2개)",
+    stageStones(1) === 0 && stageStones(5) === 1 && stageStones(25) === 2 && Array.from({ length: 12 }, (_, i) => (i + 1) * 5).every((n) => n === 5 || stageStones(n) >= stageStones(n - 5)),
   );
   {
     const sum = (k: number) => Array.from({ length: k }, (_, i) => stageStones(i + 1)).reduce((a, b) => a + b, 0);
-    check("앞 10관을 다 깨도 강화석 10개 (덱 3장 모두 최대 레벨엔 30개 필요)", sum(10) === 10, `40관까지 ${sum(40)}개`);
+    check("앞 10관을 다 깨도 강화석 2개 (031: 필요에 비해 너무 많이 생기지 않게)", sum(10) === 2, `40관까지 ${sum(40)}개`);
   }
 }
 

@@ -898,3 +898,31 @@ body {
 .tower-armillary { animation: tower-armillary 12s linear infinite; }
 @keyframes tower-armillary { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tower-cloud, .tower-bird, .tower-bolt, .tower-aurora, .tower-armillary { animation: none; } .tower-bolt { opacity: .6; } }
+
+/* ---------------------------------------------------------------------
+   사상의 탑 2.0: 보호막 · 방벽 · 폭주 · 특수 전투 · 알림 띠 · 층 이동 · 필살기 준비 · 사유력
+   --------------------------------------------------------------------- */
+.tower2-bubble { translate: -50% -50%; border-radius: 50%; border: 2px solid rgba(127, 198, 255, .75); background: radial-gradient(ellipse, rgba(127, 198, 255, .04) 40%, rgba(127, 198, 255, .2) 72%, transparent 74%); box-shadow: 0 0 16px rgba(127, 198, 255, .4), inset 0 0 20px rgba(127, 198, 255, .25); animation: tower2-pulse 2.4s ease-in-out infinite; }
+.tower2-barrier { translate: -50% -50%; border-radius: 46% 46% 40% 40%; border: 3px solid rgba(160, 220, 255, .85); background: repeating-linear-gradient(60deg, rgba(160, 220, 255, .12) 0 6px, transparent 6px 14px), radial-gradient(ellipse, transparent 50%, rgba(127, 198, 255, .28) 75%, transparent 77%); box-shadow: 0 0 22px rgba(127, 198, 255, .55); animation: tower2-pulse 1.8s ease-in-out infinite; }
+.tower2-rage { translate: -50% -50%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 70, 50, .55), rgba(255, 70, 50, .15) 55%, transparent 70%); filter: blur(4px); animation: tower2-pulse 0.9s ease-in-out infinite; }
+.tower2-elite { translate: -50% -50%; border-radius: 50%; background: radial-gradient(ellipse, rgba(185, 120, 255, .45), rgba(185, 120, 255, .1) 55%, transparent 70%); filter: blur(4px); animation: tower2-pulse 2.2s ease-in-out infinite; }
+@keyframes tower2-pulse { 0%, 100% { opacity: .65; scale: 1; } 50% { opacity: 1; scale: 1.03; } }
+.tower2-banner { opacity: 0; animation: tower2-banner 1.15s ease-out both; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+@keyframes tower2-banner { 0% { opacity: 0; transform: translateX(-50%) scale(1.5); filter: blur(3px); } 16% { opacity: 1; transform: translateX(-50%) scale(1); filter: none; } 78% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-6px); } }
+.tower2-move { animation: tower2-move .9s ease-in-out both; background: linear-gradient(180deg, transparent, rgba(255, 233, 168, .18), transparent); }
+@keyframes tower2-move { 0% { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.tower2-gone { animation: tower2-gone .5s ease-in forwards; }
+@keyframes tower2-gone { to { opacity: 0; transform: translateY(-10px); } }
+.tower2-ready { position: relative; }
+.tower2-ready::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 2px rgba(255, 211, 107, .95), 0 0 16px rgba(255, 211, 107, .6); animation: duel-pulse 1.4s ease-in-out infinite; }
+.tower2-pip { transition: background-color .25s, box-shadow .25s, transform .25s; }
+.tower2-pip-on { background: linear-gradient(180deg, #fff2b8, #ffc94a); box-shadow: 0 0 8px rgba(255, 201, 74, .8); }
+.tower2-pip-gain { animation: tower2-pip .5s ease-out; }
+@keyframes tower2-pip { 0% { transform: scale(1.6); } 100% { transform: none; } }
+.tower2-intent-hot { animation: tower2-hot 0.8s ease-in-out infinite; }
+@keyframes tower2-hot { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 80, 60, 0); } 50% { box-shadow: 0 0 0 3px rgba(255, 80, 60, .55); } }
+@media (prefers-reduced-motion: reduce) {
+  .tower2-bubble, .tower2-barrier, .tower2-rage, .tower2-elite, .tower2-ready::after, .tower2-intent-hot { animation: none !important; }
+  .tower2-move { animation-duration: .2s !important; }
+  .tower2-pip-gain { animation: none !important; }
+}
