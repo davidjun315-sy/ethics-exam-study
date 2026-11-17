@@ -23,11 +23,18 @@ function artBg(art: GameState["settings"]["art"], key: ArtSlotKey): React.CSSPro
   return url ? { backgroundImage: `url("${url}")`, backgroundSize: "cover", backgroundPosition: "center" } : { background: slotOf(key).fallback };
 }
 
-/** 배틀 아레나 › 사상의 탑: 기출 퀴즈로 오르는 탑 (판정 · 보상은 서버) */
+/**
+ * 배틀 아레나 › 사상의 탑: 화면은 둘뿐.
+ *  - 탑 화면: 탑 그림 · 내 위치 · 팀 고르기 / 'N층 입장' / 층을 깬 뒤 강화 고르기 / 지난 도전 요약 · 랭킹
+ *  - 게임 화면: 전장 + 문제 (층을 깨거나 쓰러지면 탑 화면으로)
+ */
 export function TowerTab({ state, reload, goDraw }: { state: GameState; reload: () => Promise<GameState>; goDraw: () => void }) {
   const [ov, setOv] = useState<TowerOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ended, setEnded] = useState<RunView | null>(null);
+  const [run, setRun] = useState<RunView | null>(null);
+  const [view, setView] = useState<"main" | "game">("main");
+  const [last, setLast] = useState<RunView | null>(null);
+  const [climbFrom, setClimbFrom] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const load = useCallback(() => setTick((t) => t + 1), []);
   useEffect(() => {
@@ -36,6 +43,9 @@ export function TowerTab({ state, reload, goDraw }: { state: GameState; reload: 
       .then((v) => {
         if (!alive) return;
         setOv(v);
+        setRun(v.run);
+        // 문제를 풀던 중에 다시 들어왔으면 게임 화면으로
+        if (v.run && !v.run.awaiting && !v.run.choices) setView("game");
         setError(null);
       })
       .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
@@ -47,38 +57,72 @@ export function TowerTab({ state, reload, goDraw }: { state: GameState; reload: 
   if (error) return <p className="card p-4 text-sm text-danger">{error}</p>;
   if (!ov) return <p className="card p-8 text-center text-sm text-muted">탑을 불러오는 중…</p>;
   if (!ov.ready) return <p className="card p-4 text-sm text-muted">{ov.hint}</p>;
-  if (ended)
-    return (
-      <TowerResult
-        run={ended}
-        ov={ov}
-        art={state.settings.art}
-        onBack={() => {
-          setEnded(null);
-          load();
-          reload();
-        }}
-      />
-    );
-  if (ov.run)
-    return (
-      <TowerRun
-        initial={ov.run}
-        best={ov.best}
-        art={state.settings.art}
-        onEnd={(r) => {
-          setEnded(r);
-          load();
-        }}
-      />
-    );
-  return <TowerLobby ov={ov} state={state} goDraw={goDraw} onStart={(run) => setOv({ ...ov, run })} />;
+
+  /** 게임 화면에서 탑으로: 도전이 끝났으면 요약을 탑 화면에 */
+  const backToTower = (r: RunView) => {
+    window.scrollTo({ top: 0 });
+    if (r.status !== "active") {
+      setLast(r);
+      setRun(null);
+      setView("main");
+      load();
+      reload();
+      return;
+    }
+    setRun(r);
+    setClimbFrom(null);
+    setView("main");
+  };
+
+  if (view === "game" && run)
+    return <TowerGame key={run.id} run={run} setRun={setRun} art={state.settings.art} onBack={backToTower} />;
+  return (
+    <TowerMain
+      ov={ov}
+      state={state}
+      run={run}
+      last={last}
+      climbFrom={climbFrom}
+      goDraw={goDraw}
+      onRun={(r, from) => {
+        setLast(null);
+        setClimbFrom(from ?? null);
+        setRun(r);
+      }}
+      onEnter={(r) => {
+        setRun(r);
+        setView("game");
+        window.scrollTo({ top: 0 });
+      }}
+      onQuit={(r) => backToTower({ ...r, status: "quit" })}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------
-// 입구
+// 탑 화면
 // ---------------------------------------------------------------------
-function TowerLobby({ ov, state, goDraw, onStart }: { ov: TowerOverview; state: GameState; goDraw: () => void; onStart: (r: RunView) => void }) {
+function TowerMain({
+  ov,
+  state,
+  run,
+  last,
+  climbFrom,
+  goDraw,
+  onRun,
+  onEnter,
+  onQuit,
+}: {
+  ov: TowerOverview;
+  state: GameState;
+  run: RunView | null;
+  last: RunView | null;
+  climbFrom: number | null;
+  goDraw: () => void;
+  onRun: (r: RunView, from?: number) => void;
+  onEnter: (r: RunView) => void;
+  onQuit: (r: RunView) => void;
+}) {
   const owned = useMemo(() => [...state.owned].sort(byStrength), [state.owned]);
   const [team, setTeam] = useState<string[]>(() => {
     const deck = state.deck.filter((id) => owned.some((o) => o.cardId === id));
@@ -88,54 +132,142 @@ function TowerLobby({ ov, state, goDraw, onStart }: { ov: TowerOverview; state: 
   const [msg, setMsg] = useState<string | null>(null);
   const left = Math.max(0, ov.tries.max - ov.tries.used);
   const atk = team.reduce((s, id) => s + (owned.find((o) => o.cardId === id)?.atk ?? 0), 0);
-
-  async function start() {
+  const toggle = (id: string) => setTeam((t) => (t.includes(id) ? t.filter((x) => x !== id) : t.length >= TOWER_TEAM_SIZE ? [...t.slice(1), id] : [...t, id]));
+  const call = async (fn: () => Promise<void>) => {
     setBusy(true);
     setMsg(null);
     try {
-      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team });
-      onStart(r.run);
+      await fn();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }
-  const toggle = (id: string) => setTeam((t) => (t.includes(id) ? t.filter((x) => x !== id) : t.length >= TOWER_TEAM_SIZE ? [...t.slice(1), id] : [...t, id]));
+  };
+  /** 탑 오르기 = 시작하고 바로 1층 입장 */
+  const start = () =>
+    call(async () => {
+      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team });
+      const e = r.run.awaiting ? await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "enter", runId: r.run.id }) : r;
+      onEnter(e.run);
+    });
+  const enter = (r: RunView) =>
+    call(async () => {
+      const e = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "enter", runId: r.id });
+      onEnter(e.run);
+    });
+  const choose = (r: RunView, buff: string) =>
+    call(async () => {
+      const n = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "buff", runId: r.id, buff });
+      if (n.run.status !== "active") return onQuit(n.run);
+      onRun(n.run, r.state.floor);
+    });
+  const quit = (r: RunView) =>
+    call(async () => {
+      await quizApi("/api/game/tower", "POST", { action: "quit", runId: r.id });
+      onQuit(r);
+    });
+
+  const s = run?.state;
+  const boss = s ? isBossFloor(s.floor) : false;
+  const teamCards = team.map((id) => owned.find((o) => o.cardId === id)).filter((o) => o !== undefined).map((o) => ({ cardId: o.cardId, name: o.name, artUrl: o.artUrl, battleArtUrl: o.battleArtUrl ?? null }));
+  const lastBest = last && last.cleared > 0 && last.cleared >= ov.best;
 
   return (
     <div className="space-y-4" data-tower-lobby>
-      {/* 입구 배너 */}
-      <section className="relative overflow-hidden rounded-2xl border border-line text-white shadow-soft">
+      {/* 탑: 제목 · 기록 · 탑 그림 · 내 위치 · 다음 행동이 한 화면에 */}
+      <section className="relative overflow-hidden rounded-2xl border border-line text-white shadow-soft" data-tower-hub>
         <div className="absolute inset-0" style={artBg(state.settings.art, "tower-lobby")} aria-hidden />
-        {!state.settings.art?.["tower-lobby"] && <TowerSilhouette />}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/30 to-transparent" aria-hidden />
-        <div className="relative px-5 py-6 sm:px-7 sm:py-8">
-          <p className="text-[11px] font-bold tracking-[0.25em] text-white/70">THE TOWER OF THOUGHT</p>
-          <h2 className="mt-1 text-3xl font-black tracking-tight drop-shadow sm:text-4xl">사상의 탑</h2>
-          <p className="mt-1 max-w-[70%] text-sm text-white/85 sm:max-w-md">층마다 기다리는 사상가의 기출을 풀어 쓰러뜨리세요. 올라갈수록 문제는 어려워지고 적은 강해집니다.</p>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-            <Chip icon={<Crown className="h-3.5 w-3.5" />} text={`최고 ${ov.best}층`} />
-            <Chip icon={<Trophy className="h-3.5 w-3.5" />} text={`이번 주 ${ov.weeklyBest}층`} />
-            <Chip icon={<Swords className="h-3.5 w-3.5" />} text={`오늘 도전 ${left}/${ov.tries.max}${ov.tries.attendBonus ? " (출석 +1)" : ""}`} />
+        {!state.settings.art?.["tower-lobby"] && <div className="absolute inset-0 bg-gradient-to-b from-[#141a36] via-[#252c5c] to-[#3b2f6b]" aria-hidden />}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-black/55" aria-hidden />
+        <div className="relative space-y-3 p-4 sm:p-5">
+          <div>
+            <p className="text-[11px] font-bold tracking-[0.25em] text-white/70">THE TOWER OF THOUGHT{run ? ` · ${run.tier.name}` : ""}</p>
+            <h2 className="mt-0.5 text-2xl font-black tracking-tight drop-shadow sm:text-3xl" data-tower-title>
+              {run ? (run.choices ? `${s!.floor}층 돌파!` : run.cleared > 0 ? `${run.cleared}층 돌파 → ${s!.floor}층` : `${s!.floor}층 앞`) : "사상의 탑"}
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+              <Chip icon={<Crown className="h-3.5 w-3.5" />} text={`최고 ${ov.best}층`} />
+              <Chip icon={<Trophy className="h-3.5 w-3.5" />} text={`이번 주 ${ov.weeklyBest}층`} />
+              <Chip icon={<Swords className="h-3.5 w-3.5" />} text={`오늘 도전 ${left}/${ov.tries.max}${ov.tries.attendBonus ? " (출석 +1)" : ""}`} />
+            </div>
           </div>
+
+          {/* 지난 도전 요약 (따로 창을 띄우지 않고 여기에) */}
+          {last && (
+            <div className="relative overflow-hidden rounded-xl border border-white/20 px-3 py-2.5" data-tower-last>
+              <div className="absolute inset-0 opacity-60" style={artBg(state.settings.art, "tower-result")} aria-hidden />
+              <div className="absolute inset-0 bg-black/40" aria-hidden />
+              <div className="relative flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+                <b>
+                  {last.status === "quit" ? "도전 종료" : "쓰러졌어요"} · {last.cleared}층까지{lastBest ? " 🏆 최고 기록!" : ""}
+                </b>
+                <span className="text-xs text-white/85">
+                  맞힘 {last.state.correct}/{last.state.answered} · <CoinIcon className="inline h-3 w-3" /> {last.coins}
+                  {last.stones > 0 && ` · 강화석 ${last.stones}`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {run ? (
+            <>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                <div className="space-y-1">
+                  <Bar value={s!.hp} max={s!.maxHp} tone="team" label="내 팀" />
+                  <div className="flex flex-wrap gap-1 text-[10px] font-semibold">
+                    <Tag icon={<CoinIcon className="h-3 w-3" />} text={`${run.coins}`} tone="bg-white/20" />
+                    {run.stones > 0 && <Tag icon={<Gem className="h-3 w-3" />} text={`${run.stones}`} tone="bg-white/20" />}
+                    {s!.buffs.power > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`피해 +${Math.round(s!.buffs.power * 100)}%`} tone="bg-white/20" />}
+                    {s!.buffs.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`방어 ${s!.buffs.shield}`} tone="bg-white/20" />}
+                    {s!.buffs.hints > 0 && <Tag icon={<Lightbulb className="h-3 w-3" />} text={`힌트 ${s!.buffs.hints}`} tone="bg-white/20" />}
+                  </div>
+                </div>
+                {!run.choices && (
+                  <span className="text-right text-[11px] text-white/75">
+                    다음 상대
+                    <b className="block text-sm text-white">
+                      {boss ? "👑 " : ""}
+                      {run.enemy?.name ?? "?"}
+                    </b>
+                  </span>
+                )}
+              </div>
+              {run.choices ? (
+                <BuffPick run={run} busy={busy} onChoose={(b) => choose(run, b)} />
+              ) : (
+                <button
+                  type="button"
+                  className={`w-full rounded-xl py-3.5 text-base font-black shadow-lg transition hover:brightness-110 disabled:opacity-60 ${boss ? "bg-gradient-to-r from-[#ff6b5a] to-[#ffb36b] text-[#2a0a00]" : "bg-gradient-to-r from-[#ffd36b] to-[#ffe9a8] text-[#3a2600]"}`}
+                  onClick={() => (run.awaiting ? enter(run) : onEnter(run))}
+                  disabled={busy}
+                  data-tower-enter
+                >
+                  {busy ? "문을 여는 중…" : run.awaiting ? (boss ? `보스층 ${s!.floor}층 입장` : `${s!.floor}층 입장`) : `${s!.floor}층으로 돌아가기`}
+                </button>
+              )}
+            </>
+          ) : null}
+          <TowerMap
+            floor={run ? s!.floor : Math.max(1, ov.best)}
+            cleared={run ? (run.choices ? s!.floor : run.cleared) : ov.best}
+            best={Math.max(ov.best, run?.cleared ?? 0)}
+            from={climbFrom}
+            team={run ? run.team : teamCards}
+            enemyName={run && !run.choices ? run.enemy?.name : null}
+            mode={run ? "run" : "lobby"}
+          />
+
+          {run && (
+            <button type="button" className="block w-full text-center text-[11px] text-white/60 underline-offset-2 hover:text-white hover:underline" onClick={() => quit(run)} disabled={busy} data-tower-quit>
+                여기서 도전 끝내기 (깬 층 보상은 남아요)
+            </button>
+          )}
+          {msg && <p className="rounded-lg bg-black/40 px-3 py-2 text-sm text-[#ffb3a8]" role="alert">{msg}</p>}
         </div>
       </section>
 
-      {/* 나의 탑: 최고 기록이 어느 층인지 */}
-      <section className="relative overflow-hidden rounded-2xl border border-line p-4 text-white shadow-soft" data-tower-mytower>
-        <div className="absolute inset-0 bg-gradient-to-b from-[#141a36] via-[#252c5c] to-[#3b2f6b]" aria-hidden />
-        <div className="relative">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="font-bold">나의 탑</h3>
-            <span className="text-[11px] text-white/70">{ov.best > 0 ? `최고 기록 ${ov.best}층 · ${ov.tiers[ov.best > 30 ? 4 : ov.best > 20 ? 3 : ov.best > 10 ? 2 : 1].name}` : "아직 오르지 않았어요 · 1층부터"}</span>
-          </div>
-          <TowerMap floor={Math.max(1, ov.best)} cleared={ov.best} best={ov.best} team={team.map((id) => owned.find((o) => o.cardId === id)).filter((o) => o !== undefined).map((o) => ({ cardId: o.cardId, name: o.name, artUrl: o.artUrl, battleArtUrl: o.battleArtUrl ?? null }))} mode="lobby" />
-        </div>
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        {/* 팀 고르기 */}
+      {!run && (
         <section className="card space-y-3 p-4">
           <div className="flex items-baseline justify-between gap-2">
             <h3 className="font-bold">함께 오를 카드 {team.length}/{TOWER_TEAM_SIZE}</h3>
@@ -149,7 +281,7 @@ function TowerLobby({ ov, state, goDraw, onStart }: { ov: TowerOverview; state: 
               </button>
             </div>
           ) : (
-            <div className="grid max-h-[30rem] grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4" aria-label="보유 카드">
+            <div className="grid max-h-[30rem] grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4 lg:grid-cols-6" aria-label="보유 카드">
               {owned.map((o) => {
                 const at = team.indexOf(o.cardId);
                 return (
@@ -161,13 +293,14 @@ function TowerLobby({ ov, state, goDraw, onStart }: { ov: TowerOverview; state: 
               })}
             </div>
           )}
-          {msg && <p className="text-sm text-danger" role="alert">{msg}</p>}
           <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={busy || !team.length || left <= 0} onClick={start} data-tower-start>
             {busy ? "탑 문을 여는 중…" : left <= 0 ? "오늘 도전을 모두 썼어요" : "탑 오르기"}
           </button>
           <p className="text-center text-[11px] text-faint">하루 {ov.tries.max - (ov.tries.attendBonus ? 1 : 0)}번 · 그날 출석하면 1번 더 · 그만둬도 깬 층 보상은 남아요</p>
         </section>
+      )}
 
+      <div className="grid gap-4 lg:grid-cols-2">
         {/* 층 안내 · 보상 */}
         <section className="card space-y-3 p-4">
           <h3 className="font-bold">탑의 구간</h3>
@@ -199,41 +332,41 @@ function TowerLobby({ ov, state, goDraw, onStart }: { ov: TowerOverview; state: 
           </ul>
           {!ov.essayOk && <p className="text-[11px] text-faint">지금은 AI 채점을 쓸 수 없어 31층부터도 서술형 없이 진행됩니다.</p>}
         </section>
-      </div>
 
-      {/* 주간 랭킹 */}
-      <section className="card p-4">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="flex items-center gap-1.5 font-bold">
-            <Trophy className="h-4 w-4 text-[#c99a2e]" aria-hidden /> 이번 주 탑 랭킹
-          </h3>
-          <span className="text-[11px] text-faint">가장 높이 깬 층 · 월요일 0시 새로 시작</span>
-        </div>
-        {ov.ranking.rows.length === 0 ? (
-          <p className="text-sm text-muted">아직 이번 주에 탑을 오른 사람이 없어요. 첫 번째가 되어 보세요!</p>
-        ) : (
-          <ol className="grid gap-1 sm:grid-cols-2 sm:gap-x-4">
-            {ov.ranking.rows.map((r) => (
-              <li key={r.rank} className={`flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-navy-soft/70 ring-1 ring-navy/25" : ""}`}>
-                <span className="w-6 text-center text-sm font-black italic tabular-nums text-muted">{r.rank}</span>
-                <span className="min-w-0 flex-1 truncate font-semibold">
-                  {r.name}
-                  {r.me && <span className="ml-1 text-xs font-normal text-muted">(나)</span>}
-                </span>
-                <span className="shrink-0">
-                  <b className="num">{r.floor}</b>
-                  <span className="text-xs text-muted">층</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {ov.ranking.mine && ov.ranking.mine.rank > ov.ranking.rows.length && (
-          <p className="mt-2 rounded-lg bg-navy-soft/60 px-3 py-1.5 text-xs">
-            내 순위 <b className="text-navy">{ov.ranking.mine.rank}위</b> · {ov.ranking.mine.floor}층
-          </p>
-        )}
-      </section>
+        {/* 주간 랭킹 */}
+        <section className="card p-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h3 className="flex items-center gap-1.5 font-bold">
+              <Trophy className="h-4 w-4 text-[#c99a2e]" aria-hidden /> 이번 주 탑 랭킹
+            </h3>
+            <span className="text-[11px] text-faint">가장 높이 깬 층 · 월요일 0시 새로 시작</span>
+          </div>
+          {ov.ranking.rows.length === 0 ? (
+            <p className="text-sm text-muted">아직 이번 주에 탑을 오른 사람이 없어요. 첫 번째가 되어 보세요!</p>
+          ) : (
+            <ol className="space-y-1">
+              {ov.ranking.rows.map((r) => (
+                <li key={r.rank} className={`flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm ${r.me ? "bg-navy-soft/70 ring-1 ring-navy/25" : ""}`}>
+                  <span className="w-6 text-center text-sm font-black italic tabular-nums text-muted">{r.rank}</span>
+                  <span className="min-w-0 flex-1 truncate font-semibold">
+                    {r.name}
+                    {r.me && <span className="ml-1 text-xs font-normal text-muted">(나)</span>}
+                  </span>
+                  <span className="shrink-0">
+                    <b className="num">{r.floor}</b>
+                    <span className="text-xs text-muted">층</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {ov.ranking.mine && ov.ranking.mine.rank > ov.ranking.rows.length && (
+            <p className="mt-2 rounded-lg bg-navy-soft/60 px-3 py-1.5 text-xs">
+              내 순위 <b className="text-navy">{ov.ranking.mine.rank}위</b> · {ov.ranking.mine.floor}층
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -247,32 +380,10 @@ function Chip({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
-/** 기본 입구 그림: 겹겹이 쌓인 탑 실루엣 (그림을 올리면 그림이 대신) */
-function TowerSilhouette() {
-  return (
-    <div className="pointer-events-none absolute inset-y-0 -right-6 flex w-36 origin-bottom scale-75 flex-col items-center justify-end opacity-70 sm:right-[12%] sm:w-52 sm:scale-100 sm:opacity-100" aria-hidden>
-      <div className="tower-glow absolute bottom-0 h-full w-full rounded-full bg-[radial-gradient(closest-side,rgba(255,222,160,.45),transparent)]" />
-      <div className="h-6 w-1 bg-[#f6dc8f]/80" />
-      <div className="h-0 w-0 border-x-[22px] border-b-[30px] border-x-transparent border-b-[#141a36]" />
-      {[44, 56, 68, 80, 94].map((w, i) => (
-        <div key={w} className="relative flex items-center justify-center gap-1.5 border-x border-t border-white/10 bg-[#141a36]" style={{ width: w, height: 26 + i * 2 }}>
-          {Array.from({ length: 2 + i }, (_, k) => (
-            <span key={k} className="tower-window h-2.5 w-1.5 rounded-t-full bg-[#ffd98a]" style={{ animationDelay: `${(i * 3 + k) * 0.37}s` }} />
-          ))}
-        </div>
-      ))}
-      <div className="h-3 w-32 rounded-t-md bg-[#0e1328] sm:w-40" />
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------
 // 오르는 중
 // ---------------------------------------------------------------------
-function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: number; art: GameState["settings"]["art"]; onEnd: (r: RunView) => void }) {
-  // 탑 화면에서 올라가는 연출: 직전에 있던 층
-  const [climbFrom, setClimbFrom] = useState<number | null>(null);
-  const [run, setRun] = useState(initial);
+function TowerGame({ run, setRun, art, onBack }: { run: RunView; setRun: (r: RunView) => void; art: GameState["settings"]["art"]; onBack: (r: RunView) => void }) {
   const [outcome, setOutcome] = useState<TowerAnswerResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -281,7 +392,7 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
   const [assign, setAssign] = useState<(number | null)[]>([]);
   const [strike, setStrike] = useState<Strike | null>(null);
   // 체력바는 맞는 순간에 바뀜 (연출보다 먼저 줄지 않게)
-  const [shown, setShown] = useState(initial.state);
+  const [shown, setShown] = useState(run.state);
   const [showSol, setShowSol] = useState(false);
   const [now, setNow] = useState<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
@@ -324,7 +435,7 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
       const visible = arena ? arena.getBoundingClientRect().top > -40 : true;
       if (!visible) arena?.scrollIntoView({ behavior: "smooth", block: "start" });
       setTimeout(() => play(r), visible ? 0 : 320);
-      setRun((old) => ({ ...r.run, item: old.item })); // 해설을 보는 동안 문제는 그대로
+      setRun({ ...r.run, item: run.item }); // 해설을 보는 동안 문제는 그대로
       setShowSol(r.verdict !== "correct");
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -340,47 +451,12 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
     setPicks([]);
     setAssign([]);
     setShowSol(false);
-    if (r.status !== "active") return onEnd(r);
+    // 층을 깼거나(강화 고르기) 쓰러졌으면 탑 화면으로
+    if (r.status !== "active" || r.choices) return onBack(r);
     setRun(r);
     setShown(r.state);
     setStrike(null);
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-  async function choose(buff: string) {
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "buff", runId: run.id, buff });
-      setOutcome(null);
-      setAnswer("");
-      setPicks([]);
-      setAssign([]);
-      if (r.run.status !== "active") return onEnd(r.run);
-      setClimbFrom(run.state.floor);
-      setRun(r.run);
-      setShown(r.run.state);
-      setStrike(null);
-      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  /** 탑 화면 → 층 입장 (이때 문제 공개 · 빠른 정답 시계 시작) */
-  async function enter() {
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "enter", runId: run.id });
-      setRun(r.run);
-      setShown(r.run.state);
-      topRef.current?.scrollIntoView({ block: "start" });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
   }
   async function hint() {
     setBusy(true);
@@ -394,70 +470,8 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
       setBusy(false);
     }
   }
-  async function quit() {
-    if (!confirm("이번 도전을 그만둘까요? 깬 층의 보상은 그대로 남아요.")) return;
-    setBusy(true);
-    try {
-      await quizApi("/api/game/tower", "POST", { action: "quit", runId: run.id });
-      onEnd({ ...run, status: "quit" });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
-  }
-
   const s = run.state;
-  const floorDone = run.choices && !outcome; // 강화 고르기 (새로고침 후 이어서)
   const boss = isBossFloor(s.floor);
-
-  // 탑 화면: 층을 깨고 강화를 고르면 (또는 도전을 시작하면) 여기로 돌아와 내 위치를 보고 다음 층에 들어간다
-  if (run.awaiting && !outcome && !floorDone)
-    return (
-      <div ref={topRef} className="scroll-mt-20 space-y-3" data-tower-hub>
-        <section className="relative overflow-hidden rounded-2xl border border-line text-white shadow-soft">
-          <div className="absolute inset-0" style={artBg(art, "tower-lobby")} aria-hidden />
-          {!art?.["tower-lobby"] && <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_100%,rgba(255,211,107,.25),transparent_60%)]" aria-hidden />}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" aria-hidden />
-          <div className="relative space-y-3 p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-bold tracking-[0.2em] text-white/70">사상의 탑 · {run.tier.name}</p>
-                <h2 className="text-2xl font-black tracking-tight">
-                  {run.cleared > 0 ? `${run.cleared}층 돌파!` : "탑 입구"} <span className="text-base font-bold text-white/80">→ {s.floor}층</span>
-                </h2>
-              </div>
-              <button type="button" onClick={quit} disabled={busy} className="rounded-full border border-white/30 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10">
-                그만두기
-              </button>
-            </div>
-            <TowerMap floor={s.floor} cleared={run.cleared} best={Math.max(best, run.cleared)} from={climbFrom} team={run.team} enemyName={run.enemy?.name} mode="run" />
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-              <div className="space-y-1">
-                <Bar value={s.hp} max={s.maxHp} tone="team" label="내 팀" />
-                <div className="flex flex-wrap gap-1 text-[10px] font-semibold">
-                  <Tag icon={<CoinIcon className="h-3 w-3" />} text={`${run.coins}`} tone="bg-white/20" />
-                  {run.stones > 0 && <Tag icon={<Gem className="h-3 w-3" />} text={`${run.stones}`} tone="bg-white/20" />}
-                  {s.buffs.power > 0 && <Tag icon={<Swords className="h-3 w-3" />} text={`피해 +${Math.round(s.buffs.power * 100)}%`} tone="bg-white/20" />}
-                  {s.buffs.shield > 0 && <Tag icon={<Shield className="h-3 w-3" />} text={`방어 ${s.buffs.shield}`} tone="bg-white/20" />}
-                  {s.buffs.hints > 0 && <Tag icon={<Lightbulb className="h-3 w-3" />} text={`힌트 ${s.buffs.hints}`} tone="bg-white/20" />}
-                </div>
-              </div>
-              <span className="text-right text-[11px] text-white/75">
-                다음 상대
-                <b className="block text-sm text-white">
-                  {boss ? "👑 " : ""}
-                  {run.enemy?.name ?? "?"}
-                </b>
-              </span>
-            </div>
-            <button type="button" className={`w-full rounded-xl py-3.5 text-base font-black shadow-lg transition hover:brightness-110 disabled:opacity-60 ${boss ? "bg-gradient-to-r from-[#ff6b5a] to-[#ffb36b] text-[#2a0a00]" : "bg-gradient-to-r from-[#ffd36b] to-[#ffe9a8] text-[#3a2600]"}`} onClick={enter} disabled={busy} data-tower-enter>
-              {busy ? "문을 여는 중…" : boss ? `보스층 ${s.floor}층 입장` : `${s.floor}층 입장`}
-            </button>
-          </div>
-        </section>
-        {err && <p className="card p-3 text-sm text-danger" role="alert">{err}</p>}
-      </div>
-    );
 
   return (
     <div ref={topRef} className="scroll-mt-20 space-y-3" data-tower-run>
@@ -478,13 +492,13 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
               <span className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-semibold backdrop-blur-sm">
                 깬 층 {run.cleared} · <CoinIcon className="inline h-3 w-3" /> {run.coins}
               </span>
-              <button type="button" onClick={quit} disabled={busy} className="rounded-full border border-white/30 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10">
-                그만두기
+              <button type="button" onClick={() => onBack(outcome ? outcome.run : run)} disabled={busy} className="rounded-full border border-white/30 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10" data-tower-back>
+                ← 탑
               </button>
             </div>
           </div>
 
-          <TowerArena team={run.team} enemy={run.enemy} state={shown} boss={boss} strike={strike} enemyDown={Boolean(outcome?.floorCleared || floorDone)} teamDown={Boolean(outcome?.dead)} />
+          <TowerArena team={run.team} enemy={run.enemy} state={shown} boss={boss} strike={strike} enemyDown={Boolean(outcome?.floorCleared)} teamDown={Boolean(outcome?.dead)} />
 
           <div className="grid grid-cols-2 gap-3 sm:gap-6">
             <div className="space-y-1">
@@ -504,16 +518,14 @@ function TowerRun({ initial, best, art, onEnd }: { initial: RunView; best: numbe
               </div>
             </div>
           </div>
-          {run.enemy?.quote && !outcome && !floorDone && <p className="truncate text-center text-[11px] italic text-white/70">“{run.enemy.quote}”</p>}
+          {run.enemy?.quote && !outcome && <p className="truncate text-center text-[11px] italic text-white/70">“{run.enemy.quote}”</p>}
         </div>
       </section>
 
       {err && <p className="card p-3 text-sm text-danger" role="alert">{err}</p>}
 
-      {floorDone ? (
-        <BuffPick run={run} busy={busy} onChoose={choose} />
-      ) : outcome ? (
-        <OutcomeCard r={outcome} kind={item?.kind ?? "exam"} showSol={showSol} setShowSol={setShowSol} onNext={outcome.floorCleared && outcome.run.choices ? null : next} onChoose={choose} busy={busy} />
+      {outcome ? (
+        <OutcomeCard r={outcome} kind={item?.kind ?? "exam"} showSol={showSol} setShowSol={setShowSol} onNext={next} />
       ) : item ? (
         <article className="card space-y-3 p-4 sm:p-5" data-tower-item>
           <header className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -613,16 +625,12 @@ function OutcomeCard({
   showSol,
   setShowSol,
   onNext,
-  onChoose,
-  busy,
 }: {
   r: TowerAnswerResult;
   kind: "exam" | "expected" | "practice";
   showSol: boolean;
   setShowSol: (v: boolean) => void;
-  onNext: (() => void) | null;
-  onChoose: (b: string) => void;
-  busy: boolean;
+  onNext: () => void;
 }) {
   const v = r.verdict;
   return (
@@ -663,87 +671,35 @@ function OutcomeCard({
           </div>
         )}
       </section>
-      {r.floorCleared && r.run.choices ? (
-        <BuffPick run={r.run} busy={busy} onChoose={onChoose} reward={r.reward} />
-      ) : (
-        onNext && (
-          <button type="button" className="btn-primary w-full py-3 text-base font-bold" onClick={onNext} data-tower-next>
-            {r.dead || r.run.status !== "active" ? "결과 보기" : "다음 문제"}
-          </button>
-        )
+      {r.floorCleared && r.reward && (
+        <p className="rounded-xl bg-[#ffd36b]/15 px-3 py-2 text-center text-sm">
+          <CoinIcon className="inline h-4 w-4 text-warn" /> +{r.reward.coins}
+          {r.reward.stones > 0 && <> · 강화석 +{r.reward.stones}</>}
+          {r.reward.ticket && <b className="ml-1 text-[#7b3fe4]">· 🎟 영웅 확정 뽑기권!</b>}
+        </p>
       )}
+      <button type="button" className="btn-primary w-full py-3 text-base font-bold" onClick={onNext} data-tower-next>
+        {r.floorCleared ? "탑으로 돌아가 강화 고르기" : r.dead || r.run.status !== "active" ? "탑으로 돌아가기" : "다음 문제"}
+      </button>
     </div>
   );
 }
 
-function BuffPick({ run, busy, onChoose, reward }: { run: RunView; busy: boolean; onChoose: (b: string) => void; reward?: TowerAnswerResult["reward"] }) {
+function BuffPick({ run, busy, onChoose }: { run: RunView; busy: boolean; onChoose: (b: string) => void }) {
   return (
-    <section className="card space-y-3 p-4 text-center" data-tower-buffs>
-      <div>
-        <p className="text-xs font-bold tracking-[0.2em] text-muted">FLOOR CLEAR</p>
-        <h3 className="text-xl font-black">{run.state.floor}층 돌파!</h3>
-        {reward && (
-          <p className="mt-1 text-sm">
-            <CoinIcon className="inline h-4 w-4 text-warn" /> +{reward.coins}
-            {reward.stones > 0 && <> · 강화석 +{reward.stones}</>}
-            {reward.ticket && <b className="ml-1 text-[#7b3fe4]">· 🎟 영웅 확정 뽑기권!</b>}
-          </p>
-        )}
-        <p className="mt-1 text-xs text-muted">다음 층으로 가기 전에 하나를 고르세요.</p>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+    <div className="space-y-2" data-tower-buffs>
+      <p className="text-center text-xs text-white/80">다음 층({run.state.floor + 1}층)으로 가기 전에 하나를 고르세요</p>
+      <div className="grid grid-cols-3 gap-2">
         {(run.choices ?? []).map((c) => (
-          <button key={c.id} type="button" disabled={busy} onClick={() => onChoose(c.id)} className="group rounded-2xl border-2 border-line bg-surface p-4 text-left transition hover:-translate-y-0.5 hover:border-navy/50 disabled:opacity-50" data-buff={c.id}>
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-soft text-navy">
-              {c.id === "heal" ? <Flame className="h-5 w-5" /> : c.id === "power" ? <Swords className="h-5 w-5" /> : c.id === "shield" ? <Shield className="h-5 w-5" /> : <Lightbulb className="h-5 w-5" />}
+          <button key={c.id} type="button" disabled={busy} onClick={() => onChoose(c.id)} className="rounded-xl border border-white/25 bg-white/10 p-2.5 text-left backdrop-blur-sm transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50" data-buff={c.id}>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#ffd36b] text-[#3a2600]">
+              {c.id === "heal" ? <Flame className="h-4 w-4" /> : c.id === "power" ? <Swords className="h-4 w-4" /> : c.id === "shield" ? <Shield className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
             </span>
-            <span className="mt-2 block font-bold">{c.name}</span>
-            <span className="block text-xs text-muted">{c.desc}</span>
+            <span className="mt-1.5 block text-sm font-bold">{c.name}</span>
+            <span className="block text-[10px] leading-4 text-white/75">{c.desc}</span>
           </button>
         ))}
       </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------
-// 결과
-// ---------------------------------------------------------------------
-function TowerResult({ run, ov, art, onBack }: { run: RunView; ov: TowerOverview; art: GameState["settings"]["art"]; onBack: () => void }) {
-  const newBest = run.cleared > 0 && run.cleared >= ov.best;
-  return (
-    <section className="card overflow-hidden" data-tower-result>
-      <div className="relative h-32 sm:h-40" style={artBg(art, "tower-result")}>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-        <div className="absolute bottom-3 left-4 text-white">
-          <p className="text-[11px] font-bold tracking-[0.2em] text-white/75">{run.status === "quit" ? "도전 종료" : "도전 끝"}</p>
-          <h3 className="text-3xl font-black drop-shadow">{run.cleared}층까지 올랐어요</h3>
-        </div>
-      </div>
-      <div className="space-y-3 p-4">
-        {newBest && <p className="rounded-lg bg-[#ffd36b]/20 px-3 py-2 text-sm font-semibold text-[#8a5a00] dark:text-[#ffd36b]">🏆 최고 기록! {run.cleared}층</p>}
-        <dl className="grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl bg-surface-2 p-3">
-            <dt className="text-[11px] text-muted">맞힌 문제</dt>
-            <dd className="text-xl font-black">
-              {run.state.correct}
-              <span className="text-xs font-semibold text-muted">/{run.state.answered}</span>
-            </dd>
-          </div>
-          <div className="rounded-xl bg-surface-2 p-3">
-            <dt className="text-[11px] text-muted">받은 코인</dt>
-            <dd className="text-xl font-black">{run.coins}</dd>
-          </div>
-          <div className="rounded-xl bg-surface-2 p-3">
-            <dt className="text-[11px] text-muted">강화석</dt>
-            <dd className="text-xl font-black">{run.stones}</dd>
-          </div>
-        </dl>
-        <p className="text-center text-xs text-muted">틀린 문제는 윤리 퀴즈 &apos;오답 학습&apos;에서 다시 볼 수 있어요.</p>
-        <button type="button" className="btn-primary w-full py-3 font-bold" onClick={onBack} data-tower-back>
-          탑 입구로
-        </button>
-      </div>
-    </section>
+    </div>
   );
 }
