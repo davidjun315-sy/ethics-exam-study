@@ -129,18 +129,16 @@ function Progress({ answered, total, done }: { answered: number; total: number; 
   );
 }
 
-/** 순위 숫자: 1~3위는 금 · 은 · 동 금속 빛 글자 (배경 없이), 나머지는 차분한 회색 */
+/** 순위 표시: 1~3위는 금 · 은 · 동이 은은하게 비치는 작은 칩 ('완주' 칩과 같은 결), 나머지는 차분한 숫자 */
 const MEDAL = [
-  "bg-gradient-to-b from-[#e9c46a] via-[#c99a2e] to-[#9a6f12] bg-clip-text text-transparent dark:from-[#f6dc8f] dark:via-[#e0b64e] dark:to-[#b8892b]",
-  "bg-gradient-to-b from-[#a9b1be] via-[#7d8696] to-[#5b6372] bg-clip-text text-transparent dark:from-[#e6eaf0] dark:via-[#b9c1cd] dark:to-[#8d96a4]",
-  "bg-gradient-to-b from-[#d79a64] via-[#b06d34] to-[#80491d] bg-clip-text text-transparent dark:from-[#f0b98a] dark:via-[#cf8a4f] dark:to-[#a8693a]",
+  "border-[#d9a520]/35 bg-[#ffd36b]/15 text-[#8a5a00] dark:text-[#f3cf72]",
+  "border-[#8d96a4]/35 bg-[#c3cad6]/20 text-[#4f5866] dark:text-[#cdd4de]",
+  "border-[#c9864a]/35 bg-[#e0a46a]/15 text-[#874a18] dark:text-[#e9b080]",
 ];
 function RankNum({ rank, size }: { rank: number; size: "sm" | "md" }) {
-  return (
-    <span className={`shrink-0 text-center font-black italic tabular-nums tracking-tight ${size === "md" ? "w-7 text-lg" : "w-5 text-sm"} ${MEDAL[rank - 1] ?? "!not-italic font-semibold text-faint"}`}>
-      {rank}
-    </span>
-  );
+  const box = size === "md" ? "h-7 w-7 rounded-lg text-[13px]" : "h-5 w-5 rounded-md text-[11px]";
+  const look = MEDAL[rank - 1] ? `border font-bold ${MEDAL[rank - 1]}` : "font-semibold text-faint";
+  return <span className={`flex shrink-0 items-center justify-center tabular-nums ${box} ${look}`}>{rank}</span>;
 }
 
 /** 두 순위표 공통 한 줄: 순위 메달 · 이름 · 칭호 · 오른쪽 값 */
