@@ -90,6 +90,8 @@ export interface TeamCard {
   artUrl: string | null;
   battleArtUrl: string | null;
   tradition: string;
+  /** 필살기 이름 (연출용 · 예전 도전엔 없음) */
+  skillName?: string;
 }
 interface Stored extends RunState {
   enemyId: string | null;
@@ -324,7 +326,7 @@ export async function startTower(learner: string, cardIds: string[]): Promise<Ru
   const team: TeamCard[] = ids.map((id) => {
     const o = state.owned.find((x) => x.cardId === id);
     if (!o) throw new GameError("보유하지 않은 카드입니다.");
-    return { cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, rarity: o.rarity, level: o.level, atk: o.atk, hp: o.hp, artUrl: o.artUrl, battleArtUrl: o.battleArtUrl ?? null, tradition: o.tradition };
+    return { cardId: o.cardId, philosopherId: o.philosopherId, name: o.name, rarity: o.rarity, level: o.level, atk: o.atk, hp: o.hp, artUrl: o.artUrl, battleArtUrl: o.battleArtUrl ?? null, tradition: o.tradition, skillName: o.skillName };
   });
   const enemies = await enemyOrder();
   const seed = hash(`${learner}:${Date.now()}`);

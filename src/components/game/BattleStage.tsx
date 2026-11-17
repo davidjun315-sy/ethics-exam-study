@@ -16,7 +16,7 @@ import type { DialogueLine } from "@/lib/game/dialogue";
  *  - 대기 · 돌진 · 피격 · 쓰러짐 + 필살기별 효과 (일격 베기 · 광역 충격파 · 회복 빛가루 · 수호막 · 기절 별)
  */
 
-const RING: Record<Rarity, string> = { common: "#b9c0cb", rare: "#5aa2ff", epic: "#b07cff", legendary: "#ffc94a" };
+export const RING: Record<Rarity, string> = { common: "#b9c0cb", rare: "#5aa2ff", epic: "#b07cff", legendary: "#ffc94a" };
 const RAR_TEXT: Record<Rarity, string> = { common: "#d5dae2", rare: "#8fc6ff", epic: "#d9b8ff", legendary: "#ffd36b" };
 const RARITY_LABEL: Record<Rarity, string> = { common: "일반", rare: "희귀", epic: "영웅", legendary: "전설" };
 // 내 팀 자리 (전장 안 %, 아래쪽일수록 앞) · 크기
@@ -264,7 +264,7 @@ const DUR = { attack: 950, skill: 2300, stunned: 700, phase: 1900, faint: 600, e
 // 돌진(bs-lunge)이 가장 앞에 나간 때 · 필살기 연출(컷인 → 마법진 → 날아가는 효과)이 닿는 때
 const IMPACT = { attack: 230, skill: 1250 } as const;
 
-type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
+export type Box = { x: number; y: number; feet: number; top: number; w: number; h: number };
 
 
 
@@ -279,7 +279,7 @@ function boxOf(key: string, W: number, H: number, foes = 1): Box {
 }
 
 /** 맞는 곳에서 터지는 빛: 빛살 · 고리 · 파편 */
-function Burst({ b, theme, big, delay }: { b: Box; theme: FxTheme; big: boolean; delay: number }) {
+export function Burst({ b, theme, big, delay }: { b: Box; theme: FxTheme; big: boolean; delay: number }) {
   const size = (big ? 1.5 : 0.95) * b.w;
   const style = { left: b.x, top: b.y, width: size, height: size, animationDelay: `${delay}ms`, ["--c0" as string]: theme.colors[0], ["--c1" as string]: theme.colors[1], ["--c2" as string]: theme.colors[2] } as CSSProperties;
   return (
@@ -294,7 +294,7 @@ function Burst({ b, theme, big, delay }: { b: Box; theme: FxTheme; big: boolean;
 }
 
 /** 스킬 날아가는 모양 (사상가마다 다름) */
-function Motif({ theme, from, to, H, delay }: { theme: FxTheme; from: Box; to: Box[]; H: number; delay: number }) {
+export function Motif({ theme, from, to, H, delay }: { theme: FxTheme; from: Box; to: Box[]; H: number; delay: number }) {
   const [c0, c1, c2] = theme.colors;
   const vars = { ["--c0" as string]: c0, ["--c1" as string]: c1, ["--c2" as string]: c2 } as CSSProperties;
   const glyphSize = (b: Box) => Math.max(14, Math.min(b.w * 0.42, 40 * (theme.glyph.length > 2 ? 2.4 / theme.glyph.length + 0.2 : 1)));
