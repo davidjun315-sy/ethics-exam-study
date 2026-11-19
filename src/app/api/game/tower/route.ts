@@ -10,7 +10,8 @@ import { GeminiError } from "@/lib/ai/gemini";
 export const maxDuration = 120;
 
 const Body = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("start"), cardIds: z.array(z.string().uuid()).min(1).max(3), startFloor: z.union([z.literal(1), z.literal(11), z.literal(21), z.literal(31)]).optional() }),
+  z.object({ action: z.literal("start"), cardIds: z.array(z.string().uuid()).min(1).max(3), // 이어 오르기(최고 기록 다음 층) 또는 구간 첫 층 — 열려 있는지는 서버가 확인
+    startFloor: z.number().int().min(1).max(9999).optional() }),
   z.object({ action: z.literal("answer"), runId: z.string().uuid(), itemId: z.string().uuid(), answer: z.string().max(5000) }),
   // 답을 낸 뒤 필살기 (팀 순서 0~2) 또는 넘기기 (null) → 보스 행동
   z.object({ action: z.literal("resolve"), runId: z.string().uuid(), turn: z.number().int().min(0).max(100000), skill: z.number().int().min(0).max(2).nullable() }),

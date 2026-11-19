@@ -520,7 +520,7 @@ export async function startTower(learner: string, cardIds: string[], startFloor 
   if (startFloor !== 1) {
     const { data: prof } = await getAdminClient().from("game_tower_profiles").select("best_floor").eq("learner", learner).maybeSingle();
     const best = (prof as { best_floor: number } | null)?.best_floor ?? 0;
-    if (!canStartAt(startFloor, best)) throw new GameError(`${startFloor - 1}층을 먼저 깨야 이 탑에 들어갈 수 있어요.`, 409);
+    if (!canStartAt(startFloor, best)) throw new GameError(`지금은 ${best + 1}층부터 이어 오를 수 있어요. 새로고침해 주세요.`, 409);
   }
   const [state, att, cards] = await Promise.all([getGameState(learner), getAttendance(learner).catch(() => null), publishedCards()]);
   const team: TeamCard[] = ids.map((id) => {

@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Coins as CoinIcon, Crown, Flame, Gem, Lightbulb, Shield, Sparkles, Swords, Timer, Trophy } from "lucide-react";
 import type { GameState } from "@/lib/game/data";
 import type { RunView, TowerAnswerResult, TowerHint, TowerOverview } from "@/lib/game/tower-data";
-import { isBossFloor, TIER_START, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
+import { continueFloor, floorCoins, floorStones, isBossFloor, TIER_START, tierOf, tierOpen, tierRewards, TOWER_TEAM_SIZE, type TowerTier } from "@/lib/game/tower";
+
+/** 들어갈 곳: go = 이어 오르기 (최고 기록 다음 층) · 숫자 = 그 구간 첫 층부터 다시 */
+type Pick = TowerTier | "go";
 import { slotOf, towerKindSlot, towerSlotFor, type ArtSlotKey } from "@/lib/game/art-slots";
 import { quizApi } from "@/lib/quiz/client";
 import { PracticeInput, type PublicPractice } from "@/components/quiz/PracticeParts";
@@ -125,8 +128,10 @@ function TowerMain({
   onQuit: (r: RunView) => void;
 }) {
   const owned = useMemo(() => [...state.owned].sort(byStrength), [state.owned]);
-  // 고른 탑 (구간): 처음엔 열린 탑 중 가장 높은 곳
-  const [pick, setPick] = useState<TowerTier>(() => ([4, 3, 2, 1] as TowerTier[]).find((t) => tierOpen(t, ov.best)) ?? 1);
+  // 누적 등반: 기록이 있으면 처음엔 '이어 오르기' (최고 기록 다음 층부터)
+  const [pick, setPick] = useState<Pick>(() => (ov.best > 0 ? "go" : 1));
+  const cont = continueFloor(ov.best);
+  const startAt = pick === "go" ? cont : TIER_START[pick];
   const [team, setTeam] = useState<string[]>(() => {
     const deck = state.deck.filter((id) => owned.some((o) => o.cardId === id));
     return (deck.length ? deck : owned.map((o) => o.cardId)).slice(0, TOWER_TEAM_SIZE);
@@ -150,7 +155,7 @@ function TowerMain({
   /** 탑 오르기 = 시작하고 바로 1층 입장 */
   const start = () =>
     call(async () => {
-      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team, startFloor: TIER_START[pick] });
+      const r = await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "start", cardIds: team, startFloor: startAt });
       const e = r.run.awaiting ? await quizApi<{ run: RunView }>("/api/game/tower", "POST", { action: "enter", runId: r.run.id }) : r;
       onEnter(e.run);
     });
@@ -211,6 +216,7 @@ function TowerMain({
                   맞힘 {last.state.correct}/{last.state.answered} · <CoinIcon className="inline h-3 w-3" /> {last.coins}
                   {last.stones > 0 && ` · 강화석 ${last.stones}`}
                 </span>
+                <span className="w-full text-[11px] font-semibold text-[#ffe9a8]">▲ 다음 도전은 {continueFloor(Math.max(ov.best, last.cleared))}층부터 이어서 오릅니다</span>
               </div>
             </div>
           )}
@@ -259,7 +265,7 @@ function TowerMain({
           ) : null}
           {!run && <TowerPicker ov={ov} pick={pick} onPick={setPick} art={state.settings.art} />}
           <TowerMap
-            floor={run ? s!.floor : Math.min(TIER_START[pick] + 9, Math.max(TIER_START[pick], ov.best))}
+            floor={run ? s!.floor : pick === "go" ? cont : Math.min(TIER_START[pick] + 9, Math.max(TIER_START[pick], ov.best))}
             cleared={run ? (run.choices ? s!.floor : run.cleared) : ov.best}
             epicTicketGiven={ov.epicTicketGiven}
             kindArt={{ 1: state.settings.art?.["tower-kind-1"], 2: state.settings.art?.["tower-kind-2"], 3: state.settings.art?.["tower-kind-3"], 4: state.settings.art?.["tower-kind-4"] }}
@@ -323,7 +329,7 @@ function TowerMain({
             </div>
           )}
           <button type="button" className="btn-primary w-full py-3 text-base font-bold" disabled={busy || !team.length || left <= 0} onClick={start} data-tower-start>
-            {busy ? "탑 문을 여는 중…" : left <= 0 ? "오늘 도전을 모두 썼어요" : `${ov.tiers[pick].name} · ${TIER_START[pick]}층부터 오르기`}
+            {busy ? "탑 문을 여는 중…" : left <= 0 ? "오늘 도전을 모두 썼어요" : pick === "go" ? `${cont}층부터 이어 오르기` : `${ov.tiers[pick].name} · ${TIER_START[pick]}층부터 다시 오르기`}
           </button>
           <p className="text-center text-[11px] text-faint">하루 {ov.tries.max - (ov.tries.attendBonus ? 1 : 0)}번 · 그날 출석하면 1번 더 · 그만둬도 깬 층 보상은 남아요</p>
         </section>
@@ -369,10 +375,36 @@ function TowerMain({
 }
 
 /** 탑 고르기: 구간마다 따로 들어가는 네 개의 탑 (그림 · 문제 · 보상 · 잠김) */
-function TowerPicker({ ov, pick, onPick, art }: { ov: TowerOverview; pick: TowerTier; onPick: (t: TowerTier) => void; art: GameState["settings"]["art"] }) {
+function TowerPicker({ ov, pick, onPick, art }: { ov: TowerOverview; pick: Pick; onPick: (t: Pick) => void; art: GameState["settings"]["art"] }) {
+  const cont = continueFloor(ov.best);
+  const ti = ov.tiers[tierOf(cont)];
   return (
     <div className="space-y-1.5" data-tower-picker>
-      <p className="text-[11px] font-bold tracking-wider text-white/75">들어갈 탑을 고르세요</p>
+      {ov.best > 0 && (
+        <button
+          type="button"
+          onClick={() => onPick("go")}
+          aria-pressed={pick === "go"}
+          className={`flex w-full items-center gap-3 rounded-2xl bg-gradient-to-r from-[#ffd36b]/25 via-[#ffb36b]/15 to-transparent px-3 py-2.5 text-left transition ${pick === "go" ? "ring-2 ring-[#ffd36b] shadow-[0_0_24px_rgba(255,211,107,.35)]" : "ring-1 ring-white/20 hover:ring-white/45"}`}
+          data-tower-continue
+        >
+          <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-black/35 leading-none">
+            <span className="text-lg font-black tabular-nums">{cont}</span>
+            <span className="text-[9px] font-bold text-white/70">층</span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-black">▲ 이어 오르기</span>
+            <span className="block truncate text-[11px] text-white/80">
+              {ov.best}층까지 깼어요 · {ti.name} · {ti.questions}
+            </span>
+          </span>
+          <span className="shrink-0 text-right text-[10px] font-bold leading-4 text-[#ffe9a8]">
+            🪙 {floorCoins(cont)}
+            {cont > ov.best && floorStones(cont) > 0 && <span className="block text-[#bfe3ff]">💎 {floorStones(cont)}</span>}
+          </span>
+        </button>
+      )}
+      <p className="text-[11px] font-bold tracking-wider text-white/75">{ov.best > 0 ? "또는 구간 처음부터 다시 오르기 (깬 층 기록은 그대로)" : "들어갈 탑을 고르세요"}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {([1, 2, 3, 4] as TowerTier[]).map((t) => {
           const ti = ov.tiers[t];

@@ -472,6 +472,11 @@ if (failed) {
 // 사상의 탑 2.0 전투 엔진
 // ---------------------------------------------------------------------
 {
+  {
+    const T0 = await import("../src/lib/game/tower.ts");
+    check("누적 등반: 최고 기록 다음 층부터 이어서 (처음이면 1층)", T0.continueFloor(0) === 1 && T0.continueFloor(17) === 18 && T0.canStartAt(18, 17) && T0.canStartAt(43, 42));
+    check("누적 등반: 기록보다 높거나 낮은 임의 층은 불가 · 열린 구간 첫 층은 다시 오르기 가능", !T0.canStartAt(19, 17) && !T0.canStartAt(12, 17) && T0.canStartAt(11, 17) && !T0.canStartAt(21, 17) && T0.canStartAt(21, 20));
+  }
   const T = await import("../src/lib/game/tower.ts");
   const B = await import("../src/lib/game/tower-battle.ts");
   const Sim = await import("./tower-sim.ts");

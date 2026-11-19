@@ -140,8 +140,14 @@ export function startState(teamHpSum: number, floor = 1): RunState {
 export const TIER_START: Record<TowerTier, number> = { 1: 1, 2: 11, 3: 21, 4: 31 };
 /** 이 구간에 들어갈 수 있나 (최고 기록 기준) */
 export const tierOpen = (tier: TowerTier, best: number) => best >= TIER_START[tier] - 1;
-/** 시작 층으로 쓸 수 있나 */
-export const canStartAt = (floor: number, best: number) => (Object.entries(TIER_START) as [string, number][]).some(([t, f]) => f === floor && tierOpen(Number(t) as TowerTier, best));
+/**
+ * 누적 등반: 층은 매일 처음부터가 아니라, 지금까지 깬 가장 높은 층 바로 다음부터 이어서 오른다.
+ * (그날 도전은 체력 · 사유력 · 유물 · 강화를 새로 받아 시작 · 층만 이어짐)
+ */
+export const continueFloor = (best: number) => Math.max(1, best + 1);
+/** 시작 층으로 쓸 수 있나: 이어 오르기(최고 기록 다음 층) 또는 열린 구간의 첫 층 (낮은 구간 다시 오르기) */
+export const canStartAt = (floor: number, best: number) =>
+  floor === continueFloor(best) || (Object.entries(TIER_START) as [string, number][]).some(([t, f]) => f === floor && tierOpen(Number(t) as TowerTier, best));
 
 /** 이 층을 깨면 받는 보상 */
 export function floorReward(floor: number, epicTicketGiven = false, best = 0): { coins: number; stones: number; ticket: boolean } {
